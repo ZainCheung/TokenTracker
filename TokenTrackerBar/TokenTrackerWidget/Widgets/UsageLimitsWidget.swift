@@ -90,7 +90,7 @@ private struct LimitRow: View {
                 if let reset {
                     Text(reset)
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundColor(.secondary)
                         .monospacedDigit()
                 }
                 Text(WidgetFormat.percent(f * 100, decimals: 0))

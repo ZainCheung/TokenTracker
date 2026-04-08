@@ -42,7 +42,7 @@ struct HeatmapWidgetView: View {
                     if streak > 0 {
                         Text("\(streak)d streak")
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.tint)
+                            .foregroundColor(.accentColor)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(Color.accentColor.opacity(0.16), in: Capsule())
@@ -52,11 +52,11 @@ struct HeatmapWidgetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(WidgetFormat.compact(snap.last30d.tokens))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.primary)
+                    .foregroundColor(.primary)
                     .monospacedDigit()
                 Text("tokens · \(snap.heatmap.activeDays) active days")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundColor(.secondary)
                 Spacer(minLength: 0)
             }
         }

@@ -13,7 +13,14 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26 ships Xcode 26.x which matches the local dev SDK. Earlier
+    # macos-15 (Xcode 16.4) silently rendered widget text using
+    # .foregroundStyle(.primary)/(.secondary) as transparent inside
+    # `containerBackground(.fill.tertiary, for: .widget)` — every label
+    # and hero number disappeared in shipped DMGs even though the same
+    # source rendered fine locally. Pinning to macos-26 keeps the SDK in
+    # sync with local builds.
+    runs-on: macos-26
     permissions:
       contents: write
     steps:

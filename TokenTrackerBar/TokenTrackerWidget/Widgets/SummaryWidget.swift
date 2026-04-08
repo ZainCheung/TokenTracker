@@ -48,13 +48,13 @@ private struct SmallView: View {
             Text("TODAY")
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.6)
-                .foregroundStyle(Color.secondary)
+                .foregroundColor(.secondary)
 
             Spacer(minLength: 0)
 
             Text(hasData ? WidgetFormat.compact(snap.today.tokens) : "—")
                 .font(.system(size: 38, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.primary)
+                .foregroundColor(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .padding(.bottom, 2)
@@ -67,7 +67,7 @@ private struct SmallView: View {
 
             Text("vs. yesterday")
                 .font(.system(size: 10))
-                .foregroundStyle(Color.secondary)
+                .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
@@ -176,10 +176,10 @@ private struct HeroBlock: View {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(0.6)
-                .foregroundStyle(Color.secondary)
+                .foregroundColor(.secondary)
             Text(value)
                 .font(.system(size: size.valueFont, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.primary)
+                .foregroundColor(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
             Text(sub)
@@ -208,11 +208,11 @@ private struct InlineModelRow: View {
             Spacer(minLength: 6)
             Text(WidgetFormat.compact(model.tokens))
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.secondary)
+                .foregroundColor(.secondary)
                 .monospacedDigit()
             Text(String(format: "%.0f%%", model.sharePercent))
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.secondary.opacity(0.55))
+                .foregroundColor(Color.secondary.opacity(0.55))
                 .monospacedDigit()
                 .frame(width: 30, alignment: .trailing)
         }
