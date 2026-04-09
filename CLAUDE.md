@@ -190,7 +190,7 @@ Query params: `from`, `to` (YYYY-MM-DD), `tz` (timezone), `tz_offset_minutes`, `
 
 ## Release Workflow
 
-Two artifacts are published per release, both sharing the same version number.
+Three artifacts are published per release — npm package, macOS DMG, and Homebrew tap formulas — all sharing the same version number.
 
 ### Version Numbering
 
@@ -214,9 +214,19 @@ When a feature or fix is significant enough to ship, **ask the user whether to b
 
 **Release DMG** (`.github/workflows/release-dmg.yml`)
 - Triggers manually via `workflow_dispatch` with version input
-- Runs on `macos-15` runner in GitHub cloud
+- Runs on `macos-26` runner in GitHub cloud
 - Full pipeline: dashboard build → EmbeddedServer bundle → xcodegen → xcodebuild → DMG → GitHub Release with DMG asset
 - No local machine required
+
+**Homebrew tap auto-update** (`mm7894215/homebrew-tokentracker` · `.github/workflows/auto-update.yml`)
+- Lives in a **separate repo** — the tap is `brew tap mm7894215/tokentracker`
+- Two triggers, both zero-config on this side:
+  1. **Hourly cron** (`cron: "17 * * * *"`) polls `api.github.com/repos/mm7894215/TokenTracker/releases/latest` + `registry.npmjs.org/tokentracker-cli/latest`, diffs against current `Casks/tokentracker.rb` / `Formula/tokentracker.rb`, and if newer: downloads the DMG / npm tarball, computes sha256, rewrites `version` + `sha256` lines with a small Python regex script, commits via `github-actions[bot]`, pushes.
+  2. **`repository_dispatch` event** `tokentracker-release` — fired from this repo's `npm-publish.yml` and `release-dmg.yml` for near-realtime sync. Requires optional `HOMEBREW_DISPATCH_TOKEN` secret (fine-grained PAT with Contents:Write on the tap repo). If missing, the dispatch step silently no-ops and the cron handles it within ≤1 hour.
+- End-to-end latency from `git push main` → brew upgrade available: ~3 min (npm 30s + DMG 2.5m + tap bump ~10s). Without the PAT, add up to 1 hour for cron fallback.
+- Uses only `GITHUB_TOKEN` on the tap side — no cross-repo secrets needed in the tap repo itself.
+- **Key design**: the tap does NOT trust dispatches blindly — the cron fallback means even if the dispatch fails or the PAT expires, the tap still self-heals within an hour. Never gate updates on the dispatch alone.
+- Published as both a Cask (DMG for the menu bar app) and a Formula (npm CLI), so users can `brew install --cask tokentracker` AND/OR `brew install tokentracker`.
 
 ### Typical Release Flow
 
@@ -227,6 +237,7 @@ Treat a release request as explicit approval to create the required release comm
 1. Bump version in `package.json` (and `TokenTrackerBar/project.yml` if App changed)
 2. Commit and push to `main` → npm publishes automatically
 3. If App changed: run `gh workflow run "release DMG" -f version=X.Y.Z` → cloud builds DMG + creates GitHub Release
+4. **Homebrew tap updates on its own** — no manual step. Either the `repository_dispatch` fires instantly (if `HOMEBREW_DISPATCH_TOKEN` is set) or the tap's hourly cron picks it up within an hour. Do NOT manually edit the tap repo for routine releases.
 
 No local build required. No manual GitHub Actions page visit needed.
 
