@@ -349,6 +349,8 @@ leaderboard.github.tooltipAction,ui,LeaderboardPage,LeaderboardPage,github_toolt
 leaderboard.github.tooltipPrefix,ui,LeaderboardPage,LeaderboardPage,github_tooltip_prefix,"Set yours in",,active
 leaderboard.github.tooltipSettingsLink,ui,LeaderboardPage,LeaderboardPage,github_tooltip_link,"Settings",,active
 leaderboard.github.tooltipSuffix,ui,LeaderboardPage,LeaderboardPage,github_tooltip_suffix," to appear here",,active
+leaderboard.summary.percentile,ui,LeaderboardPage,LeaderboardMeChip,summary_percentile,"Top {{p}}%",,active
+leaderboard.summary.jump_to_me,ui,LeaderboardPage,LeaderboardMeChip,summary_jump_to_me,"Jump to my row",,active
 settings.account.signOut,ui,SettingsPage,SettingsPage,sign_out,"Sign out",,active
 settings.account.signIn,ui,SettingsPage,SettingsPage,sign_in,"Sign in",,active
 settings.account.signedOutHint,ui,SettingsPage,SettingsPage,signed_out_hint,"Sign in to manage cloud sync and leaderboard preferences.",,active
