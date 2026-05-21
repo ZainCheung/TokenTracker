@@ -22,7 +22,7 @@ function buildMessage({ model = "gpt-4o", createdMs, completedMs, tokens }) {
 }
 
 test("auditOpencodeUsage reports mismatch when server totals differ", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibeusage-audit-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-audit-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_1");
     await fs.mkdir(messageDir, { recursive: true });
@@ -64,7 +64,7 @@ test("auditOpencodeUsage reports mismatch when server totals differ", async () =
 });
 
 test("auditOpencodeUsage derives day range from local data", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibeusage-audit-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-audit-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_1");
     await fs.mkdir(messageDir, { recursive: true });
@@ -102,7 +102,7 @@ test("auditOpencodeUsage derives day range from local data", async () => {
 });
 
 test("auditOpencodeUsage ignores missing hourly slots by default", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibeusage-audit-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-audit-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_1");
     await fs.mkdir(messageDir, { recursive: true });

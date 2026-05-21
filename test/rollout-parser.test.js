@@ -42,7 +42,7 @@ test("parseRolloutIncremental ignores repeated token_count records with unchange
   // Codex can repeat the same token_count record in a rollout. The cumulative
   // total_token_usage value is authoritative for a file; if it did not move,
   // the repeated last_token_usage must not be counted again.
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -99,7 +99,7 @@ test("parseRolloutIncremental ignores repeated token_count records with unchange
 });
 
 test("parseRolloutIncremental prefers cumulative total_token_usage delta over larger last_token_usage", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -150,7 +150,7 @@ test("parseRolloutIncremental prefers cumulative total_token_usage delta over la
 });
 
 test("parseRolloutIncremental emits project usage buckets with canonicalized project_ref", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -219,7 +219,7 @@ test("parseRolloutIncremental emits project usage buckets with canonicalized pro
 });
 
 test("parseRolloutIncremental uses turn_context cwd to resolve project context", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -275,7 +275,7 @@ test("parseRolloutIncremental uses turn_context cwd to resolve project context",
 });
 
 test("parseRolloutIncremental uses session_meta cwd to resolve project context", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -331,7 +331,7 @@ test("parseRolloutIncremental uses session_meta cwd to resolve project context",
 });
 
 test("parseRolloutIncremental marks blocked when remote is missing but repo_root_hash matches", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -393,7 +393,7 @@ test("parseRolloutIncremental marks blocked when remote is missing but repo_root
 });
 
 test("parseRolloutIncremental strips credentials from project_ref", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -449,7 +449,7 @@ test("parseRolloutIncremental strips credentials from project_ref", async () => 
 });
 
 test("parseRolloutIncremental ignores local path project_ref", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -504,7 +504,7 @@ test("parseRolloutIncremental ignores local path project_ref", async () => {
 });
 
 test("parseRolloutIncremental skips project usage when repo is blocked", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const repoRoot = path.join(tmp, "repo");
     await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
@@ -556,7 +556,7 @@ test("parseRolloutIncremental skips project usage when repo is blocked", async (
 });
 
 test("parseRolloutIncremental splits usage into half-hour buckets", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -613,7 +613,7 @@ test("parseRolloutIncremental splits usage into half-hour buckets", async () => 
 });
 
 test("parseRolloutIncremental migrates v1 hourly buckets without resetting totals", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -666,7 +666,7 @@ test("parseRolloutIncremental migrates v1 hourly buckets without resetting total
 });
 
 test("parseRolloutIncremental handles total_token_usage reset by counting last_token_usage", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -725,7 +725,7 @@ test("parseRolloutIncremental handles total_token_usage reset by counting last_t
 });
 
 test("parseRolloutIncremental handles total_token_usage reset when last_token_usage is missing", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -776,7 +776,7 @@ test("parseRolloutIncremental handles total_token_usage reset when last_token_us
 });
 
 test("parseGeminiIncremental aggregates gemini tokens and model", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-gemini-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
   try {
     const sessionPath = path.join(tmp, "session.json");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -820,7 +820,7 @@ test("parseGeminiIncremental aggregates gemini tokens and model", async () => {
 });
 
 test("parseGeminiIncremental recomputes total when Gemini reported total excludes cache", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-gemini-total-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-total-"));
   try {
     const sessionPath = path.join(tmp, "session.json");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -856,7 +856,7 @@ test("parseGeminiIncremental recomputes total when Gemini reported total exclude
 });
 
 test("parseGeminiIncremental is idempotent with unchanged totals", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-gemini-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
   try {
     const sessionPath = path.join(tmp, "session.json");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -890,7 +890,7 @@ test("parseGeminiIncremental is idempotent with unchanged totals", async () => {
 });
 
 test("parseGeminiIncremental defaults missing model to unknown", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-gemini-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
   try {
     const sessionPath = path.join(tmp, "session.json");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -921,7 +921,7 @@ test("parseGeminiIncremental defaults missing model to unknown", async () => {
 });
 
 test("parseCursorApiIncremental treats Cursor CSV as authoritative and replaces prior cursor buckets", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-cursor-reconcile-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-cursor-reconcile-"));
   try {
     const queuePath = path.join(tmp, "queue.jsonl");
     const cursors = { version: 1, files: {}, updatedAt: null };
@@ -976,7 +976,7 @@ test("parseCursorApiIncremental treats Cursor CSV as authoritative and replaces 
 });
 
 test("parseOpencodeIncremental aggregates message tokens and model", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1024,7 +1024,7 @@ test("parseOpencodeIncremental aggregates message tokens and model", async () =>
 });
 
 test("parseOpencodeIncremental defaults missing model to unknown", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1051,7 +1051,7 @@ test("parseOpencodeIncremental defaults missing model to unknown", async () => {
 });
 
 test("parseOpencodeIncremental falls back to model field when modelID missing", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1079,7 +1079,7 @@ test("parseOpencodeIncremental falls back to model field when modelID missing", 
 });
 
 test("parseOpencodeIncremental does not double count after message rewrite", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1118,7 +1118,7 @@ test("parseOpencodeIncremental does not double count after message rewrite", asy
 });
 
 test("parseOpencodeIncremental falls back to legacy cursors when opencode state missing", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1158,7 +1158,7 @@ test("parseOpencodeIncremental falls back to legacy cursors when opencode state 
 });
 
 test("parseOpencodeIncremental counts usage once timestamp appears", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1200,7 +1200,7 @@ test("parseOpencodeIncremental counts usage once timestamp appears", async () =>
 });
 
 test("parseOpencodeIncremental preserves totals after empty rewrite", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1247,7 +1247,7 @@ test("parseOpencodeIncremental preserves totals after empty rewrite", async () =
   }
 });
 test("parseOpencodeIncremental updates totals after message rewrite with new tokens", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1293,7 +1293,7 @@ test("parseOpencodeIncremental updates totals after message rewrite with new tok
 });
 
 test("parseOpencodeIncremental preserves legacy file totals when opencode index missing", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-opencode-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-opencode-"));
   try {
     const messageDir = path.join(tmp, "message", "ses_test");
     await fs.mkdir(messageDir, { recursive: true });
@@ -1350,7 +1350,7 @@ test("parseRolloutIncremental subtracts cached_input_tokens from Codex input_tok
   // treating Codex's inclusive-of-cached `input_tokens` as pure non-cached
   // input. Anchors the numbers against a realistic cache-heavy session
   // (95% cache hit) like the ones flagged in production.
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-codex-cached-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-codex-cached-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-codex.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -1396,7 +1396,7 @@ test("parseRolloutIncremental subtracts cached_input_tokens from Codex input_tok
 });
 
 test("parseRolloutIncremental handles Every Code token_count envelope", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -1435,7 +1435,7 @@ test("parseRolloutIncremental handles Every Code token_count envelope", async ()
 });
 
 test("parseRolloutIncremental keeps buckets separate per source", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const codexPath = path.join(tmp, "rollout-codex.jsonl");
     const everyPath = path.join(tmp, "rollout-every.jsonl");
@@ -1481,7 +1481,7 @@ test("parseRolloutIncremental keeps buckets separate per source", async () => {
 });
 
 test("parseRolloutIncremental keeps buckets separate per model within the same hour", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -1537,7 +1537,7 @@ test("parseRolloutIncremental keeps buckets separate per model within the same h
 });
 
 test("parseRolloutIncremental backfills unknown into dominant known model", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -1619,7 +1619,7 @@ test("parseRolloutIncremental backfills unknown into dominant known model", asyn
 });
 
 test("parseRolloutIncremental chooses dominant model deterministically on tie", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -1693,7 +1693,7 @@ test("parseRolloutIncremental chooses dominant model deterministically on tie", 
 });
 
 test("parseRolloutIncremental aligns every-code unknown to nearest codex model", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const codexPath = path.join(tmp, "rollout-codex.jsonl");
     const everyPath = path.join(tmp, "rollout-every.jsonl");
@@ -1745,7 +1745,7 @@ test("parseRolloutIncremental aligns every-code unknown to nearest codex model",
 });
 
 test("parseRolloutIncremental breaks ties by earlier codex bucket", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const codexPath = path.join(tmp, "rollout-codex.jsonl");
     const everyPath = path.join(tmp, "rollout-every.jsonl");
@@ -1805,7 +1805,7 @@ test("parseRolloutIncremental breaks ties by earlier codex bucket", async () => 
 });
 
 test("parseRolloutIncremental retracts prior every-code alignment when target changes", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const codexPath = path.join(tmp, "rollout-codex.jsonl");
     const everyPath = path.join(tmp, "rollout-every.jsonl");
@@ -1935,7 +1935,7 @@ test("parseRolloutIncremental retracts prior every-code alignment when target ch
 });
 
 test("parseRolloutIncremental retracts unknown when known model appears later", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const rolloutPath = path.join(tmp, "rollout-test.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2004,7 +2004,7 @@ test("parseRolloutIncremental retracts unknown when known model appears later", 
 });
 
 test("parseRolloutIncremental recomputes every-code alignment on codex-only updates", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-rollout-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
   try {
     const codexPath = path.join(tmp, "rollout-codex.jsonl");
     const everyPath = path.join(tmp, "rollout-every.jsonl");
@@ -2104,7 +2104,7 @@ test("parseRolloutIncremental recomputes every-code alignment on codex-only upda
 });
 
 test("parseClaudeIncremental aggregates usage into half-hour buckets", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2157,7 +2157,7 @@ test("parseClaudeIncremental aggregates usage into half-hour buckets", async () 
 });
 
 test("parseClaudeIncremental counts cache creation as input and cache read separately", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2196,7 +2196,7 @@ test("parseClaudeIncremental counts cache creation as input and cache read separ
 });
 
 test("parseClaudeIncremental computes total from all components ignoring JSONL total", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2231,7 +2231,7 @@ test("parseClaudeIncremental computes total from all components ignoring JSONL t
 // unique per the Anthropic message protocol and must be sufficient as a
 // dedup key.
 test("parseClaudeIncremental dedups by msgId alone when requestId is missing", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-deepseek.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2300,7 +2300,7 @@ test("parseClaudeIncremental dedups by msgId alone when requestId is missing", a
 // `<msgId>:<requestId>` dedup key behavior must remain unchanged so
 // already-persisted cursors.claudeHashes entries continue to match.
 test("parseClaudeIncremental keeps msgId:requestId dedup when requestId is present", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2356,7 +2356,7 @@ test("parseClaudeIncremental keeps msgId:requestId dedup when requestId is prese
 // covers the case where Claude Code restarts mid-stream and emits the
 // final chunk into a different session file under a third-party endpoint.
 test("parseClaudeIncremental dedups same msgId across files in mixed reqId scenarios", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const fileA = path.join(tmp, "session-a.jsonl");
     const fileB = path.join(tmp, "session-b.jsonl");
@@ -2410,7 +2410,7 @@ test("parseClaudeIncremental dedups same msgId across files in mixed reqId scena
 });
 
 test("parseClaudeIncremental defaults missing model to unknown", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-claude-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2556,7 +2556,7 @@ function buildOpencodeMessage({ modelID, model, modelId, created, completed, tok
 }
 
 test("parseKiroIncremental tracks JSONL fallback with a separate cursor", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-kiro-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-kiro-"));
   try {
     const jsonlPath = path.join(tmp, "tokens_generated.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");
@@ -2604,7 +2604,7 @@ test("parseKiroIncremental tracks JSONL fallback with a separate cursor", async 
 });
 
 test("parseKiroIncremental ignores JSONL fallback after file truncation until new baseline is established", async () => {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "vibescore-kiro-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-kiro-"));
   try {
     const jsonlPath = path.join(tmp, "tokens_generated.jsonl");
     const queuePath = path.join(tmp, "queue.jsonl");

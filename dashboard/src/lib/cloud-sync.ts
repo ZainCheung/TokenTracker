@@ -71,7 +71,7 @@ export async function issueDeviceTokenForCloud(accessToken: string): Promise<Clo
     typeof navigator !== "undefined" && typeof navigator.platform === "string"
       ? navigator.platform
       : "web";
-  // 云端 slug 为 tokentracker-device-token-issue（历史文档里的 vibeusage-* 在本项目未部署）
+  // 云端 slug 为 tokentracker-device-token-issue（历史文档里的 tokentracker-* 在本项目未部署）
   const res = await fetch(`${root}/functions/tokentracker-device-token-issue`, {
     method: "POST",
     headers,
