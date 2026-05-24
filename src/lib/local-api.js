@@ -673,28 +673,17 @@ function json(res, data, status) {
 }
 
 // ---------------------------------------------------------------------------
-// IP check proxy (issue #81): ip.net.coffee/claude/ sets X-Frame-Options:
-// SAMEORIGIN so the dashboard iframe is blocked. We reverse-proxy through
-// /proxy/ipcheck/* so requests stay same-origin to 127.0.0.1, then strip the
-// embedding-hostile headers and rewrite root-relative URLs in HTML so the
-// page's own /api/* and /claude/* fetches route back through us.
+// IP check API proxy: dashboard/src/pages/IpCheckPage.jsx is a native React
+// page that calls ip.net.coffee's data endpoints (/api/iprisk, /api/geoip,
+// /api/dns/result, /favicons, /claude/status.json). Browser-side fetch can't
+// hit them cross-origin from the dashboard, so we reverse-proxy /proxy/ipcheck/*
+// to https://ip.net.coffee/* and strip embedding-hostile headers.
+// (Previously this proxy also served the upstream HTML page for an iframe;
+// the iframe and its HTML-rewrite path have been removed.)
 // ---------------------------------------------------------------------------
 
 const IP_CHECK_PROXY_PREFIX = "/proxy/ipcheck";
 const IP_CHECK_TARGET = "https://ip.net.coffee";
-
-function rewriteIpCheckHtml(html) {
-  const prefix = IP_CHECK_PROXY_PREFIX;
-  return html
-    .replace(
-      /(\s(?:href|src|action)\s*=\s*["'])\/(?!\/|proxy\/ipcheck\/)/g,
-      `$1${prefix}/`,
-    )
-    .replace(
-      /(fetch\s*\(\s*["'`])\/(?!\/|proxy\/ipcheck\/)/g,
-      `$1${prefix}/`,
-    );
-}
 
 // ---------------------------------------------------------------------------
 // Main handler factory
@@ -1015,34 +1004,49 @@ function createLocalApiHandler({ queuePath, allowedHosts = [] } = {}) {
       return true;
     }
 
-    // --- ip-check proxy: reverse-proxy ip.net.coffee/claude/ (issue #81) ---
+    // --- ip-check proxy: reverse-proxy ip.net.coffee (issue #81) ---
+    // Lock-down: GET/HEAD only, restricted path prefixes, do not forward
+    // browser credentials or fingerprintable headers. Without these limits
+    // /proxy/ipcheck is an open reverse-proxy any local process can abuse
+    // (exfiltrate dashboard cookies, anonymously POST through user IP).
     if (p.startsWith(`${IP_CHECK_PROXY_PREFIX}/`) || p === IP_CHECK_PROXY_PREFIX) {
+      const method = String(req.method || "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        json(res, { error: "Method Not Allowed" }, 405);
+        return true;
+      }
       const targetPath = p === IP_CHECK_PROXY_PREFIX
         ? "/"
         : p.slice(IP_CHECK_PROXY_PREFIX.length) || "/";
+      const ALLOWED_PREFIXES = [
+        "/api/geoip/",
+        "/api/geoip-batch",
+        "/api/iprisk/",
+        "/api/dns/result/",
+        "/claude/status.json",
+        "/favicons/",
+        "/ip/",
+      ];
+      if (!ALLOWED_PREFIXES.some((prefix) => targetPath.startsWith(prefix))) {
+        json(res, { error: "Path not allowed" }, 403);
+        return true;
+      }
       const targetUrl = `${IP_CHECK_TARGET}${targetPath}${url.search || ""}`;
       try {
-        const proxyHeaders = {};
-        for (const [key, value] of Object.entries(req.headers)) {
-          const lk = key.toLowerCase();
-          if (["host", "connection", "referer", "origin"].includes(lk)) continue;
-          proxyHeaders[key] = value;
-        }
-        proxyHeaders["host"] = "ip.net.coffee";
-        proxyHeaders["referer"] = `${IP_CHECK_TARGET}${targetPath}`;
-
-        const method = String(req.method || "GET").toUpperCase();
-        let body;
-        if (method !== "GET" && method !== "HEAD") {
-          const chunks = [];
-          for await (const chunk of req) chunks.push(chunk);
-          if (chunks.length > 0) body = Buffer.concat(chunks);
-        }
+        // Whitelist forwarded headers — no cookies, no auth, no fingerprintable
+        // identity. Only what the upstream needs to negotiate content.
+        const proxyHeaders = {
+          host: "ip.net.coffee",
+          accept: req.headers["accept"] || "*/*",
+          "accept-language": req.headers["accept-language"] || "en",
+          "accept-encoding": req.headers["accept-encoding"] || "gzip",
+          "user-agent": "TokenTracker/IPCheck (https://www.tokentracker.cc)",
+          referer: `${IP_CHECK_TARGET}${targetPath}`,
+        };
 
         const proxyRes = await fetch(targetUrl, {
           method,
           headers: proxyHeaders,
-          body,
           redirect: "manual",
         });
 
@@ -1061,12 +1065,7 @@ function createLocalApiHandler({ queuePath, allowedHosts = [] } = {}) {
           ([k]) => !stripped.has(k.toLowerCase()),
         );
 
-        const contentType = proxyRes.headers.get("content-type") || "";
-        let resBody = Buffer.from(await proxyRes.arrayBuffer());
-        if (contentType.toLowerCase().includes("text/html")) {
-          resBody = Buffer.from(rewriteIpCheckHtml(resBody.toString("utf8")), "utf8");
-        }
-
+        const resBody = Buffer.from(await proxyRes.arrayBuffer());
         res.writeHead(proxyRes.status, Object.fromEntries(responseHeaders));
         res.end(resBody);
       } catch (e) {

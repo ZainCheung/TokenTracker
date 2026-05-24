@@ -634,3 +634,128 @@ heatmap.3d.voxel.level3,ui,ActivityHeatmap3D,ActivityHeatmap3D,voxel_level3,"⚡
 heatmap.3d.voxel.level2,ui,ActivityHeatmap3D,ActivityHeatmap3D,voxel_level2,"🌱 Getting into the groove ({{value}} tokens)! Steady output, every keystroke is contributing to the architecture.",,active
 heatmap.3d.voxel.level1,ui,ActivityHeatmap3D,ActivityHeatmap3D,voxel_level1,"🍃 Every drop counts ({{value}} tokens). Tiny commits are investments in the future, embrace compound interest!",,active
 heatmap.3d.voxel.level0,ui,ActivityHeatmap3D,ActivityHeatmap3D,voxel_level0,"💤 Recharging. On days without coding, inspiration grows silently.",,active
+ipcheck.page.title,ui,IpCheckPage,IpCheckPage,page_title,"Claude IP Check",,active
+ipcheck.page.subtitle,ui,IpCheckPage,IpCheckPage,page_subtitle,"Inspect the exit IP used to reach Claude, plus reputation, geo, and risk signals that may affect sign-in or trigger rate-limiting.",,active
+ipcheck.mask.toggle,ui,IpCheckPage,IpCheckPage,mask_toggle,"Hide IP",,active
+ipcheck.ipv6.warn,ui,IpCheckPage,IpCheckPage,ipv6_warn,"IPv6 detected. Using IPv6 to reach Claude Code is not recommended; some checks may be incomplete.",,active
+ipcheck.ip.cn,ui,IpCheckPage,IpCheckPage,ip_cn,"China exit IPv4",,active
+ipcheck.ip.cloudflare,ui,IpCheckPage,IpCheckPage,ip_cloudflare,"Cloudflare exit",,active
+ipcheck.ip.claude,ui,IpCheckPage,IpCheckPage,ip_claude,"Claude exit",,active
+ipcheck.ip.failed,ui,IpCheckPage,IpCheckPage,ip_failed,"Unable to fetch",,active
+ipcheck.ip.loading,ui,IpCheckPage,IpCheckPage,ip_loading,"Loading...",,active
+ipcheck.trust.title,ui,IpCheckPage,IpCheckPage,trust_title,"Trust Score",,active
+ipcheck.trust.subtitle,ui,IpCheckPage,IpCheckPage,trust_subtitle,"IP cleanliness from Claude's risk view",,active
+ipcheck.trust.no_data,ui,IpCheckPage,IpCheckPage,trust_no_data,"No data",,active
+ipcheck.trust.no_ip,ui,IpCheckPage,IpCheckPage,trust_no_ip,"Claude exit IP not detected — cannot score",,active
+ipcheck.trust.no_score,ui,IpCheckPage,IpCheckPage,trust_no_score,"No score data for this IP",,active
+ipcheck.trust.gauge.low,ui,IpCheckPage,IpCheckPage,trust_gauge_low,"0 High risk",,active
+ipcheck.trust.gauge.high,ui,IpCheckPage,IpCheckPage,trust_gauge_high,"100 Trusted",,active
+ipcheck.trust.label.pristine,ui,IpCheckPage,IpCheckPage,trust_label_pristine,"Pristine",,active
+ipcheck.trust.label.clean,ui,IpCheckPage,IpCheckPage,trust_label_clean,"Clean",,active
+ipcheck.trust.label.good,ui,IpCheckPage,IpCheckPage,trust_label_good,"Good",,active
+ipcheck.trust.label.neutral,ui,IpCheckPage,IpCheckPage,trust_label_neutral,"Neutral",,active
+ipcheck.trust.label.suspicious,ui,IpCheckPage,IpCheckPage,trust_label_suspicious,"Suspicious",,active
+ipcheck.trust.label.unreachable,ui,IpCheckPage,IpCheckPage,trust_label_unreachable,"Unreachable",,active
+ipcheck.trust.text.excellent,ui,IpCheckPage,IpCheckPage,trust_text_excellent,"Excellent reputation",,active
+ipcheck.trust.text.great,ui,IpCheckPage,IpCheckPage,trust_text_great,"Strong reputation",,active
+ipcheck.trust.text.minor,ui,IpCheckPage,IpCheckPage,trust_text_minor,"Minor risk",,active
+ipcheck.trust.text.moderate,ui,IpCheckPage,IpCheckPage,trust_text_moderate,"Moderate risk",,active
+ipcheck.trust.text.severe,ui,IpCheckPage,IpCheckPage,trust_text_severe,"Severe risk",,active
+ipcheck.trust.text.restricted,ui,IpCheckPage,IpCheckPage,trust_text_restricted,"Restricted region — Claude enforces strict risk controls",,active
+ipcheck.trust.region_warn.title,ui,IpCheckPage,IpCheckPage,region_warn_title,"Claude exit IP is in {{region}}",,active
+ipcheck.trust.region_warn.body,ui,IpCheckPage,IpCheckPage,region_warn_body,"Avoid signing in — high chance of triggering account flagging.",,active
+ipcheck.trust.region_support,ui,IpCheckPage,IpCheckPage,region_support,"Claude support",,active
+ipcheck.trust.region.accessible,ui,IpCheckPage,IpCheckPage,region_accessible,"Accessible",,active
+ipcheck.common.unknown,ui,IpCheckPage,IpCheckPage,common_unknown,"Unknown",,active
+ipcheck.props.title,ui,IpCheckPage,IpCheckPage,props_title,"IP Attributes",,active
+ipcheck.props.region,ui,IpCheckPage,IpCheckPage,props_region,"Region",,active
+ipcheck.props.city,ui,IpCheckPage,IpCheckPage,props_city,"City",,active
+ipcheck.props.type,ui,IpCheckPage,IpCheckPage,props_type,"Type",,active
+ipcheck.props.asn,ui,IpCheckPage,IpCheckPage,props_asn,"ASN",,active
+ipcheck.props.org,ui,IpCheckPage,IpCheckPage,props_org,"ISP",,active
+ipcheck.props.residential,ui,IpCheckPage,IpCheckPage,props_residential,"Residential",,active
+ipcheck.props.datacenter,ui,IpCheckPage,IpCheckPage,props_datacenter,"Datacenter",,active
+ipcheck.security.title,ui,IpCheckPage,IpCheckPage,sec_title,"Security Checks",,active
+ipcheck.security.vpn,ui,IpCheckPage,IpCheckPage,sec_vpn,"VPN",,active
+ipcheck.security.proxy,ui,IpCheckPage,IpCheckPage,sec_proxy,"Proxy",,active
+ipcheck.security.tor,ui,IpCheckPage,IpCheckPage,sec_tor,"Tor",,active
+ipcheck.security.crawler,ui,IpCheckPage,IpCheckPage,sec_crawler,"Crawler",,active
+ipcheck.security.abuser,ui,IpCheckPage,IpCheckPage,sec_abuser,"Abuse history",,active
+ipcheck.security.proxy_flag,ui,IpCheckPage,IpCheckPage,sec_proxy_flag,"Proxy",,active
+ipcheck.security.crawler_yes,ui,IpCheckPage,IpCheckPage,sec_crawler_yes,"Yes",,active
+ipcheck.security.crawler_no,ui,IpCheckPage,IpCheckPage,sec_crawler_no,"No",,active
+ipcheck.security.abuser_yes,ui,IpCheckPage,IpCheckPage,sec_abuser_yes,"Reported",,active
+ipcheck.security.abuser_no,ui,IpCheckPage,IpCheckPage,sec_abuser_no,"Clean",,active
+ipcheck.security.clean,ui,IpCheckPage,IpCheckPage,sec_clean,"Not detected",,active
+ipcheck.avail.title,ui,IpCheckPage,IpCheckPage,avail_title,"Claude Availability",,active
+ipcheck.avail.tooltip,ui,IpCheckPage,IpCheckPage,avail_tooltip,"Claude servers run in the US; latency above 100ms from Asia is normal.",,active
+ipcheck.avail.refresh,ui,IpCheckPage,IpCheckPage,avail_refresh,"Refresh",,active
+ipcheck.avail.svc_row,ui,IpCheckPage,IpCheckPage,avail_svc_row,"Service status",,active
+ipcheck.avail.latency.normal,ui,IpCheckPage,IpCheckPage,avail_lat_normal,"Normal",,active
+ipcheck.avail.latency.good,ui,IpCheckPage,IpCheckPage,avail_lat_good,"Good",,active
+ipcheck.avail.latency.slow,ui,IpCheckPage,IpCheckPage,avail_lat_slow,"Slow",,active
+ipcheck.avail.latency.unreachable,ui,IpCheckPage,IpCheckPage,avail_lat_unreach,"Unreachable",,active
+ipcheck.avail.svc.none,ui,IpCheckPage,IpCheckPage,avail_svc_none,"All systems normal",,active
+ipcheck.avail.svc.minor,ui,IpCheckPage,IpCheckPage,avail_svc_minor,"Minor outage",,active
+ipcheck.avail.svc.major,ui,IpCheckPage,IpCheckPage,avail_svc_major,"Major outage",,active
+ipcheck.avail.svc.critical,ui,IpCheckPage,IpCheckPage,avail_svc_critical,"Critical outage",,active
+ipcheck.avail.svc.maintenance,ui,IpCheckPage,IpCheckPage,avail_svc_maintenance,"Maintenance",,active
+ipcheck.avail.svc.other,ui,IpCheckPage,IpCheckPage,avail_svc_other,"Disrupted",,active
+ipcheck.dns.title,ui,IpCheckPage,IpCheckPage,dns_title,"DNS Leak",,active
+ipcheck.dns.status,ui,IpCheckPage,IpCheckPage,dns_status,"Status",,active
+ipcheck.dns.outlet,ui,IpCheckPage,IpCheckPage,dns_outlet,"DNS exit",,active
+ipcheck.dns.outlet_ip,ui,IpCheckPage,IpCheckPage,dns_outlet_ip,"DNS exit IP",,active
+ipcheck.dns.isp,ui,IpCheckPage,IpCheckPage,dns_isp,"Provider",,active
+ipcheck.dns.leaked,ui,IpCheckPage,IpCheckPage,dns_leaked,"Possible leak",,active
+ipcheck.dns.no_leak,ui,IpCheckPage,IpCheckPage,dns_no_leak,"No leak detected",,active
+ipcheck.dns.encrypted,ui,IpCheckPage,IpCheckPage,dns_encrypted,"DNS encrypted or hidden",,active
+ipcheck.dns.cn_tag,ui,IpCheckPage,IpCheckPage,dns_cn_tag,"China DNS",,active
+ipcheck.udp.title,ui,IpCheckPage,IpCheckPage,udp_title,"WebRTC UDP Leak",,active
+ipcheck.udp.status,ui,IpCheckPage,IpCheckPage,udp_status,"Status",,active
+ipcheck.udp.outlet,ui,IpCheckPage,IpCheckPage,udp_outlet,"UDP exit",,active
+ipcheck.udp.outlet_ip,ui,IpCheckPage,IpCheckPage,udp_outlet_ip,"UDP exit IP",,active
+ipcheck.udp.origin,ui,IpCheckPage,IpCheckPage,udp_origin,"Origin",,active
+ipcheck.udp.disabled,ui,IpCheckPage,IpCheckPage,udp_disabled,"WebRTC disabled",,active
+ipcheck.udp.no_leak,ui,IpCheckPage,IpCheckPage,udp_no_leak,"No leak detected",,active
+ipcheck.udp.leaked,ui,IpCheckPage,IpCheckPage,udp_leaked,"Possible leak",,active
+ipcheck.udp.anomaly,ui,IpCheckPage,IpCheckPage,udp_anomaly,"Anomaly",,active
+ipcheck.device.title,ui,IpCheckPage,IpCheckPage,dev_title,"Device Info",,active
+ipcheck.device.tz,ui,IpCheckPage,IpCheckPage,dev_tz,"Timezone",,active
+ipcheck.device.lang,ui,IpCheckPage,IpCheckPage,dev_lang,"Language",,active
+ipcheck.device.os,ui,IpCheckPage,IpCheckPage,dev_os,"OS / Browser",,active
+ipcheck.device.touch,ui,IpCheckPage,IpCheckPage,dev_touch,"Touch",,active
+ipcheck.device.net,ui,IpCheckPage,IpCheckPage,dev_net,"Network type",,active
+ipcheck.device.dnt,ui,IpCheckPage,IpCheckPage,dev_dnt,"Do Not Track",,active
+ipcheck.device.webgl_render,ui,IpCheckPage,IpCheckPage,dev_webgl_render,"WebGL renderer",,active
+ipcheck.device.canvas_fp,ui,IpCheckPage,IpCheckPage,dev_canvas_fp,"Canvas fingerprint",,active
+ipcheck.device.webgl_fp,ui,IpCheckPage,IpCheckPage,dev_webgl_fp,"WebGL fingerprint",,active
+ipcheck.device.match,ui,IpCheckPage,IpCheckPage,dev_match,"Match",,active
+ipcheck.device.mismatch,ui,IpCheckPage,IpCheckPage,dev_mismatch,"Mismatch",,active
+ipcheck.device.local,ui,IpCheckPage,IpCheckPage,dev_local,"Local",,active
+ipcheck.device.estimate_suffix,ui,IpCheckPage,IpCheckPage,dev_est_suffix,"(est.)",,active
+ipcheck.device.diff_equal,ui,IpCheckPage,IpCheckPage,dev_diff_eq,"Slight offset",,active
+ipcheck.device.diff_ahead,ui,IpCheckPage,IpCheckPage,dev_diff_ahead,"Claude is {{h}}h ahead",,active
+ipcheck.device.diff_behind,ui,IpCheckPage,IpCheckPage,dev_diff_behind,"Claude is {{h}}h behind",,active
+ipcheck.device.lang_expected,ui,IpCheckPage,IpCheckPage,dev_lang_expected,"Claude region usually",,active
+ipcheck.device.touch_yes,ui,IpCheckPage,IpCheckPage,dev_touch_yes,"Yes",,active
+ipcheck.device.touch_no,ui,IpCheckPage,IpCheckPage,dev_touch_no,"No",,active
+ipcheck.device.dnt_on,ui,IpCheckPage,IpCheckPage,dev_dnt_on,"On",,active
+ipcheck.device.dnt_off,ui,IpCheckPage,IpCheckPage,dev_dnt_off,"Off",,active
+ipcheck.device.dnt_unset,ui,IpCheckPage,IpCheckPage,dev_dnt_unset,"Unset",,active
+ipcheck.device.net_unsupported,ui,IpCheckPage,IpCheckPage,dev_net_unsup,"Not detected",,active
+ipcheck.device.unsupported,ui,IpCheckPage,IpCheckPage,dev_unsupported,"Unsupported",,active
+ipcheck.history.title,ui,IpCheckPage,IpCheckPage,hist_title,"Claude exit IP history",,active
+ipcheck.history.subtitle,ui,IpCheckPage,IpCheckPage,hist_subtitle,"Stored only in this browser, up to 6 entries",,active
+ipcheck.history.clear,ui,IpCheckPage,IpCheckPage,hist_clear,"Clear",,active
+ipcheck.history.empty,ui,IpCheckPage,IpCheckPage,hist_empty,"No history yet",,active
+ipcheck.history.current,ui,IpCheckPage,IpCheckPage,hist_current,"Now",,active
+ipcheck.region.CN,ui,IpCheckPage,IpCheckPage,region_cn,"Mainland China",,active
+ipcheck.region.HK,ui,IpCheckPage,IpCheckPage,region_hk,"Hong Kong",,active
+ipcheck.region.MO,ui,IpCheckPage,IpCheckPage,region_mo,"Macao",,active
+ipcheck.region.RU,ui,IpCheckPage,IpCheckPage,region_ru,"Russia",,active
+ipcheck.region.KP,ui,IpCheckPage,IpCheckPage,region_kp,"North Korea",,active
+ipcheck.region.IR,ui,IpCheckPage,IpCheckPage,region_ir,"Iran",,active
+ipcheck.region.SY,ui,IpCheckPage,IpCheckPage,region_sy,"Syria",,active
+ipcheck.region.CU,ui,IpCheckPage,IpCheckPage,region_cu,"Cuba",,active
+ipcheck.region.BY,ui,IpCheckPage,IpCheckPage,region_by,"Belarus",,active
+ipcheck.region.VE,ui,IpCheckPage,IpCheckPage,region_ve,"Venezuela",,active
