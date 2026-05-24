@@ -1144,8 +1144,13 @@ export default function IpCheckPage() {
 // ─── Internal components ───────────────────────────────────────────────────
 
 function Card({ title, subtitle, action, children, className = "" }) {
+  // Plain block layout — let CSS grid's default align-items: stretch handle
+  // cross-card equal height. Avoid `h-full flex flex-col` + flex-1 wrapper
+  // combo: WKWebView (macOS app dashboard embed) renders that pattern with
+  // the header pushed toward the bottom and a tall empty area above it.
+  // Plain block flow keeps the header at the top in Chrome AND WKWebView.
   return (
-    <section className={`h-full flex flex-col rounded-xl border border-oai-gray-200 dark:border-oai-gray-800 bg-white dark:bg-oai-gray-900 p-5 sm:p-6 ${className}`}>
+    <section className={`rounded-xl border border-oai-gray-200 dark:border-oai-gray-800 bg-white dark:bg-oai-gray-900 p-5 sm:p-6 ${className}`}>
       <header className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-oai-black dark:text-white">{title}</h2>
@@ -1153,7 +1158,7 @@ function Card({ title, subtitle, action, children, className = "" }) {
         </div>
         {action}
       </header>
-      <div className="flex-1 min-h-0">{children}</div>
+      {children}
     </section>
   );
 }
