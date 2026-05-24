@@ -297,8 +297,12 @@ export default function IpCheckPage() {
       return `<span class="ip-mask-target">${safeIp}</span>`;
     }
     function linkIP(ip) {
+      // Display-only: the upstream /proxy/ipcheck/ip/{ip} detail page is not
+      // wired into our app, and a clickable link surprises users who expect
+      // read-only metrics. Keep .ip-link class so the mask toggle observer
+      // still picks these nodes up for the Hide IP feature.
       if (!ip) return `<span class="text-oai-gray-400 dark:text-oai-gray-500">${esc(t.failed)}</span>`;
-      return `<a class="ip-link no-underline hover:underline underline-offset-4 decoration-1" href="${PROXY}/ip/${encodeURIComponent(ip)}" target="_blank" rel="noopener">${displayIP(ip)}</a>`;
+      return `<span class="ip-link">${displayIP(ip)}</span>`;
     }
     function row(label, valueHtml) {
       const value = valueHtml === undefined
@@ -1144,20 +1148,19 @@ export default function IpCheckPage() {
 // ─── Internal components ───────────────────────────────────────────────────
 
 function Card({ title, subtitle, action, children, className = "" }) {
-  // Plain block layout — let CSS grid's default align-items: stretch handle
-  // cross-card equal height. Avoid `h-full flex flex-col` + flex-1 wrapper
-  // combo: WKWebView (macOS app dashboard embed) renders that pattern with
-  // the header pushed toward the bottom and a tall empty area above it.
-  // Plain block flow keeps the header at the top in Chrome AND WKWebView.
+  // Use a plain <div> for the header row, NOT the semantic <header> element:
+  // macOS app's WKWebView (Safari) applies a 36px padding-top to <header>
+  // via its user-agent stylesheet (Blink does not). Chrome looks fine, the
+  // app does not. <div> sidesteps all UA semantics.
   return (
     <section className={`rounded-xl border border-oai-gray-200 dark:border-oai-gray-800 bg-white dark:bg-oai-gray-900 p-5 sm:p-6 ${className}`}>
-      <header className="flex items-start justify-between gap-3 mb-4">
+      <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-oai-black dark:text-white">{title}</h2>
           {subtitle ? <p className="mt-0.5 text-xs text-oai-gray-500 dark:text-oai-gray-400">{subtitle}</p> : null}
         </div>
         {action}
-      </header>
+      </div>
       {children}
     </section>
   );
