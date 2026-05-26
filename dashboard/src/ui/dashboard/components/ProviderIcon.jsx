@@ -227,6 +227,24 @@ const PROVIDER_LOGO_MAP = {
   OPENCODE: "/brand-logos/opencode.svg",
 };
 
+function PlaceholderIcon({ size = 16, className = "" }) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="1.5" 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      className={className}
+    >
+      <circle cx="12" cy="12" r="7.5" strokeDasharray="3 3" />
+    </svg>
+  );
+}
+
 /**
  * Renders a provider's brand icon. Prefers the original multi-color logo from
  * /brand-logos/ when available, otherwise falls back to a mono SVG (currentColor).
@@ -255,11 +273,11 @@ export function ProviderIcon({ provider, size = 16, color, className = "" }) {
     return <IconComponent size={size} className={className} />;
   }
 
-  // Fallback: colored dot for unknown providers
+  // Fallback: dashed placeholder circle for unknown/other providers to keep layout aligned
   return (
-    <div
-      className="rounded-full shrink-0"
-      style={{ width: size * 0.5, height: size * 0.5, backgroundColor: color }}
+    <PlaceholderIcon 
+      size={size} 
+      className={`text-oai-gray-400 dark:text-oai-gray-500 shrink-0 ${className}`} 
     />
   );
 }

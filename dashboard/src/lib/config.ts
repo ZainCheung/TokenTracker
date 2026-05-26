@@ -9,11 +9,16 @@ export function getBackendBaseUrl() {
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
   if (isLocalhost) return "";
 
+  // Non-localhost (tokentracker.cc): dashboard usage data comes from the
+  // cloud. Delegate to getInsforgeRemoteUrl so the hardcoded prod fallback
+  // applies when VITE_* env wasn't injected at build time — otherwise this
+  // returned "" and usage API calls hit the Vercel host (no edge functions
+  // there) → 404 → an empty dashboard after login.
   const env = typeof import.meta !== "undefined" ? import.meta.env : undefined;
   return (
     env?.VITE_TOKENTRACKER_BACKEND_BASE_URL ||
     env?.VITE_INSFORGE_BASE_URL ||
-    ""
+    getInsforgeRemoteUrl()
   ).trim();
 }
 

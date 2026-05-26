@@ -62,17 +62,51 @@ function buildHeatmapForModal(daily) {
   return buildActivityHeatmap({ dailyRows, weeks: 52, to: lastDate });
 }
 
+const shimmerStyle = `
+  @keyframes tt-shimmer {
+    100% { transform: translateX(100%); }
+  }
+  .tt-shimmer-bar {
+    position: relative;
+    overflow: hidden;
+  }
+  .tt-shimmer-bar::after {
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.02) 20%,
+      rgba(0, 0, 0, 0.06) 60%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    animation: tt-shimmer 1.6s infinite;
+    content: '';
+  }
+  .dark .tt-shimmer-bar::after {
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.02) 20%,
+      rgba(255, 255, 255, 0.06) 60%,
+      rgba(255, 255, 255, 0) 100%
+    );
+  }
+`;
+
 /**
  * Skeleton that mirrors the real profile layout (header → stat strip →
  * fact list → heatmap → provider list). Same heights as the loaded view
  * to avoid layout shift on resolve.
  */
 function ProfileSkeleton() {
-  const bar = "rounded bg-oai-gray-200/70 dark:bg-oai-gray-800/60";
+  const bar = "rounded bg-oai-gray-200/50 dark:bg-oai-gray-800/40 tt-shimmer-bar";
   return (
-    <div className="animate-pulse">
-      <div className="flex items-start gap-4 px-6 pt-6 pb-5 border-b border-oai-gray-200/80 dark:border-oai-gray-800/60">
-        <div className="h-14 w-14 rounded-full bg-oai-gray-200/70 dark:bg-oai-gray-800/60 shrink-0" />
+    <div>
+      <style dangerouslySetInnerHTML={{ __html: shimmerStyle }} />
+      <div className="flex items-start gap-4 px-6 pt-6 pb-5 border-b border-oai-gray-200/80 dark:border-oai-gray-800/60 animate-fade-in">
+        <div className="h-14 w-14 rounded-full bg-oai-gray-200/50 dark:bg-oai-gray-800/40 tt-shimmer-bar shrink-0" />
         <div className="flex-1 min-w-0 space-y-2 pt-1">
           <div className={cn(bar, "h-4 w-40")} />
           <div className={cn(bar, "h-3 w-56")} />
@@ -100,7 +134,7 @@ function ProfileSkeleton() {
           <div className={cn(bar, "h-3 w-44 mb-4")} />
           <div className="grid grid-cols-[repeat(52,1fr)] gap-[2px]">
             {Array.from({ length: 7 * 52 }).map((_, i) => (
-              <div key={i} className="aspect-square rounded-[2px] bg-oai-gray-200/60 dark:bg-oai-gray-800/50" />
+              <div key={i} className="aspect-square rounded-[2px] bg-oai-gray-200/40 dark:bg-oai-gray-800/30 tt-shimmer-bar" />
             ))}
           </div>
         </div>
@@ -140,7 +174,13 @@ function SectionLabel({ children }) {
 function Stat({ value, label }) {
   return (
     <div>
-      <div className="text-2xl font-semibold tabular-nums tracking-tight leading-none text-oai-black dark:text-white">
+      <div 
+        className="text-2xl font-black tabular-nums tracking-tight leading-none text-oai-black dark:text-white"
+        style={{ 
+          fontFamily: '"DIN Alternate-Bold", "DIN Alternate", "DIN Condensed-Bold", "Impact", -apple-system, sans-serif',
+          fontWeight: 900 
+        }}
+      >
         {value}
       </div>
       <div className="mt-1.5 text-[11px] text-oai-gray-500 dark:text-oai-gray-400">{label}</div>
@@ -153,7 +193,7 @@ function FactRow({ label, children }) {
   return (
     <div className="flex items-baseline gap-3 text-sm">
       <dt className="shrink-0 w-28 whitespace-nowrap text-oai-gray-500 dark:text-oai-gray-400">{label}</dt>
-      <dd className="min-w-0 flex-1 text-oai-gray-900 dark:text-oai-gray-100 tabular-nums truncate">
+      <dd className="min-w-0 flex-1 text-oai-gray-900 dark:text-oai-gray-100 tabular-nums truncate flex items-baseline gap-2 flex-wrap">
         {children}
       </dd>
     </div>
@@ -163,7 +203,7 @@ function FactRow({ label, children }) {
 function Header({ user, onClose }) {
   const handle = extractGithubHandle(user?.github_url);
   return (
-    <div className="flex items-start gap-4 px-6 pt-6 pb-5 border-b border-oai-gray-200/80 dark:border-oai-gray-800/60">
+    <div className="flex items-center gap-4 px-6 pt-6 pb-5 border-b border-oai-gray-200/80 dark:border-oai-gray-800/60">
       <LeaderboardAvatar
         avatarUrl={user?.avatar_url}
         displayName={user?.display_name || ""}
@@ -177,7 +217,13 @@ function Header({ user, onClose }) {
             {user?.display_name || "—"}
           </h2>
           {user?.rank ? (
-            <span className="shrink-0 text-xs font-medium tabular-nums text-oai-gray-500 dark:text-oai-gray-400">
+            <span className={cn(
+              "shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-bold font-mono uppercase tracking-wider border shadow-sm",
+              user.rank === 1 && "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400 dark:bg-amber-400/10",
+              user.rank === 2 && "bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400 dark:bg-slate-400/10",
+              user.rank === 3 && "bg-orange-500/10 text-orange-700 border-orange-500/20 dark:text-orange-400 dark:bg-orange-400/10",
+              user.rank > 3 && "bg-oai-gray-100 dark:bg-oai-gray-900/60 text-oai-gray-500 dark:text-oai-gray-400 border-oai-gray-200/60 dark:border-oai-gray-800"
+            )}>
               {copy("leaderboard.profile_modal.rank", { rank: user.rank })}
             </span>
           ) : null}
@@ -197,10 +243,10 @@ function Header({ user, onClose }) {
       <button
         type="button"
         onClick={onClose}
-        className="shrink-0 -mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-md text-oai-gray-500 dark:text-oai-gray-400 hover:text-oai-gray-900 dark:hover:text-white hover:bg-oai-gray-100 dark:hover:bg-oai-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand/50 transition-colors"
+        className="shrink-0 -mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-md text-oai-gray-500 dark:text-oai-gray-400 hover:text-oai-gray-900 dark:hover:text-white hover:bg-oai-gray-100 dark:hover:bg-oai-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand/50 transition-colors group"
         aria-label={copy("leaderboard.profile_modal.close")}
       >
-        <X size={16} strokeWidth={2} aria-hidden />
+        <X size={16} strokeWidth={2} aria-hidden className="transition-transform duration-200 group-hover:rotate-90 group-active:scale-90" />
       </button>
     </div>
   );
@@ -288,23 +334,25 @@ function ModalBody({ data, currency, rate, onClose }) {
         {/* Fact list — streak, best day, top model. Three lines, no card. */}
         <dl className="space-y-2 border-t border-oai-gray-200/70 dark:border-oai-gray-800/60 pt-5">
           <FactRow label={copy("leaderboard.profile_modal.streak.current")}>
-            <span>
+            <span className="font-mono text-xs tracking-tight bg-oai-gray-100/60 dark:bg-oai-gray-900/50 px-1.5 py-0.5 rounded border border-oai-gray-200/30 dark:border-oai-gray-800/30">
               {copy("leaderboard.profile_modal.streak.days", { count: streak?.current_days ?? 0 })}
             </span>
-            <span className="ml-2 text-oai-gray-500 dark:text-oai-gray-400">
+            <span className="text-xs text-oai-gray-500 dark:text-oai-gray-400 font-mono">
               (max {streak?.longest_days ?? 0})
             </span>
           </FactRow>
           <FactRow label={copy("leaderboard.profile_modal.best_day.title")}>
             {bestDay ? (
               <>
-                <span>{bestDay.date}</span>
-                <span className="ml-2 text-oai-gray-500 dark:text-oai-gray-400">
+                <span className="font-mono text-xs tracking-tight bg-oai-gray-100/60 dark:bg-oai-gray-900/50 px-1.5 py-0.5 rounded border border-oai-gray-200/30 dark:border-oai-gray-800/30">
                   {formatTokens(bestDay.total_tokens)}
+                </span>
+                <span className="text-xs text-oai-gray-500 dark:text-oai-gray-400 font-mono">
+                  on {bestDay.date}
                 </span>
               </>
             ) : (
-              <span className="text-oai-gray-500 dark:text-oai-gray-400">
+              <span className="text-xs text-oai-gray-400 dark:text-oai-gray-500 font-mono">
                 {copy("leaderboard.profile_modal.best_day.none")}
               </span>
             )}
@@ -312,15 +360,17 @@ function ModalBody({ data, currency, rate, onClose }) {
           <FactRow label={copy("leaderboard.profile_modal.models.favorite")}>
             {favoriteName ? (
               <>
-                <span className="truncate">{favoriteName}</span>
+                <span className="font-mono text-xs tracking-tight bg-oai-gray-100/60 dark:bg-oai-gray-900/50 px-1.5 py-0.5 rounded border border-oai-gray-200/30 dark:border-oai-gray-800/30 truncate max-w-[200px] inline-block align-bottom">
+                  {favoriteName}
+                </span>
                 {modelCount > 1 && (
-                  <span className="ml-2 text-oai-gray-500 dark:text-oai-gray-400">
+                  <span className="text-xs text-oai-gray-500 dark:text-oai-gray-400 font-mono">
                     {copy("leaderboard.profile_modal.models.count", { count: modelCount })}
                   </span>
                 )}
               </>
             ) : (
-              <span className="text-oai-gray-500 dark:text-oai-gray-400">
+              <span className="text-xs text-oai-gray-400 dark:text-oai-gray-500 font-mono">
                 {copy("leaderboard.profile_modal.models.none")}
               </span>
             )}
@@ -399,6 +449,7 @@ export function LeaderboardProfileModal({ isOpen, onClose, userId, period, acces
               "rounded-2xl bg-white dark:bg-oai-gray-950",
               "shadow-[0_20px_60px_-20px_rgba(0,0,0,0.25)] dark:shadow-[0_20px_60px_-10px_rgba(0,0,0,0.65)]",
               "ring-1 ring-oai-gray-200 dark:ring-oai-gray-800 overflow-hidden",
+              "dark:border-t dark:border-white/[0.08]",
             )}
           >
             <Dialog.Title render={<h2 className="sr-only" />}>

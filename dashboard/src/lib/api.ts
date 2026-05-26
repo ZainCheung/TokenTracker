@@ -30,17 +30,69 @@ const PATHS = {
   usageLimits: "tokentracker-usage-limits",
 };
 
+/**
+ * usage-* (local CLI) → account-* (cloud) slug map. The cloud `account-*`
+ * edge functions mirror the local `tokentracker-usage-*` response schema
+ * exactly (see their source: "Mirrors local-api.js ... response schema"),
+ * so the dashboard components render identically off either source.
+ */
+const USAGE_TO_ACCOUNT_SLUG: Record<string, string> = {
+  "tokentracker-usage-summary": "tokentracker-account-summary",
+  "tokentracker-usage-daily": "tokentracker-account-daily",
+  "tokentracker-usage-hourly": "tokentracker-account-hourly",
+  "tokentracker-usage-monthly": "tokentracker-account-monthly",
+  "tokentracker-usage-heatmap": "tokentracker-account-heatmap",
+  "tokentracker-usage-model-breakdown": "tokentracker-account-model-breakdown",
+};
+
+function isLocalhostHost() {
+  return (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  );
+}
+
 async function fetchLocalJson(slug: string, params?: AnyRecord, options?: AnyRecord) {
+  const accessToken = options?.accessToken as string | undefined;
+  const accountSlug = USAGE_TO_ACCOUNT_SLUG[slug];
+
+  // Deployed web (e.g. tokentracker.cc): there's no local CLI behind
+  // window.location.origin, so usage-* calls would 404. When the visitor is
+  // signed in and the slug has a cloud account-* mirror, route to the cloud
+  // aggregator (cross-device usage by user_id) with the auth token. Local CLI
+  // (localhost) keeps the original same-origin usage-* path.
+  if (!isLocalhostHost() && accessToken && accountSlug) {
+    const base = getInsforgeRemoteUrl().replace(/\/$/, "");
+    const url = new URL(`${base}/functions/${accountSlug}`);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value != null && value !== "") url.searchParams.set(key, String(value));
+      }
+    }
+    const headers: Record<string, string> = { Accept: "application/json" };
+    const anonKey = getInsforgeAnonKey();
+    if (anonKey) headers.apikey = anonKey;
+    if (isValidJwtShape(accessToken)) headers.Authorization = `Bearer ${accessToken}`;
+    const response = await fetch(url.toString(), { headers, cache: "no-store" });
+    if (!response.ok) {
+      const err: any = new Error(`Request failed with HTTP ${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
+    return response.json();
+  }
+
   const url = new URL(`/functions/${slug}`, window.location.origin);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value != null && value !== "") url.searchParams.set(key, String(value));
     }
   }
+  const { accessToken: _omit, ...fetchOptions } = options || {};
   const response = await fetch(url.toString(), {
     headers: { Accept: "application/json" },
     cache: "no-store",
-    ...options,
+    ...fetchOptions,
   });
   if (!response.ok) {
     const err: any = new Error(`Request failed with HTTP ${response.status}`);
@@ -85,7 +137,7 @@ export async function getUsageSummary({
   const tzParams = buildTimeZoneParams({ timeZone, tzOffsetMinutes });
   const filterParams = buildFilterParams({ source, model });
   const rollingParams = rolling ? { rolling: "1" } : {};
-  return fetchLocalJson(PATHS.usageSummary, { from, to, ...filterParams, ...tzParams, ...rollingParams });
+  return fetchLocalJson(PATHS.usageSummary, { from, to, ...filterParams, ...tzParams, ...rollingParams }, { accessToken });
 }
 
 export async function getProjectUsageSummary({
@@ -333,7 +385,7 @@ export async function getUsageModelBreakdown({
   }
   const tzParams = buildTimeZoneParams({ timeZone, tzOffsetMinutes });
   const filterParams = buildFilterParams({ source });
-  return fetchLocalJson(PATHS.usageModelBreakdown, { from, to, ...filterParams, ...tzParams });
+  return fetchLocalJson(PATHS.usageModelBreakdown, { from, to, ...filterParams, ...tzParams }, { accessToken });
 }
 
 export async function getUsageCategoryBreakdown({
@@ -364,7 +416,7 @@ export async function getUsageDaily({
   }
   const tzParams = buildTimeZoneParams({ timeZone, tzOffsetMinutes });
   const filterParams = buildFilterParams({ source, model });
-  return fetchLocalJson(PATHS.usageDaily, { from, to, ...filterParams, ...tzParams });
+  return fetchLocalJson(PATHS.usageDaily, { from, to, ...filterParams, ...tzParams }, { accessToken });
 }
 
 export async function getUsageHourly({
@@ -381,7 +433,7 @@ export async function getUsageHourly({
   const tzParams = buildTimeZoneParams({ timeZone, tzOffsetMinutes });
   const filterParams = buildFilterParams({ source, model });
   const params = day ? { day, ...filterParams, ...tzParams } : { ...filterParams, ...tzParams };
-  return fetchLocalJson(PATHS.usageHourly, params);
+  return fetchLocalJson(PATHS.usageHourly, params, { accessToken });
 }
 
 export async function getUsageMonthly({
@@ -403,7 +455,7 @@ export async function getUsageMonthly({
     ...(to ? { to } : {}),
     ...filterParams,
     ...tzParams,
-  });
+  }, { accessToken });
 }
 
 export async function getUsageLimits(opts: { refresh?: boolean } = {}) {
@@ -432,5 +484,5 @@ export async function getUsageHeatmap({
     week_starts_on: weekStartsOn,
     ...filterParams,
     ...tzParams,
-  });
+  }, { accessToken });
 }
