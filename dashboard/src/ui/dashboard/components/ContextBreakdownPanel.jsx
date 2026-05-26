@@ -18,8 +18,8 @@ import { getBrowserTimeZone, getBrowserTimeZoneOffsetMinutes } from "../../../li
 // Hues are picked to match the project's existing PROVIDER_COLORS (Claude
 // violet, Codex emerald) so the panel inherits the provider chip's identity.
 const SOURCE_HUE = {
-  claude: 290, // violet
-  codex: 165, // emerald
+  claude: 35, // orange (was 290 violet)
+  codex: 250, // blue (was 165 emerald)
 };
 
 // OKLCH ramp per bucket key. We vary chroma + lightness within the hue so

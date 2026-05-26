@@ -31,7 +31,7 @@ export function useTrendData({
   const [error, setError] = useState<string | null>(null);
   const mockEnabled = isMockEnabled();
   const tokenReady = isAccessTokenReady(accessToken);
-  const cacheAllowed = !guestAllowed;
+  const cacheAllowed = !guestAllowed && !mockEnabled;
   const sharedEnabled = Array.isArray(sharedRows);
   const sharedFrom = sharedRange?.from || from;
   const sharedTo = sharedRange?.to || to;

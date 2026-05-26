@@ -759,3 +759,27 @@ ipcheck.region.SY,ui,IpCheckPage,IpCheckPage,region_sy,"Syria",,active
 ipcheck.region.CU,ui,IpCheckPage,IpCheckPage,region_cu,"Cuba",,active
 ipcheck.region.BY,ui,IpCheckPage,IpCheckPage,region_by,"Belarus",,active
 ipcheck.region.VE,ui,IpCheckPage,IpCheckPage,region_ve,"Venezuela",,active
+leaderboard.profile_modal.close,dashboard,LeaderboardProfileModal,LeaderboardProfileModal,close,"Close",,active
+leaderboard.profile_modal.loading,dashboard,LeaderboardProfileModal,LeaderboardProfileModal,loading,"Loading profile…",,active
+leaderboard.profile_modal.error,dashboard,LeaderboardProfileModal,LeaderboardProfileModal,error,"Failed to load profile.",,active
+leaderboard.profile_modal.empty,dashboard,LeaderboardProfileModal,LeaderboardProfileModal,empty,"This profile is not public.",,active
+leaderboard.profile_modal.row_aria,dashboard,LeaderboardPage,LeaderboardRow,row_aria,"Open profile for {{name}}",,active
+leaderboard.profile_modal.rank,dashboard,LeaderboardProfileModal,Hero,rank,"#{{rank}}",,active
+leaderboard.profile_modal.hero.total_tokens,dashboard,LeaderboardProfileModal,Hero,total_tokens,"Total Tokens",,active
+leaderboard.profile_modal.hero.total_cost,dashboard,LeaderboardProfileModal,Hero,total_cost,"Total Cost",,active
+leaderboard.profile_modal.hero.github,dashboard,LeaderboardProfileModal,Hero,github,"GitHub profile",,active
+leaderboard.profile_modal.stat.total_cost,dashboard,LeaderboardProfileModal,StatCards,total_cost,"Total Cost",,active
+leaderboard.profile_modal.stat.total_tokens,dashboard,LeaderboardProfileModal,StatCards,total_tokens,"Total Tokens",,active
+leaderboard.profile_modal.stat.active_days,dashboard,LeaderboardProfileModal,StatCards,active_days,"Active Days",,active
+leaderboard.profile_modal.stat.avg_per_day,dashboard,LeaderboardProfileModal,StatCards,avg_per_day,"Avg/Day",,active
+leaderboard.profile_modal.streak.current,dashboard,LeaderboardProfileModal,Streak,current,"Current Streak",,active
+leaderboard.profile_modal.streak.longest,dashboard,LeaderboardProfileModal,Streak,longest,"Longest Streak",,active
+leaderboard.profile_modal.streak.days,dashboard,LeaderboardProfileModal,Streak,days,"{{count}} days",,active
+leaderboard.profile_modal.best_day.title,dashboard,LeaderboardProfileModal,BestDay,title,"Best Day",,active
+leaderboard.profile_modal.best_day.none,dashboard,LeaderboardProfileModal,BestDay,none,"—",,active
+leaderboard.profile_modal.models.count,dashboard,LeaderboardProfileModal,Models,count,"{{count}} models used",,active
+leaderboard.profile_modal.models.favorite,dashboard,LeaderboardProfileModal,Models,favorite,"Favorite",,active
+leaderboard.profile_modal.models.none,dashboard,LeaderboardProfileModal,Models,none,"No models tracked",,active
+leaderboard.profile_modal.heatmap.title,dashboard,LeaderboardProfileModal,Heatmap,title,"Activity (last 365 days)",,active
+leaderboard.profile_modal.providers.title,dashboard,LeaderboardProfileModal,Providers,title,"By provider",,active
+leaderboard.profile_modal.providers.none,dashboard,LeaderboardProfileModal,Providers,none,"No usage this period.",,active

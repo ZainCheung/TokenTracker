@@ -522,6 +522,99 @@ async function handleLocalApi(req, res, url) {
     return true;
   }
 
+  // 处理 usage-monthly
+  if (pathname === "/functions/tokentracker-usage-monthly") {
+    const from = url.searchParams.get("from") || "";
+    const to = url.searchParams.get("to") || "";
+    const rows = readQueueData();
+    const byMonth = new Map();
+    for (const row of rows) {
+      if (!row.hour_start) continue;
+      const day = row.hour_start.slice(0, 10);
+      if (day < from || day > to) continue;
+      const month = day.slice(0, 7);
+      if (!byMonth.has(month)) {
+        byMonth.set(month, {
+          month,
+          total_tokens: 0,
+          billable_total_tokens: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cached_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          reasoning_output_tokens: 0,
+          conversation_count: 0,
+          models: {},
+        });
+      }
+      const agg = byMonth.get(month);
+      agg.total_tokens += row.total_tokens || 0;
+      agg.billable_total_tokens += row.billable_total_tokens ?? row.total_tokens ?? 0;
+      agg.input_tokens += row.input_tokens || 0;
+      agg.output_tokens += row.output_tokens || 0;
+      agg.cached_input_tokens += row.cached_input_tokens || 0;
+      agg.cache_creation_input_tokens += row.cache_creation_input_tokens || 0;
+      agg.reasoning_output_tokens += row.reasoning_output_tokens || 0;
+      agg.conversation_count += row.conversation_count || 0;
+
+      const model = row.model || "unknown";
+      agg.models[model] = (agg.models[model] || 0) + (row.total_tokens || 0);
+    }
+    const data = Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ from, to, data }));
+    return true;
+  }
+
+  // 处理 usage-hourly
+  if (pathname === "/functions/tokentracker-usage-hourly") {
+    const day = url.searchParams.get("day") || new Date().toISOString().slice(0, 10);
+    const rows = readQueueData();
+    const hourlyData = [];
+    for (let i = 0; i < 24; i++) {
+      const hourStr = String(i).padStart(2, "0");
+      hourlyData.push({
+        hour: hourStr,
+        total_tokens: 0,
+        billable_total_tokens: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        reasoning_output_tokens: 0,
+        conversation_count: 0,
+        models: {},
+      });
+    }
+
+    for (const row of rows) {
+      if (!row.hour_start) continue;
+      const rowDay = row.hour_start.slice(0, 10);
+      if (rowDay !== day) continue;
+      const hourStr = row.hour_start.slice(11, 13);
+      const hourIdx = parseInt(hourStr, 10);
+      if (hourIdx >= 0 && hourIdx < 24) {
+        const agg = hourlyData[hourIdx];
+        agg.total_tokens += row.total_tokens || 0;
+        agg.billable_total_tokens += row.billable_total_tokens ?? row.total_tokens ?? 0;
+        agg.input_tokens += row.input_tokens || 0;
+        agg.output_tokens += row.output_tokens || 0;
+        agg.cached_input_tokens += row.cached_input_tokens || 0;
+        agg.cache_creation_input_tokens += row.cache_creation_input_tokens || 0;
+        agg.reasoning_output_tokens += row.reasoning_output_tokens || 0;
+        agg.conversation_count += row.conversation_count || 0;
+
+        const model = row.model || "unknown";
+        agg.models[model] = (agg.models[model] || 0) + (row.total_tokens || 0);
+      }
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ day, data: hourlyData }));
+    return true;
+  }
+
+
   // 处理 usage-heatmap
   if (pathname === "/functions/tokentracker-usage-heatmap") {
     const weeks = parseInt(url.searchParams.get("weeks") || "52", 10);

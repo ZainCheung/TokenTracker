@@ -213,21 +213,61 @@ export async function refreshLeaderboard({ accessToken, period, source }: AnyRec
   });
 }
 
+/**
+ * Detailed per-user profile used by the leaderboard modal.
+ * Returns hero totals, streak, best day, model highlight, per-provider
+ * breakdown, 365-day heatmap and a period-scoped daily trend.
+ * See dashboard/edge-patches/tokentracker-leaderboard-profile.ts for the
+ * canonical response shape.
+ */
 export async function getLeaderboardProfile({
   accessToken,
   userId,
   period,
 }: AnyRecord = {}) {
   if (isMockEnabled()) {
+    // Minimal stub for dashboard:dev (no live edge). Frontend layout should
+    // render without throwing; numbers don't need to be plausible.
     const mock = getMockLeaderboard({ seed: accessToken, period, metric: "all", limit: 250, offset: 0 });
     const entries = Array.isArray(mock?.entries) ? mock.entries : [];
-    const match = entries.find((entry: any) => entry?.user_id === userId) || null;
+    const match: any = entries.find((entry: any) => entry?.user_id === userId) || entries[0] || null;
+    const tokens = Number(match?.total_tokens) || 0;
+    const today = new Date();
+    const heatmap = Array.from({ length: 365 }).map((_, i) => {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - (364 - i));
+      return { date: d.toISOString().slice(0, 10), total_tokens: i % 7 === 0 ? Math.floor(tokens / 365) : 0 };
+    });
+    const dailyTrend = heatmap.slice(-7);
     return {
-      period: mock?.period ?? "week",
-      from: mock?.from ?? null,
-      to: mock?.to ?? null,
-      generated_at: mock?.generated_at ?? new Date().toISOString(),
-      entry: match,
+      user: {
+        user_id: userId,
+        display_name: match?.display_name || "Mock User",
+        avatar_url: match?.avatar_url || null,
+        github_url: match?.github_url || null,
+        is_anonymous: false,
+        rank: match?.rank ?? null,
+      },
+      period: {
+        kind: period || "week",
+        from: mock?.from ?? null,
+        to: mock?.to ?? null,
+        generated_at: mock?.generated_at ?? new Date().toISOString(),
+      },
+      totals: {
+        total_tokens: tokens,
+        estimated_cost_usd: Number(match?.estimated_cost_usd) || 0,
+        active_days: 53,
+        avg_per_day_usd: 0,
+      },
+      streak: { current_days: 3, longest_days: 12 },
+      best_day: tokens
+        ? { date: today.toISOString().slice(0, 10), total_tokens: Math.floor(tokens / 30), estimated_cost_usd: 0 }
+        : null,
+      models: { count: 5, favorite: { model_name: "claude-opus-4-7", total_tokens: Math.floor(tokens / 2) } },
+      by_provider: [],
+      heatmap,
+      daily_trend: dailyTrend,
     };
   }
   return fetchInsforgeFunction("tokentracker-leaderboard-profile", {

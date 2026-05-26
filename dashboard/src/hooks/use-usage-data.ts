@@ -26,7 +26,7 @@ export function useUsageData({
   const [error, setError] = useState<string | null>(null);
   const mockEnabled = isMockEnabled();
   const tokenReady = isAccessTokenReady(accessToken);
-  const cacheAllowed = !guestAllowed;
+  const cacheAllowed = !guestAllowed && !mockEnabled;
 
   const storageKey = (() => {
     if (!cacheKey) return null;

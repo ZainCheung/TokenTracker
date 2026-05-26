@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { buildActivityHeatmap } from "../../../lib/activity-heatmap";
 import { copy } from "../../../lib/copy";
 import { useTheme } from "../../../hooks/useTheme.js";
@@ -103,6 +104,12 @@ export function ActivityHeatmap({
   timeZoneLabel,
   timeZoneShortLabel,
   hideLegend = false,
+  // When `true`, the heatmap renders bare: no outer card chrome (rounded
+  // border + bg + padding), no inner title row (heading + 2D/3D toggle +
+  // timezone label). Use this when the host already provides a section
+  // wrapper (e.g. the leaderboard profile modal). Default keeps the
+  // standalone dashboard appearance.
+  embedded = false,
 }) {
   const { resolvedTheme } = useTheme();
   const { currency, rate } = useCurrency();
@@ -154,21 +161,22 @@ export function ActivityHeatmap({
     }
     setHoveredCell(cell);
 
+    // Tooltip is portaled to <body> with position: fixed, so use viewport
+    // coordinates directly. This keeps it visible inside the leaderboard
+    // profile modal, where the Dialog.Popup has both `overflow-hidden` and
+    // a `transform` (from the open/close transition) — that combo clips any
+    // absolute-positioned tooltip rendered inside the modal subtree.
     const rect = e.currentTarget.getBoundingClientRect();
-    const container = mainContainerRef.current;
-    if (!container) return;
+    const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
+    const x = rect.left + rect.width / 2;
+    const y = rect.top;
 
-    const containerRect = container.getBoundingClientRect();
-    const x = rect.left - containerRect.left + rect.width / 2;
-    const y = rect.top - containerRect.top;
-
-    // 自适应横向防溢出边界计算（Tooltip 卡片最大半宽约 140 像素）
     const halfWidth = 140;
     let shiftX = 0;
     if (x < halfWidth) {
       shiftX = halfWidth - x;
-    } else if (x > containerRect.width - halfWidth) {
-      shiftX = (containerRect.width - halfWidth) - x;
+    } else if (x > viewportWidth - halfWidth) {
+      shiftX = (viewportWidth - halfWidth) - x;
     }
 
     setTooltipPos({ x, y, shiftX });
@@ -429,8 +437,16 @@ export function ActivityHeatmap({
   const gridCols = LABEL_WIDTH + weeks.length * CELL_SIZE + Math.max(0, weeks.length - 1) * CELL_GAP;
 
   return (
-    <div ref={mainContainerRef} className="relative rounded-xl border border-oai-gray-200 dark:border-oai-gray-800 bg-white dark:bg-oai-gray-900 p-5">
+    <div
+      ref={mainContainerRef}
+      className={
+        embedded
+          ? "relative"
+          : "relative rounded-xl border border-oai-gray-200 dark:border-oai-gray-800 bg-white dark:bg-oai-gray-900 p-5"
+      }
+    >
       {/* Header */}
+      {!embedded && (
       <div className="flex items-baseline justify-between mb-3">
         <h3 className="text-sm font-medium text-oai-gray-500 dark:text-oai-gray-300 uppercase tracking-wide">
           {copy("heatmap.title")}
@@ -475,6 +491,7 @@ export function ActivityHeatmap({
           <span className="text-xs text-oai-gray-400 dark:text-oai-gray-450">{timeZoneShortLabel || copy("heatmap.legend.utc")}</span>
         </div>
       </div>
+      )}
 
       {view === "3d" && (
         <div 
@@ -839,12 +856,13 @@ export function ActivityHeatmap({
         </div>
       )}
 
-      {/* 2D 精致 Hover Tooltip */}
-      {hoveredCell && !isModalOpen && (
+      {/* 2D 精致 Hover Tooltip — portaled to body so the modal's
+          `overflow-hidden` + `transform` ancestors can't clip it. */}
+      {hoveredCell && !isModalOpen && typeof document !== "undefined" && createPortal(
         <div
           onMouseEnter={handleTooltipMouseEnter}
           onMouseLeave={handleTooltipMouseLeave}
-          className="absolute z-[9999] w-0 h-0 transition-all duration-100 ease-out"
+          className="fixed z-[9999] w-0 h-0 transition-all duration-100 ease-out pointer-events-auto"
           style={{
             left: `${tooltipPos.x}px`,
             top: `${tooltipPos.y}px`,
@@ -943,11 +961,12 @@ export function ActivityHeatmap({
           </div>
           
           {/* 倒三角小尾巴 */}
-          <div 
+          <div
             className="absolute bottom-[6px] left-0 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-white dark:bg-oai-gray-900 border-r border-b border-oai-gray-200/50 dark:border-oai-gray-800/50 shadow-sm"
             style={{ marginBottom: "1px" }}
           />
-        </div>
+        </div>,
+        document.body,
       )}
 
       <style>{`

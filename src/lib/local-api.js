@@ -404,6 +404,12 @@ function aggregateHourlyByDay(rows, dayKey, timeZoneContext) {
     bucket.cache_creation_input_tokens += row.cache_creation_input_tokens || 0;
     bucket.reasoning_output_tokens += row.reasoning_output_tokens || 0;
     bucket.conversation_count += row.conversation_count || 0;
+
+    if (!bucket.models) {
+      bucket.models = {};
+    }
+    const model = row.model || "unknown";
+    bucket.models[model] = (bucket.models[model] || 0) + (row.total_tokens || 0);
   }
   return Array.from(byHour.values()).sort((a, b) => a.hour.localeCompare(b.hour));
 }
@@ -1631,13 +1637,19 @@ function createLocalApiHandler({ queuePath }) {
           byMonth.set(month, { month, total_tokens: 0, billable_total_tokens: 0, input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, cache_creation_input_tokens: 0, reasoning_output_tokens: 0, conversation_count: 0 });
         const a = byMonth.get(month);
         a.total_tokens += row.total_tokens || 0;
-        a.billable_total_tokens += row.total_tokens || 0;
+        a.billable_total_tokens += row.billable_total_tokens ?? row.total_tokens ?? 0;
         a.input_tokens += row.input_tokens || 0;
         a.output_tokens += row.output_tokens || 0;
         a.cached_input_tokens += row.cached_input_tokens || 0;
         a.cache_creation_input_tokens += row.cache_creation_input_tokens || 0;
         a.reasoning_output_tokens += row.reasoning_output_tokens || 0;
         a.conversation_count += row.conversation_count || 0;
+
+        if (!a.models) {
+          a.models = {};
+        }
+        const model = row.model || "unknown";
+        a.models[model] = (a.models[model] || 0) + (row.total_tokens || 0);
       }
       json(res, { from, to, scope, excluded_sources: excludedSources, data: Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month)) });
       return true;

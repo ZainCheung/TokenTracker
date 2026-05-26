@@ -248,6 +248,24 @@ function buildHourlyRows({ day, seed }: AnyRecord) {
     const cached = Math.round(total * 0.14);
     const reasoning = Math.max(0, total - input - output - cached);
 
+    // 制造 mock models 消耗
+    const models: Record<string, number> = {};
+    if (total > 0) {
+      const modelPool = ["gpt-4o", "claude-3.5-sonnet", "gemini-1.5-pro", "deepseek-coder"];
+      const modelCount = 1 + (hash % 2); // 1-2 个模型活跃
+      let remaining = total;
+      for (let mIdx = 0; mIdx < modelCount; mIdx++) {
+        const modelName = modelPool[(hash + mIdx) % modelPool.length];
+        if (mIdx === modelCount - 1) {
+          models[modelName] = remaining;
+        } else {
+          const share = Math.round(remaining * (0.3 + 0.4 * ((hash + mIdx * 17) % 10) / 10));
+          models[modelName] = share;
+          remaining -= share;
+        }
+      }
+    }
+
     return {
       hour: `${dayKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`,
       total_tokens: total,
@@ -256,6 +274,7 @@ function buildHourlyRows({ day, seed }: AnyRecord) {
       output_tokens: output,
       cached_input_tokens: cached,
       reasoning_output_tokens: reasoning,
+      models,
     };
   });
 
@@ -299,6 +318,24 @@ function buildMonthlyRows({ months = 24, to, seed }: AnyRecord) {
     const cached = Math.round(total * 0.14);
     const reasoning = Math.max(0, total - input - output - cached);
 
+    // 制造 mock models 消耗
+    const models: Record<string, number> = {};
+    if (total > 0) {
+      const modelPool = ["gpt-4o", "claude-3.5-sonnet", "gemini-1.5-pro", "deepseek-coder"];
+      const modelCount = 1 + (hash % 3); // 1-3 个模型活跃
+      let remaining = total;
+      for (let mIdx = 0; mIdx < modelCount; mIdx++) {
+        const modelName = modelPool[(hash + mIdx) % modelPool.length];
+        if (mIdx === modelCount - 1) {
+          models[modelName] = remaining;
+        } else {
+          const share = Math.round(remaining * (0.3 + 0.4 * ((hash + mIdx * 17) % 10) / 10));
+          models[modelName] = share;
+          remaining -= share;
+        }
+      }
+    }
+
     rows.push({
       month: monthKey,
       total_tokens: total,
@@ -307,6 +344,7 @@ function buildMonthlyRows({ months = 24, to, seed }: AnyRecord) {
       output_tokens: output,
       cached_input_tokens: cached,
       reasoning_output_tokens: reasoning,
+      models,
     });
   }
 

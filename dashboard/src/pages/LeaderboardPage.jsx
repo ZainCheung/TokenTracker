@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
@@ -43,6 +43,12 @@ import { getCloudSyncEnabled, setCloudSyncEnabled } from "../lib/cloud-sync-pref
 import { runCloudUsageSyncNow } from "../lib/cloud-sync";
 import { LeaderboardAvatar } from "../components/LeaderboardAvatar.jsx";
 import { LeaderboardProviderColumnHeader } from "../components/LeaderboardProviderColumnHeader.jsx";
+
+const LeaderboardProfileModal = lazy(() =>
+  import("../components/leaderboard/LeaderboardProfileModal.jsx").then((m) => ({
+    default: m.LeaderboardProfileModal,
+  })),
+);
 import { LeaderboardSkeleton } from "../components/LeaderboardSkeleton.jsx";
 import { SortableColumnHeader } from "../components/SortableColumnHeader.jsx";
 import { useColumnOrder } from "../hooks/use-column-order.js";
@@ -144,17 +150,6 @@ function isAnonymousName(value) {
   return normalized.toLowerCase() === "anonymous";
 }
 
-function buildPublicViewPath(userId, search = "") {
-  if (typeof userId !== "string") return null;
-  const normalized = userId.trim().toLowerCase();
-  if (!normalized) return null;
-
-  const params = new URLSearchParams(typeof search === "string" ? search : "");
-  const period = normalizePeriod(params.get("period"));
-  const suffix = period ? `?period=${period}` : "";
-
-  return `/share/pv1-${normalized}${suffix}`;
-}
 
 function leaderboardAvatarSeed(entry, displayName) {
   const id = typeof entry?.user_id === "string" ? entry.user_id.trim() : "";
@@ -275,6 +270,11 @@ export function LeaderboardPage({
 
   const [listPage, setListPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(readStoredPageSize);
+  const [modalUserId, setModalUserId] = useState(null);
+  const openProfileModal = useCallback((userId) => {
+    if (typeof userId === "string" && userId.trim()) setModalUserId(userId.trim());
+  }, []);
+  const closeProfileModal = useCallback(() => setModalUserId(null), []);
 
   const setPageSize = useCallback((next) => {
     const normalized = PAGE_SIZE_OPTIONS.includes(next) ? next : DEFAULT_PAGE_SIZE;
@@ -301,7 +301,6 @@ export function LeaderboardPage({
     return normalizePeriod(params.get("period")) || "total";
   }, [location?.search]);
 
-  const periodSearch = location?.search || "";
 
   const handlePeriodChange = (nextPeriod) => {
     const normalized = normalizePeriod(nextPeriod);
@@ -481,22 +480,41 @@ export function LeaderboardPage({
               const rawName = normalizeName(entry?.display_name);
               const entryName = isAnonymousName(rawName) ? anonLabel : rawName;
               const name = isMe ? meLabel : entryName;
-              const userLinkEnabled = Boolean(profileUserId) && !isMe && Boolean(entry?.is_public);
-              const publicViewPath = userLinkEnabled
-                ? buildPublicViewPath(profileUserId, periodSearch)
-                : null;
-              const rowClickable = Boolean(publicViewPath);
+              // Every row with a user_id opens the profile modal. Private /
+              // anonymous targets resolve to an empty-state inside the modal
+              // ("profile not public") — better feedback than a dead click.
+              const rowClickable = Boolean(profileUserId);
+              const handleRowOpen = rowClickable ? () => openProfileModal(profileUserId) : undefined;
+              const handleRowKey = rowClickable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openProfileModal(profileUserId);
+                    }
+                  }
+                : undefined;
+              const rowInteractiveProps = rowClickable
+                ? {
+                    role: "button",
+                    tabIndex: 0,
+                    onClick: handleRowOpen,
+                    onKeyDown: handleRowKey,
+                    "aria-label": copy("leaderboard.profile_modal.row_aria", { name }),
+                  }
+                : {};
 
               if (isMe) {
                 const isPinned = Boolean(entry?.is_pinned);
                 return (
                   <tr
                     key={`row-${entry?.rank}-${name}${isPinned ? "-pin" : ""}`}
+                    {...rowInteractiveProps}
                     className={cn(
                       "bg-oai-brand-50 dark:bg-oai-brand-900/10 transition-colors",
                       isPinned
                         ? "border-t border-b border-oai-brand-300/40 dark:border-oai-brand-500/20"
                         : "border-y border-oai-brand-300/40 dark:border-oai-brand-500/30",
+                      rowClickable && "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500/60",
                     )}
                   >
                     <td
@@ -533,7 +551,11 @@ export function LeaderboardPage({
               return (
                 <tr
                   key={`row-${entry?.rank}-${name}`}
-                  className="group transition-colors"
+                  {...rowInteractiveProps}
+                  className={cn(
+                    "group transition-colors",
+                    rowClickable && "cursor-pointer hover:bg-oai-gray-50 dark:hover:bg-oai-gray-900/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500/60",
+                  )}
                 >
                   <td className={cn(lbStickyTdRank(false), "font-medium text-oai-gray-500 dark:text-oai-gray-400")}>
                     <RankCell rank={entry?.rank} placeholder={placeholder} />
@@ -768,6 +790,16 @@ export function LeaderboardPage({
           </a>
         </div>
       </footer>
+
+      <Suspense fallback={null}>
+        <LeaderboardProfileModal
+          isOpen={Boolean(modalUserId)}
+          userId={modalUserId}
+          period={period}
+          accessToken={effectiveAuthToken}
+          onClose={closeProfileModal}
+        />
+      </Suspense>
     </div>
   );
 }

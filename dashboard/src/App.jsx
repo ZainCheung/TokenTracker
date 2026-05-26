@@ -35,11 +35,6 @@ const LandingPage = lazy(() =>
 const LeaderboardPage = lazy(() =>
   import("./pages/LeaderboardPage.jsx").then((m) => ({ default: m.LeaderboardPage })),
 );
-const LeaderboardProfilePage = lazy(() =>
-  import("./pages/LeaderboardProfilePage.jsx").then((m) => ({
-    default: m.LeaderboardProfilePage,
-  })),
-);
 const LimitsPage = lazy(() =>
   import("./pages/LimitsPage.jsx").then((m) => ({ default: m.LimitsPage })),
 );
@@ -88,9 +83,7 @@ export default function App() {
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
-  const leaderboardProfileMatch = normalizedPath.match(/^\/leaderboard\/u\/([^/]+)$/i);
-  const leaderboardProfileUserId = leaderboardProfileMatch ? leaderboardProfileMatch[1] : null;
-  const isLeaderboardPath = normalizedPath === "/leaderboard" || Boolean(leaderboardProfileUserId);
+  const isLeaderboardPath = normalizedPath === "/leaderboard";
 
   const cloudAuthSignedIn = Boolean(insforge.enabled && insforge.signedIn);
   const signedIn = isLocalMode || cloudAuthSignedIn;
@@ -119,9 +112,7 @@ export default function App() {
   if (isLimitsPath || isSettingsPath || isSkillsPath || isWidgetsPath || isIpCheckPath) gate = "dashboard";
 
   let PageComponent = DashboardPage;
-  if (leaderboardProfileUserId) {
-    PageComponent = LeaderboardProfilePage;
-  } else if (normalizedPath === "/leaderboard") {
+  if (normalizedPath === "/leaderboard") {
     PageComponent = LeaderboardPage;
   } else if (isLimitsPath) {
     PageComponent = LimitsPage;
@@ -135,16 +126,11 @@ export default function App() {
     PageComponent = IpCheckPage;
   }
 
-  // /leaderboard/u/:id (LeaderboardProfilePage) still ships its own
-  // min-h-screen + sticky header/footer chrome, so it must NOT be wrapped
-  // in AppLayout — that would double-stack the nav and break scrolling.
-  // Only the index /leaderboard route is migrated to AppLayout for now.
-  const isLeaderboardIndexPath = normalizedPath === "/leaderboard";
   const showSidebar =
     !publicMode &&
     (normalizedPath === "/dashboard" ||
       normalizedPath === "/" ||
-      isLeaderboardIndexPath ||
+      isLeaderboardPath ||
       isLimitsPath ||
       isSettingsPath ||
       isSkillsPath ||
@@ -178,7 +164,6 @@ export default function App() {
         signOut={() => (insforge.enabled ? insforge.signOut() : Promise.resolve())}
         publicMode={publicMode}
         publicToken={publicToken}
-        userId={leaderboardProfileUserId}
         signInUrl="/login"
         signUpUrl="/login"
       />

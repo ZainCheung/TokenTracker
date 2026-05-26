@@ -48,10 +48,10 @@ function parseAnimatedCounterValue(displayValue) {
 
 // Provider color mapping for visual distinction
 const PROVIDER_COLORS = {
-  CODEX: "#10b981",     // emerald-500
-  CLAUDE: "#8b5cf6",    // violet-500
+  CODEX: "#3b82f6",     // blue-500
+  CLAUDE: "#d97757",    // Anthropic Japonica orange-red
   OPENCODE: "#f59e0b",  // amber-500
-  GEMINI: "#3b82f6",    // blue-500
+  GEMINI: "#2196f3",    // Google Gemini bright blue
   KIMI: "#a78bfa",      // violet-400
   "KILO-CLI": "#facc15",   // yellow-400 (Kilo brand yellow)
   "KILO-CODE": "#facc15",
