@@ -294,6 +294,59 @@ const __pricing = __viteRequire(path.resolve(REPO_ROOT, "src/lib/pricing"));
 const { getModelPricing, computeRowCost } = __pricing;
 
 async function handleLocalApi(req, res, url) {
+  // Honor the dashboard's tz / tz_offset_minutes params so hourly/daily
+  // buckets match the real backend (local-api.js / cloud edge funcs).
+  // Without this, hour_start (always UTC) gets sliced as if it were local
+  // time — e.g. UTC 06:00 lands in the "06:00" bucket for a Beijing user,
+  // but should be 14:00 Beijing.
+  const tzParam = String(url.searchParams.get("tz") || "").trim();
+  const rawOffset = Number(url.searchParams.get("tz_offset_minutes"));
+  const offsetMinutes = Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : null;
+  const zonedFormatter = tzParam
+    ? (() => {
+        try {
+          return new Intl.DateTimeFormat("en-CA", {
+            timeZone: tzParam,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          });
+        } catch (_e) {
+          return null;
+        }
+      })()
+    : null;
+  function getZonedParts(iso) {
+    if (!iso) return null;
+    const dt = new Date(iso);
+    if (!Number.isFinite(dt.getTime())) return null;
+    if (zonedFormatter) {
+      const acc = {};
+      for (const p of zonedFormatter.formatToParts(dt)) {
+        if (p.type && p.value) acc[p.type] = p.value;
+      }
+      const y = acc.year, m = acc.month, d = acc.day;
+      const h = Number(acc.hour);
+      const mi = Number(acc.minute);
+      if (y && m && d && Number.isFinite(h) && Number.isFinite(mi)) {
+        return { day: `${y}-${m}-${d}`, hour: h, minute: mi };
+      }
+    }
+    const shifted = offsetMinutes != null
+      ? new Date(dt.getTime() + offsetMinutes * 60000)
+      : dt;
+    const y = shifted.getUTCFullYear();
+    const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(shifted.getUTCDate()).padStart(2, "0");
+    return {
+      day: `${y}-${m}-${d}`,
+      hour: shifted.getUTCHours(),
+      minute: shifted.getUTCMinutes(),
+    };
+  }
   const QUEUE_PATH = path.join(os.homedir(), ".tokentracker", "tracker", "queue.jsonl");
 
   function isLegacyInclusiveCodexRow(row) {
@@ -339,7 +392,9 @@ async function handleLocalApi(req, res, url) {
     for (const row of rows) {
       const hourStart = row.hour_start;
       if (!hourStart) continue;
-      const day = hourStart.slice(0, 10);
+      const parts = getZonedParts(hourStart);
+      if (!parts) continue;
+      const day = parts.day;
       if (!byDay.has(day)) {
         byDay.set(day, {
           day,
@@ -530,7 +585,9 @@ async function handleLocalApi(req, res, url) {
     const byMonth = new Map();
     for (const row of rows) {
       if (!row.hour_start) continue;
-      const day = row.hour_start.slice(0, 10);
+      const parts = getZonedParts(row.hour_start);
+      if (!parts) continue;
+      const day = parts.day;
       if (day < from || day > to) continue;
       const month = day.slice(0, 7);
       if (!byMonth.has(month)) {
@@ -589,10 +646,10 @@ async function handleLocalApi(req, res, url) {
 
     for (const row of rows) {
       if (!row.hour_start) continue;
-      const rowDay = row.hour_start.slice(0, 10);
-      if (rowDay !== day) continue;
-      const hourStr = row.hour_start.slice(11, 13);
-      const hourIdx = parseInt(hourStr, 10);
+      const parts = getZonedParts(row.hour_start);
+      if (!parts) continue;
+      if (parts.day !== day) continue;
+      const hourIdx = parts.hour;
       if (hourIdx >= 0 && hourIdx < 24) {
         const agg = hourlyData[hourIdx];
         agg.total_tokens += row.total_tokens || 0;
@@ -678,8 +735,9 @@ async function handleLocalApi(req, res, url) {
     // 过滤日期范围
     const filteredRows = rows.filter(row => {
       if (!row.hour_start) return false;
-      const day = row.hour_start.slice(0, 10);
-      return day >= from && day <= to;
+      const parts = getZonedParts(row.hour_start);
+      if (!parts) return false;
+      return parts.day >= from && parts.day <= to;
     });
 
     const bySource = new Map();
