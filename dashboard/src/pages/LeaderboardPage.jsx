@@ -659,6 +659,7 @@ export function LeaderboardPage({
                 me={me}
                 totalEntries={totalEntries}
                 meLabel={meLabel}
+                onOpenProfile={me?.user_id ? () => openProfileModal(me.user_id) : undefined}
                 onJumpToMe={handleJumpToMe}
                 canJump={myPage != null && !onMyPage && !listState.loading}
               />

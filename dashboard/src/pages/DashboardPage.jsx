@@ -953,8 +953,12 @@ export function DashboardPage({
     if (typeof window === "undefined") return "";
     const intentUrl = new URL("https://twitter.com/intent/tweet");
     intentUrl.searchParams.set("text", screenshotTwitterText);
+    // Link to the sharer's own profile when signed in, so the tweet drives to
+    // their stats (and the embeddable badge) rather than the generic homepage.
+    const sharePath = auth?.userId ? `/u/${auth.userId}` : "/";
+    intentUrl.searchParams.set("url", `https://www.tokentracker.cc${sharePath}?ref=share`);
     return intentUrl.toString();
-  }, [screenshotTwitterText]);
+  }, [screenshotTwitterText, auth?.userId]);
   const captureScreenshotBlob = useCallback(async () => {
     if (typeof window === "undefined") return null;
     const waitForHeatmapLatest = async () => {

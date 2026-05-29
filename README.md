@@ -12,7 +12,8 @@ Auto-collect token counts from **22 AI coding tools**, aggregate them locally, a
 [![npm downloads](https://img.shields.io/npm/dm/tokentracker-cli.svg?color=brightgreen)](https://www.npmjs.com/package/tokentracker-cli)
 [![Homebrew](https://img.shields.io/github/v/release/mm7894215/TokenTracker?label=brew&color=F8B73E&logo=homebrew&logoColor=white)](https://github.com/mm7894215/homebrew-tokentracker)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/macOS-supported-lightgrey.svg)](https://www.apple.com/macos/)
+[![CLI](https://img.shields.io/badge/CLI-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-lightgrey.svg)](https://www.npmjs.com/package/tokentracker-cli)
+[![macOS app](https://img.shields.io/badge/macOS%20app-menu%20bar%20%2B%20widgets-lightgrey.svg?logo=apple&logoColor=white)](https://github.com/mm7894215/TokenTracker/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/mm7894215/TokenTracker?style=social)](https://github.com/mm7894215/TokenTracker/stargazers)
 [![Featured in 阮一峰周刊 #393](https://img.shields.io/badge/Featured%20in-%E9%98%AE%E4%B8%80%E5%B3%B0%E5%91%A8%E5%88%8A%20%23393-FF6B35?logo=rss&logoColor=white)](https://github.com/ruanyf/weekly/blob/master/docs/issue-393.md)
 [![Author tokens](https://srctyff5.us-east.insforge.app/functions/tokentracker-badge-svg?user_id=0652839f-d19f-4f67-af85-6b7675875443&metric=tokens&compact=1&label=author%20tokens)](https://github.com/mm7894215/TokenTracker)
@@ -186,7 +187,9 @@ Missing your tool? [Open an issue](https://github.com/mm7894215/TokenTracker/iss
 
 ---
 
-## 🆚 Why TokenTracker?
+## 🆚 Why TokenTracker? <a id="ccusage-alternative"></a>
+
+> **Looking for a ccusage alternative with a GUI?** TokenTracker covers 22 tools (not just Claude Code), adds a native macOS menu bar app + desktop widgets, and de-duplicates token records correctly across providers — so your numbers match the providers' own billing.
 
 |                          | **TokenTracker** | ccusage     | Cursor stats |
 |--------------------------|:---:|:---:|:---:|
@@ -195,6 +198,9 @@ Missing your tool? [Open an issue](https://github.com/mm7894215/TokenTracker/iss
 | **Native menu bar app**  | ✅                | ❌           | ❌            |
 | **Desktop widgets**      | ✅ 4 widgets      | ❌           | ❌            |
 | **Rate-limit tracking**  | ✅ 7 providers    | ❌           | Cursor only  |
+| **Accurate multi-provider dedup** | ✅      | ❌ ¹         | —            |
+
+<sub>¹ `reqId`-based deduplication over-counts providers that omit a request ID (DeepSeek / Kimi / MiniMax / Claude sub-agents) by 1.6–3.7×. TokenTracker dedups on a composite key, so totals match each provider's own billing dashboard.</sub>
 
 ---
 

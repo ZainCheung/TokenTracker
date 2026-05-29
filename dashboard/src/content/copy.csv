@@ -372,6 +372,7 @@ leaderboard.github.tooltipSettingsLink,ui,LeaderboardPage,LeaderboardPage,github
 leaderboard.github.tooltipSuffix,ui,LeaderboardPage,LeaderboardPage,github_tooltip_suffix," to appear here",,active
 leaderboard.summary.percentile,ui,LeaderboardPage,LeaderboardMeChip,summary_percentile,"Top {{p}}%",,active
 leaderboard.summary.jump_to_me,ui,LeaderboardPage,LeaderboardMeChip,summary_jump_to_me,"Jump to my row",,active
+leaderboard.summary.view_profile,ui,LeaderboardPage,LeaderboardMeChip,summary_view_profile,"View your profile",,active
 settings.account.signOut,ui,SettingsPage,SettingsPage,sign_out,"Sign out",,active
 settings.account.signIn,ui,SettingsPage,SettingsPage,sign_in,"Sign in",,active
 settings.account.signedOutHint,ui,SettingsPage,SettingsPage,signed_out_hint,"Sign in to manage cloud sync and leaderboard preferences.",,active
@@ -790,6 +791,9 @@ leaderboard.profile_modal.heatmap.title,dashboard,LeaderboardProfileModal,Heatma
 leaderboard.profile_modal.providers.title,dashboard,LeaderboardProfileModal,Providers,title,"By provider",,active
 leaderboard.profile_modal.providers.none,dashboard,LeaderboardProfileModal,Providers,none,"No usage this period.",,active
 leaderboard.profile_modal.view_full,dashboard,LeaderboardProfileModal,Footer,view_full,"View full profile",,active
+leaderboard.profile_modal.badge.copy_url,dashboard,LeaderboardProfileModal,Badge,copy_url,"Copy profile URL",,active
+leaderboard.profile_modal.badge.copy,dashboard,LeaderboardProfileModal,Badge,copy,"Copy README badge",,active
+leaderboard.profile_modal.badge.copied,dashboard,LeaderboardProfileModal,Badge,copied,"Copied!",,active
 local_only.title,dashboard,LocalOnlyNotice,LocalOnlyNotice,title,"Available in the app",,active
 local_only.body,dashboard,LocalOnlyNotice,LocalOnlyNotice,body,"This page reads data from your own machine, so it only works in the Mac app or the CLI dashboard.",,active
 local_only.open_app,dashboard,LocalOnlyNotice,LocalOnlyNotice,open_app,"Open in Mac app",,active

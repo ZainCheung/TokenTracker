@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-28T22:16:28.705Z",
+  "generatedAt": "2026-05-29T02:30:20.766Z",
   "root": "dashboard/src",
   "rules": {
     "colors": "hex/rgb(a) literals",
@@ -7,7 +7,7 @@
   },
   "totals": {
     "colors": 243,
-    "rawText": 149
+    "rawText": 148
   },
   "files": {
     "dashboard/src/components/InsforgeUserHeaderControls.jsx": {
@@ -38,11 +38,10 @@
     },
     "dashboard/src/components/leaderboard/LeaderboardProfileModal.jsx": {
       "colors": 6,
-      "rawText": 3,
+      "rawText": 2,
       "rawTextTokens": [
         "0 && n",
-        "1 && (",
-        "buildHeatmapForModal(heatmap), [heatmap]); const favoriteName = models?.favorite?.model_name; const modelCount = Number(models?.count) || 0; return ("
+        "1 && ("
       ]
     },
     "dashboard/src/components/settings/AccountSection.jsx": {

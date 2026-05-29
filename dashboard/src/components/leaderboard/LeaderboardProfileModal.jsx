@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { X, ArrowUpRight } from "lucide-react";
+import { X, ArrowUpRight, Check, Link2, Code2 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { copy } from "../../lib/copy";
@@ -14,6 +14,9 @@ import { ActivityHeatmap } from "../../ui/dashboard/components/ActivityHeatmap.j
 import { cn } from "../../lib/cn";
 import { isNativeApp } from "../../lib/native-bridge.js";
 import { LikeButton } from "../../ui/dashboard/components/LikeButton.jsx";
+import { getInsforgeRemoteUrl } from "../../lib/insforge-config";
+import { safeWriteClipboard } from "../../lib/safe-browser";
+import { useInsforgeAuth } from "../../contexts/InsforgeAuthContext.jsx";
 
 function formatCost(value, currency, rate) {
   const n = Number(value);
@@ -389,6 +392,38 @@ function ProviderList({ data }) {
 }
 
 /**
+ * Compact share chip for the profile footer — copies a string (profile URL, or
+ * the embeddable README badge markdown) to the clipboard, flips to a green
+ * "Copied" confirmation, then resets. Bordered so the share utilities read as a
+ * distinct group from the plain "View full profile" navigation link beside it.
+ */
+function CopyAction({ icon: Icon, label, value }) {
+  const [copied, setCopied] = useState(false);
+  const onClick = async () => {
+    const ok = await safeWriteClipboard(value);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+        copied
+          ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/[0.06]"
+          : "border-oai-gray-200 dark:border-oai-gray-800 text-oai-gray-600 dark:text-oai-gray-300 hover:text-oai-gray-900 dark:hover:text-oai-gray-100 hover:border-oai-gray-300 dark:hover:border-oai-gray-700 hover:bg-oai-gray-50 dark:hover:bg-oai-gray-900/40",
+      )}
+    >
+      {copied ? <Check size={13} strokeWidth={2} aria-hidden /> : <Icon size={13} strokeWidth={2} aria-hidden />}
+      <span>{copied ? copy("leaderboard.profile_modal.badge.copied") : label}</span>
+    </button>
+  );
+}
+
+/**
  * Profile content shared by the leaderboard modal and the standalone
  * /u/:userId page. `onClose` is optional — when omitted (page mode) the
  * header renders without a close button.
@@ -408,6 +443,15 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
   const heatmapData = useMemo(() => buildHeatmapForModal(heatmap), [heatmap]);
   const favoriteName = models?.favorite?.model_name;
   const modelCount = Number(models?.count) || 0;
+
+  // Only the profile owner sees the embeddable badge (it belongs to them); the
+  // leaderboard user_id matches the signed-in InsForge auth user id.
+  const auth = useInsforgeAuth();
+  const isOwnProfile = Boolean(auth?.user?.id && user?.user_id && auth.user.id === user.user_id);
+  const profileUrl = user?.user_id ? `https://www.tokentracker.cc/u/${user.user_id}` : null;
+  const badgeSnippet = user?.user_id
+    ? `[![My AI coding usage](${getInsforgeRemoteUrl()}/functions/tokentracker-embed-svg?user_id=${user.user_id}&theme=dark)](${profileUrl}?ref=readme)`
+    : null;
 
   return (
     <>
@@ -500,29 +544,38 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
           <ProviderList data={byProvider} />
         </section>
 
-        {/* Modal mode only: link to the standalone shareable profile page. */}
-        {onClose && user?.user_id && (
-          <div className="border-t border-oai-gray-200/70 dark:border-oai-gray-800/60 pt-4">
-            {isNativeApp() ? (
-              <a
-                href={`https://www.tokentracker.cc/u/${user.user_id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onClose}
-                className="inline-flex items-center gap-1 text-xs text-oai-gray-500 hover:text-oai-gray-900 dark:text-oai-gray-400 dark:hover:text-oai-gray-100 transition-colors"
-              >
-                <span>{copy("leaderboard.profile_modal.view_full")}</span>
-                <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
-              </a>
-            ) : (
-              <Link
-                to={`/u/${user.user_id}`}
-                onClick={onClose}
-                className="inline-flex items-center gap-1 text-xs text-oai-gray-500 hover:text-oai-gray-900 dark:text-oai-gray-400 dark:hover:text-oai-gray-100 transition-colors"
-              >
-                <span>{copy("leaderboard.profile_modal.view_full")}</span>
-                <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
-              </Link>
+        {/* Footer: navigation link (modal) on the left, grouped share chips
+            (own profile) on the right. justify-between gives the row rhythm;
+            in page mode only the chip group renders and sits left. */}
+        {user?.user_id && (onClose || isOwnProfile) && (
+          <div className="border-t border-oai-gray-200/70 dark:border-oai-gray-800/60 pt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            {onClose &&
+              (isNativeApp() ? (
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                  className="group inline-flex items-center gap-1 text-xs font-medium text-oai-gray-700 hover:text-oai-gray-950 dark:text-oai-gray-300 dark:hover:text-oai-white transition-colors"
+                >
+                  <span>{copy("leaderboard.profile_modal.view_full")}</span>
+                  <ArrowUpRight size={13} strokeWidth={2} aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </a>
+              ) : (
+                <Link
+                  to={`/u/${user.user_id}`}
+                  onClick={onClose}
+                  className="group inline-flex items-center gap-1 text-xs font-medium text-oai-gray-700 hover:text-oai-gray-950 dark:text-oai-gray-300 dark:hover:text-oai-white transition-colors"
+                >
+                  <span>{copy("leaderboard.profile_modal.view_full")}</span>
+                  <ArrowUpRight size={13} strokeWidth={2} aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </Link>
+              ))}
+            {isOwnProfile && (
+              <div className="flex items-center gap-2">
+                <CopyAction icon={Link2} label={copy("leaderboard.profile_modal.badge.copy_url")} value={profileUrl} />
+                <CopyAction icon={Code2} label={copy("leaderboard.profile_modal.badge.copy")} value={badgeSnippet} />
+              </div>
             )}
           </div>
         )}

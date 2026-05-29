@@ -30,6 +30,7 @@ export function LeaderboardMeChip({
   me,
   totalEntries,
   meLabel,
+  onOpenProfile,
   onJumpToMe,
   canJump,
 }) {
@@ -43,13 +44,20 @@ export function LeaderboardMeChip({
   const headlineName = !rawName || isAnon(rawName) ? meLabel || "You" : rawName;
   const avatarSeed = me?.user_id || headlineName;
 
-  const interactive = Boolean(canJump) && typeof onJumpToMe === "function";
+  // Click opens the user's own profile modal (where the embeddable badge lives).
+  // Falls back to the legacy jump-to-row when no profile handler is available.
+  const handleClick = onOpenProfile || (canJump ? onJumpToMe : null);
+  const interactive = typeof handleClick === "function";
   const Tag = interactive ? "button" : "div";
   const interactiveProps = interactive
     ? {
         type: "button",
-        onClick: onJumpToMe,
-        "aria-label": copy("leaderboard.summary.jump_to_me"),
+        onClick: handleClick,
+        "aria-label": copy(
+          onOpenProfile
+            ? "leaderboard.summary.view_profile"
+            : "leaderboard.summary.jump_to_me",
+        ),
       }
     : {};
 

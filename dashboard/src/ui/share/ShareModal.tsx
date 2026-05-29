@@ -205,6 +205,13 @@ export function ShareModal({ open, onClose, data, twitterText }: any) {
     }
     const intentUrl = new URL("https://twitter.com/intent/tweet");
     if (twitterText) intentUrl.searchParams.set("text", twitterText);
+    // Attach a clickable link so the tweet drives traffic back (and is
+    // attributable via ?ref=share). Point at the sharer's own profile when
+    // signed in so it lands on their stats + badge, not the generic homepage.
+    // Without `url` the X intent only carries the pasted image.
+    const shareUserId = (insforge?.user as any)?.id;
+    const sharePath = typeof shareUserId === "string" && shareUserId ? `/u/${shareUserId}` : "/";
+    intentUrl.searchParams.set("url", `https://www.tokentracker.cc${sharePath}?ref=share`);
     // Use location.href in native embed so WKUIDelegate.createWebView
     // (which intercepts window.open and opens in system browser) fires.
     // window.open with _blank sometimes navigates the WKWebView itself.
@@ -220,7 +227,7 @@ export function ShareModal({ open, onClose, data, twitterText }: any) {
       window.open(intentUrl.toString(), "_blank", "noopener,noreferrer");
     }
     setBusy(null);
-  }, [busy, ensureCardBlob, push, twitterText, buildFilename]);
+  }, [busy, ensureCardBlob, push, twitterText, buildFilename, insforge]);
 
 
   if (!open) return null;
