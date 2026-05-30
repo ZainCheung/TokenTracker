@@ -852,7 +852,7 @@ dashboard.expired_gate.feature.restore.desc,dashboard,DashboardPage,DashboardVie
 dashboard.expired_gate.feature.cloud.title,dashboard,DashboardPage,DashboardView,cloud_title,"Multi-device Sync",,active
 dashboard.expired_gate.feature.cloud.desc,dashboard,DashboardPage,DashboardView,cloud_desc,"Readily access parsed token logs anywhere through synced dashboard.",,active
 landing.v2.leaderboard.kicker,landing,LandingPage,MarketingLanding,leaderboard_kicker,"GLOBAL TOKEN LEADERBOARD",,active
-landing.v2.leaderboard.title,landing,LandingPage,MarketingLanding,leaderboard_title,"Compete on AI Token Efficiency",,active
+landing.v2.leaderboard.title,landing,LandingPage,MarketingLanding,leaderboard_title,"AI Token Efficiency",,active
 landing.v2.leaderboard.subtitle,landing,LandingPage,MarketingLanding,leaderboard_subtitle,"Optionally and anonymously sync your local AI token usage to join the global efficiency leaderboard. Benchmark cost efficiency and model rotations with developers worldwide.",,active
 landing.v2.leaderboard.active_developers,landing,LandingPage,MarketingLanding,active_developers,"1,240+ developers actively syncing",,active
 landing.v2.leaderboard.top_badge,landing,LandingPage,MarketingLanding,top_badge,"EFFICIENCY CHAMP",,active
