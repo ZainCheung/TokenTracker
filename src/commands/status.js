@@ -54,6 +54,9 @@ const {
   listDroidSettingsFiles,
   resolveDroidSessionsDir,
   resolveGrokBuildSessions,
+  resolveHermesPath,
+  resolveHermesDbPath,
+  probeWslDistros,
 } = require("../lib/rollout");
 const { probeGrokHookState, resolveGrokHome } = require("../lib/grok-hook");
 
@@ -245,6 +248,15 @@ async function cmdStatus(argv = []) {
     : [];
   const grokInstalled = grokHookState.hasGrokInstall || grokSessions.length > 0;
 
+  // Hermes Agent — SQLite state.db, resolved via override / native Windows
+  // install / WSL auto-discovery. Surface the resolved path (UNC included) and,
+  // on Windows, the discovered distros so WSL users can debug "why no sync"
+  // without guessing the right UNC alias (#87).
+  const hermesPath = resolveHermesPath();
+  const hermesDbPath = resolveHermesDbPath();
+  const hermesInstalled = fssync.existsSync(hermesDbPath);
+  const hermesWslDistros = process.platform === "win32" ? probeWslDistros() : [];
+
   const copilotToken = readCopilotOauthToken({ home });
   const copilotOtel = describeCopilotOtelStatus({ home, env: process.env });
   const copilotLines = formatCopilotLines({
@@ -341,6 +353,13 @@ async function cmdStatus(argv = []) {
               detail: grokHookState.configured ? "hook installed" : "detected",
             }
           : { installed: false },
+        hermes: {
+          installed: hermesInstalled,
+          detail: hermesPath,
+          ...(hermesWslDistros.length
+            ? { wsl_distros: hermesWslDistros.map((d) => ({ name: d.name, version: d.version })) }
+            : {}),
+        },
       },
       copilot: {
         token_set: Boolean(copilotToken),
@@ -421,6 +440,18 @@ async function cmdStatus(argv = []) {
       droidInstalled
         ? `- Droid (Factory): passive reader (${droidSettingsFiles.length} session${droidSettingsFiles.length !== 1 ? "s" : ""} in ${droidSessionsDir}, cumulative-delta)`
         : null,
+      ...(() => {
+        // Always surface Hermes when its state.db resolves; on Windows also show
+        // it when WSL distros are discovered so users can debug UNC resolution.
+        if (!hermesInstalled && hermesWslDistros.length === 0) return [];
+        const wslSuffix = hermesWslDistros.length
+          ? `; WSL distros: ${hermesWslDistros.map((d) => `${d.name} (v${d.version ?? "?"})`).join(", ")}`
+          : "";
+        const head = hermesInstalled
+          ? `- Hermes Agent: state.db found (${hermesPath})`
+          : `- Hermes Agent: state.db not found (resolved ${hermesPath})`;
+        return [`${head}${wslSuffix}`];
+      })(),
       ...(() => {
         const passive = passiveProviders.filter((p) => p.passive);
         if (passive.length === 0) return [];
@@ -553,6 +584,9 @@ function renderLightTable(summary) {
     if (typeof info.installed === "boolean") detail.push(info.installed ? "installed" : "not installed");
     if (typeof info.files === "number") detail.push(`${info.files} file${info.files !== 1 ? "s" : ""}`);
     if (info.detail) detail.push(info.detail);
+    if (Array.isArray(info.wsl_distros) && info.wsl_distros.length) {
+      detail.push(`WSL: ${info.wsl_distros.map((d) => `${d.name} (v${d.version ?? "?"})`).join(", ")}`);
+    }
     push(`Provider · ${name}`, detail.length ? detail.join(", ") : "—");
   }
 

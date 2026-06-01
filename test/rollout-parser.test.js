@@ -15,6 +15,9 @@ const {
   parseHermesIncremental,
   resolveHermesPath,
   resolveHermesDbPath,
+  parseWslListVerbose,
+  probeWslDistros,
+  discoverWslHermesHome,
   parseCopilotIncremental,
   parseKimiIncremental,
   parseCodebuddyIncremental,
@@ -2976,6 +2979,85 @@ test("resolveHermesPath prefers %LOCALAPPDATA%\\hermes on Windows when present",
   assert.equal(
     resolveHermesPath({ LOCALAPPDATA: tmp, TOKENTRACKER_HERMES_HOME: "/custom/hermes" }),
     "/custom/hermes",
+  );
+});
+
+test("parseWslListVerbose parses distros, default marker and version column", () => {
+  const raw = "  NAME            STATE           VERSION\n" +
+    "* Ubuntu          Running         2\n" +
+    "  Debian-22.04    Stopped         1\n";
+  assert.deepEqual(parseWslListVerbose(raw), [
+    { name: "Ubuntu", version: 2, isDefault: true },
+    { name: "Debian-22.04", version: 1, isDefault: false },
+  ]);
+});
+
+test("parseWslListVerbose tolerates UTF-16 NUL/BOM noise and skips the header", () => {
+  // wsl.exe -l -v emits UTF-16LE; a mis-decode leaves a leading BOM and NUL
+  // bytes between characters. The parser strips both defensively.
+  const raw = "\uFEFF  NAME   STATE   VERSION\n* Ub\u0000untu Running 2\n";
+  assert.deepEqual(parseWslListVerbose(raw), [
+    { name: "Ubuntu", version: 2, isDefault: true },
+  ]);
+  assert.deepEqual(parseWslListVerbose(""), []);
+  assert.deepEqual(parseWslListVerbose(undefined), []);
+});
+
+test("probeWslDistros sorts the default distro first and is fail-safe", () => {
+  const raw = "  NAME    STATE    VERSION\n  Debian  Stopped  1\n* Ubuntu  Running  2\n";
+  assert.deepEqual(probeWslDistros({ runWsl: () => raw }), [
+    { name: "Ubuntu", version: 2, isDefault: true },
+    { name: "Debian", version: 1, isDefault: false },
+  ]);
+  // A throwing wsl.exe (not installed / no distros) yields an empty list.
+  assert.deepEqual(
+    probeWslDistros({ runWsl: () => { throw new Error("wsl not found"); } }),
+    [],
+  );
+});
+
+test("discoverWslHermesHome resolves ~/.hermes via the right UNC alias per distro", () => {
+  const list = "  NAME    STATE    VERSION\n* Ubuntu  Running  2\n  Legacy  Running  1\n";
+  // Linux usernames differ from %USERNAME% — whoami is asked per distro (#87).
+  const users = { Ubuntu: "alice\n", Legacy: "bob\n" };
+  const runWsl = (args) => (args[0] === "-l" ? list : users[args[1]]);
+
+  // WSL2 distro found via the legacy \\wsl$\ alias (tried first for v2).
+  const tried = [];
+  const hit = discoverWslHermesHome({
+    runWsl,
+    existsSync: (p) => {
+      tried.push(p);
+      return p === "\\\\wsl$\\Ubuntu\\home\\alice\\.hermes";
+    },
+  });
+  assert.equal(hit, "\\\\wsl$\\Ubuntu\\home\\alice\\.hermes");
+  assert.equal(tried[0], "\\\\wsl$\\Ubuntu\\home\\alice\\.hermes");
+
+  // WSL1 distro: \\wsl.localhost\ is tried before \\wsl$\.
+  const tried1 = [];
+  const hit1 = discoverWslHermesHome({
+    runWsl,
+    existsSync: (p) => {
+      tried1.push(p);
+      return p === "\\\\wsl.localhost\\Legacy\\home\\bob\\.hermes";
+    },
+  });
+  assert.equal(hit1, "\\\\wsl.localhost\\Legacy\\home\\bob\\.hermes");
+  // Ubuntu (default) probed first, both its roots miss, then Legacy via localhost.
+  assert.equal(tried1[tried1.length - 1], "\\\\wsl.localhost\\Legacy\\home\\bob\\.hermes");
+  assert.ok(tried1.indexOf("\\\\wsl.localhost\\Legacy\\home\\bob\\.hermes") <
+    tried1.indexOf("\\\\wsl$\\Legacy\\home\\bob\\.hermes") || !tried1.includes("\\\\wsl$\\Legacy\\home\\bob\\.hermes"));
+
+  // No .hermes anywhere → null (caller falls back to ~/.hermes).
+  assert.equal(discoverWslHermesHome({ runWsl, existsSync: () => false }), null);
+  // A distro whose whoami fails is skipped, not crashed on.
+  assert.equal(
+    discoverWslHermesHome({
+      runWsl: (args) => { if (args[0] === "-l") return list; throw new Error("whoami failed"); },
+      existsSync: () => true,
+    }),
+    null,
   );
 });
 

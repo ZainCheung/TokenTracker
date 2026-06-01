@@ -2978,7 +2978,7 @@ async function parseKiroIncremental({ dbPath, jsonlPath, cursors, queuePath, onP
 // Hermes Agent — SQLite-based (sessions table in ~/.hermes/state.db)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveHermesPath(env = process.env) {
+function resolveHermesPath(env = process.env, deps = {}) {
   const override = env.TOKENTRACKER_HERMES_HOME;
   if (typeof override === "string" && override.trim().length > 0) {
     return override.trim();
@@ -2996,8 +2996,99 @@ function resolveHermesPath(env = process.env) {
         if (fssync.existsSync(winNative)) return winNative;
       } catch (_e) { }
     }
+    // No native Windows install — probe WSL distros so users running Hermes
+    // inside WSL get zero-config discovery instead of setting
+    // TOKENTRACKER_HERMES_HOME by hand (#87).
+    const wslPath = discoverWslHermesHome(deps);
+    if (wslPath) return wslPath;
   }
   return defaultPath;
+}
+
+// ── WSL auto-discovery (Windows host, Hermes installed inside a distro) ──────
+// `wsl.exe -l -v` prints UTF-16LE; the per-distro `whoami` runs a Linux process
+// so its stdout is UTF-8. We capture buffers and decode per-call.
+function defaultRunWsl(args, { utf16 = false } = {}) {
+  const { execFileSync } = require("node:child_process");
+  const buf = execFileSync("wsl.exe", args, {
+    timeout: 5000,
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return utf16 ? buf.toString("utf16le") : buf.toString("utf8");
+}
+
+// Parse `wsl.exe -l -v` output into [{ name, version, isDefault }]. The default
+// distro is prefixed with `*`; the VERSION column (1 or 2) decides which UNC
+// alias to try first (simonlpaige, #87).
+function parseWslListVerbose(raw) {
+  if (typeof raw !== "string") return [];
+  const distros = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const clean = line.replace(/ /g, "").replace(/﻿/g, "").trim();
+    if (!clean) continue;
+    const cells = clean.split(/\s+/);
+    let isDefault = false;
+    let idx = 0;
+    if (cells[0] === "*") {
+      isDefault = true;
+      idx = 1;
+    }
+    const name = cells[idx];
+    if (!name || name === "NAME") continue; // skip header row
+    const version = parseInt(cells[cells.length - 1], 10);
+    distros.push({
+      name,
+      version: Number.isFinite(version) ? version : null,
+      isDefault,
+    });
+  }
+  return distros;
+}
+
+// Default distro first, then listed order — matches what a user expects when
+// they have one primary distro plus extras.
+function probeWslDistros(deps = {}) {
+  const runWsl = deps.runWsl || defaultRunWsl;
+  let raw;
+  try {
+    raw = runWsl(["-l", "-v"], { utf16: true });
+  } catch (_e) {
+    return [];
+  }
+  const distros = parseWslListVerbose(raw);
+  return distros.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+}
+
+// Probe each WSL distro for ~/.hermes via UNC. The Linux username rarely equals
+// %USERNAME%, so we ask the distro directly with `whoami` rather than guessing
+// (simonlpaige, #87).
+function discoverWslHermesHome(deps = {}) {
+  const runWsl = deps.runWsl || defaultRunWsl;
+  const existsSync = deps.existsSync || fssync.existsSync;
+  const distros = probeWslDistros(deps);
+  for (const distro of distros) {
+    let user;
+    try {
+      user = String(runWsl(["-d", distro.name, "-e", "whoami"], { utf16: false }) || "").trim();
+    } catch (_e) {
+      user = "";
+    }
+    if (!user) continue;
+    // \\wsl$\ is the legacy alias, \\wsl.localhost\ the newer one. WSL1 distros
+    // sometimes only resolve via \\wsl.localhost\, so order by version.
+    const roots = distro.version === 1
+      ? ["\\\\wsl.localhost\\", "\\\\wsl$\\"]
+      : ["\\\\wsl$\\", "\\\\wsl.localhost\\"];
+    for (const root of roots) {
+      const candidate = `${root}${distro.name}\\home\\${user}\\.hermes`;
+      try {
+        if (existsSync(candidate)) return candidate;
+      } catch (_e) { }
+    }
+  }
+  return null;
 }
 
 function resolveHermesDbPath(env = process.env) {
@@ -8138,6 +8229,9 @@ module.exports = {
   resolveKiroJsonlPath,
   resolveHermesPath,
   resolveHermesDbPath,
+  parseWslListVerbose,
+  probeWslDistros,
+  discoverWslHermesHome,
   resolveCopilotOtelPaths,
   parseRolloutIncremental,
   parseClaudeIncremental,
