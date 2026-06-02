@@ -240,6 +240,7 @@ final class StatusBarController: NSObject {
     private let viewModel: DashboardViewModel
     private let serverManager: ServerManager
     private let launchAtLoginManager: LaunchAtLoginManager
+    private let desktopPetController: DesktopPetWindowController
     private var animator: MenuBarAnimator?
     private var cancellables = Set<AnyCancellable>()
     /// While the status-item menu is open, refreshes the “Check for Updates” row when download/check status changes.
@@ -265,10 +266,12 @@ final class StatusBarController: NSObject {
 
     init(viewModel: DashboardViewModel,
          serverManager: ServerManager,
-         launchAtLoginManager: LaunchAtLoginManager) {
+         launchAtLoginManager: LaunchAtLoginManager,
+         desktopPetController: DesktopPetWindowController) {
         self.viewModel = viewModel
         self.serverManager = serverManager
         self.launchAtLoginManager = launchAtLoginManager
+        self.desktopPetController = desktopPetController
         super.init()
 
         Self.instance = self
@@ -785,6 +788,11 @@ final class StatusBarController: NSObject {
         loginItem.state = launchAtLoginManager.isEnabled ? .on : .off
         menu.addItem(loginItem)
 
+        let petItem = NSMenuItem(title: Strings.menuDesktopPet, action: #selector(toggleDesktopPet), keyEquivalent: "")
+        petItem.target = self
+        petItem.state = desktopPetController.isVisible ? .on : .off
+        menu.addItem(petItem)
+
         menu.addItem(.separator())
 
         // Quit
@@ -846,6 +854,10 @@ final class StatusBarController: NSObject {
 
     @objc private func toggleLaunchAtLogin() {
         launchAtLoginManager.toggle()
+    }
+
+    @objc private func toggleDesktopPet() {
+        desktopPetController.toggle()
     }
 
     @objc private func quit() {

@@ -100,6 +100,8 @@ enum Strings {
     static var menuStarOnGitHub: String { t("★ Star on GitHub", "★ 在 GitHub 上标星", "★ 在 GitHub 上標星", "★ GitHub でスターを付ける", "★ GitHub에서 스타하기") }
     static var menuShowStats: String { t("Show Stats in Menu Bar", "在菜单栏显示统计", "在選單欄顯示統計", "メニューバーに統計を表示", "메뉴 막대에 통계 표시") }
     static var menuAnimatedIcon: String { t("Animated Icon", "动态图标", "動態圖示", "アニメーションアイコン", "애니메이션 아이콘") }
+    static var menuDesktopPet: String { t("Desktop Pet", "桌面宠物", "桌面寵物", "デスクトップペット", "데스크톱 펫") }
+    static var menuHidePet: String { t("Hide Pet", "隐藏桌宠", "隱藏桌寵", "ペットを隠す", "펫 숨기기") }
     static var menuSettings: String { t("Settings", "设置", "設定", "設定", "설정") }
     // Status-bar inline label (Tokens / Cost) always stays English — it sits
     // next to the menu bar number and should not swap with system language.

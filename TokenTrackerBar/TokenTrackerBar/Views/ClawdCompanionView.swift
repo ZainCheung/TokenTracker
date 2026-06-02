@@ -3,7 +3,25 @@ import SwiftUI
 /// Clawd pixel-art companion with full animation suite.
 /// Animations ported from Clawd-on-Desk SVG keyframes (39 states).
 struct ClawdCompanionView: View {
+    /// Where the companion is rendered. `.dashboard` is the menu-bar popover header
+    /// (horizontal row with the sync button); `.floating` is the standalone desktop
+    /// pet window (transparent, enlarged sprite, hover/tap bubble, no sync button).
+    enum Layout { case dashboard, floating }
+
     @ObservedObject var viewModel: DashboardViewModel
+    var layout: Layout = .dashboard
+    /// Floating desktop pet only — wired up by `DesktopPetWindowController`.
+    var onRequestDashboard: (() -> Void)? = nil
+    var onClosePet: (() -> Void)? = nil
+    /// Floating pet: hover enter/leave, so the controller can slide an edge-hidden pet
+    /// out and back.
+    var onHoverChanged: ((Bool) -> Void)? = nil
+    /// Floating pet: gates the bubble by on-screen width (set by DesktopPetWindowController).
+    @ObservedObject var petState: PetWindowState = .alwaysAllowed
+
+    /// Floating pet: briefly reveal the quip bubble after a tap (hover shows data instead).
+    @State private var floatingBubbleShown = false
+    @State private var floatingBubbleTask: Task<Void, Never>?
 
     @State private var eyesClosed = false
     @State private var hoverSide: HoverSide = .none
@@ -20,8 +38,24 @@ struct ClawdCompanionView: View {
 
     private let px: CGFloat = 4.0
     private let syncSpinPeriod: TimeInterval = 0.8
+    /// Sprite magnification for the standalone desktop-pet window (1.0 in the dashboard).
+    private let floatingScale: CGFloat = 1.4
 
     var body: some View {
+        Group {
+            switch layout {
+            case .dashboard: dashboardContent
+            case .floating: floatingContent
+            }
+        }
+        .onAppear {
+            startBlinkLoop()
+            startIdleVariantLoop()
+        }
+    }
+
+    /// Menu-bar popover header: character + bubble + sync button in a row.
+    private var dashboardContent: some View {
         HStack(alignment: .center, spacing: 10) {
             characterView
                 .frame(width: 15 * px, height: 16 * px)
@@ -45,10 +79,60 @@ struct ClawdCompanionView: View {
         .padding(.horizontal, 20)
         .padding(.top, 16)
         .padding(.bottom,-8)
-        .onAppear {
-            startBlinkLoop()
-            startIdleVariantLoop()
+    }
+
+    /// Standalone desktop pet: enlarged sprite with a hover/tap bubble floating above it.
+    private var floatingContent: some View {
+        VStack(spacing: 3) {
+            // The bubble sits in a fixed-size slot ABOVE the sprite and is ALWAYS in the
+            // view tree — only its opacity toggles. No `if` insert/remove means no layout
+            // churn and no transition, which is exactly what caused the jitter/flicker
+            // loop (bubble appears → relayout → sprite shifts off the cursor → hover ends
+            // → bubble removed → sprite snaps back → hover again → …). The fixed slot
+            // also keeps the sprite's position rock-steady regardless of bubble width.
+            bubbleView
+                .id("quip-\(quipIndex)")
+                .fixedSize()
+                .allowsHitTesting(false)
+                .opacity(floatingBubbleVisible ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: floatingBubbleVisible)
+                .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .bottom)
+
+            characterView
+                .frame(width: 15 * px, height: 16 * px)
+                .scaleEffect(floatingScale)
+                .frame(width: 15 * px * floatingScale, height: 16 * px * floatingScale)
+                .modifier(ActionModifier(action: currentAction))
+                // Floating pet uses a plain discrete hover (NOT ClawdHoverModifier's
+                // continuous one): the per-frame .active flickered the hover-gated bubble.
+                // No lean here — the pet stays upright in exchange for rock-steady hover.
+                .onHover { hovering in
+                    // Idempotent push/pop guard so a dropped/duplicated hover event can't
+                    // leak a cursor-stack level (would leave the hand cursor stuck).
+                    if hovering {
+                        if !hoveringCharacter { NSCursor.openHand.push() }
+                    } else {
+                        if hoveringCharacter { NSCursor.pop() }
+                    }
+                    hoveringCharacter = hovering
+                }
+                .onChange(of: hoveringCharacter) { onHoverChanged?($0) }
+                .onTapGesture(count: 2) { onRequestDashboard?() }
+                .onTapGesture(count: 1) { handleFloatingTap() }
+                .contextMenu {
+                    Button(Strings.openDashboard) { onRequestDashboard?() }
+                    Divider()
+                    Button(Strings.menuHidePet) { onClosePet?() }
+                }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    /// The floating bubble is shown while hovering (precise data) or briefly after a tap —
+    /// but only when enough of the pet is on-screen (not edge-tucked or dragging off).
+    private var floatingBubbleVisible: Bool {
+        (hoveringCharacter || floatingBubbleShown) && petState.bubbleAllowed
     }
 
     // MARK: - Speech Bubble
@@ -56,15 +140,18 @@ struct ClawdCompanionView: View {
     @State private var hoveringBubble = false
 
     private var bubbleView: some View {
-        Text(currentQuip)
+        Text(bubbleText)
             .font(.system(size: 12))
             .foregroundStyle(.primary.opacity(0.75))
-            .lineLimit(3)
+            .lineLimit(layout == .floating ? 1 : 3)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
+            // Floating bubble has a downward tail (6pt) carved out of the bottom; add
+            // matching bottom padding so the text stays centered in the rounded body.
+            .padding(.bottom, layout == .floating ? 6 : 0)
             .background {
-                BubbleShape()
+                BubbleShape(direction: layout == .floating ? .down : .left)
                     .fill(.regularMaterial)
                     .shadow(color: .black.opacity(0.08), radius: 1.5, y: 0.5)
             }
@@ -769,6 +856,21 @@ struct ClawdCompanionView: View {
 
     // MARK: - Quip Pool
 
+    /// Bubble text. In the floating desktop pet, hovering the sprite reveals the
+    /// precise today figure (tokens + cost) — porting the Windows pet's hover-bubble
+    /// idea to macOS so a glance always maps to a real number; otherwise the
+    /// data-rich rotating quip (which already bakes in real figures) is shown.
+    private var bubbleText: String {
+        if layout == .floating, hoveringCharacter, viewModel.serverOnline,
+           !viewModel.isSyncing, viewModel.todayTokens > 0 {
+            return Strings.tokensSpentToday(
+                tokens: TokenFormatter.formatCompact(viewModel.todayTokens),
+                cost: viewModel.todayCost
+            )
+        }
+        return currentQuip
+    }
+
     private var currentQuip: String {
         let pool = quipPool
         guard !pool.isEmpty else { return "" }
@@ -932,6 +1034,18 @@ struct ClawdCompanionView: View {
         }
     }
 
+    /// Floating pet tap: the standard reaction, plus a temporary quip bubble (since the
+    /// floating bubble is hidden until hover). Hover still shows the precise data instead.
+    private func handleFloatingTap() {
+        handleTap()
+        floatingBubbleTask?.cancel()
+        floatingBubbleShown = true
+        floatingBubbleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if !Task.isCancelled { floatingBubbleShown = false }
+        }
+    }
+
     // MARK: - Idle Variant Rotation
 
     /// Periodically switches between idle animations for visual variety
@@ -1004,16 +1118,32 @@ private struct ActionModifier: ViewModifier {
 // MARK: - Bubble Shape
 
 private struct BubbleShape: Shape {
+    /// Which side the little tail points toward. `.left` for the dashboard header
+    /// (bubble sits to the right of Clawd); `.down` for the floating pet (bubble sits
+    /// above Clawd, so the tail points down at the sprite).
+    enum Direction { case left, down }
+    var direction: Direction = .left
+
     func path(in rect: CGRect) -> Path {
         let r: CGFloat = 8
         let tail: CGFloat = 6
-        let tailY = rect.midY
         var p = Path()
-        p.addRoundedRect(in: CGRect(x: tail, y: 0, width: rect.width - tail, height: rect.height),
-                         cornerSize: CGSize(width: r, height: r))
-        p.move(to: CGPoint(x: tail, y: tailY - 4))
-        p.addLine(to: CGPoint(x: 0, y: tailY))
-        p.addLine(to: CGPoint(x: tail, y: tailY + 4))
+        switch direction {
+        case .left:
+            let tailY = rect.midY
+            p.addRoundedRect(in: CGRect(x: tail, y: 0, width: rect.width - tail, height: rect.height),
+                             cornerSize: CGSize(width: r, height: r))
+            p.move(to: CGPoint(x: tail, y: tailY - 4))
+            p.addLine(to: CGPoint(x: 0, y: tailY))
+            p.addLine(to: CGPoint(x: tail, y: tailY + 4))
+        case .down:
+            let tailX = rect.midX
+            p.addRoundedRect(in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height - tail),
+                             cornerSize: CGSize(width: r, height: r))
+            p.move(to: CGPoint(x: tailX - 4, y: rect.height - tail))
+            p.addLine(to: CGPoint(x: tailX, y: rect.height))
+            p.addLine(to: CGPoint(x: tailX + 4, y: rect.height - tail))
+        }
         p.closeSubpath()
         return p
     }
@@ -1027,6 +1157,10 @@ private struct ClawdHoverModifier: ViewModifier {
     var onEnded: () -> Void
 
     func body(content: Content) -> some View {
+        // Dashboard popover: continuous hover so Clawd leans toward the cursor.
+        // (The floating pet does NOT use this modifier — it uses a plain discrete
+        // .onHover — because onContinuousHover's per-frame `.active` flickered the pet's
+        // hover-gated bubble under the 15fps redraw.)
         if #available(macOS 14, *) {
             content.onContinuousHover { phase in
                 switch phase {

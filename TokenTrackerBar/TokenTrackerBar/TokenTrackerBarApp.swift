@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let viewModel = DashboardViewModel()
     private let serverManager = ServerManager()
     private let launchAtLoginManager = LaunchAtLoginManager()
+    private lazy var desktopPetController = DesktopPetWindowController(viewModel: viewModel)
     private static var userInitiatedQuit = false
 
     /// Real quit path: popover/Footer Quit buttons, NativeBridge "quit", UpdateChecker relaunch.
@@ -41,8 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController = StatusBarController(
             viewModel: viewModel,
             serverManager: serverManager,
-            launchAtLoginManager: launchAtLoginManager
+            launchAtLoginManager: launchAtLoginManager,
+            desktopPetController: desktopPetController
         )
+
+        // Bring the desktop pet back if it was showing when the app last quit.
+        desktopPetController.restoreIfNeeded()
 
         NativeBridge.shared.configure(
             viewModel: viewModel,
