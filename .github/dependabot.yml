@@ -33,11 +33,15 @@ updates:
     commit-message:
       prefix: chore
 
-  # GitHub Actions used across all workflows
+  # GitHub Actions used across all workflows — grouped into a single PR so a
+  # batch of action bumps doesn't open one PR each.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: ci
