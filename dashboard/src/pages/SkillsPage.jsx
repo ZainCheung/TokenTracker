@@ -225,6 +225,9 @@ function FilterToolbar({
   totalCount,
   anyFilter,
   onClearFilters,
+  searchQuery,
+  onSearchQuery,
+  searchPlaceholder,
 }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2 pt-1 text-xs text-oai-gray-600 dark:text-oai-gray-300">
@@ -279,7 +282,43 @@ function FilterToolbar({
         </Select.Portal>
       </Select.Root>
 
-      <span className="text-oai-gray-500 dark:text-oai-gray-400">
+      <div className="relative w-56 max-w-full">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-oai-gray-400" aria-hidden />
+        <Input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => onSearchQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && searchQuery) {
+              event.preventDefault();
+              onSearchQuery("");
+            }
+          }}
+          aria-label={copy("skills.action.search_aria")}
+          placeholder={searchPlaceholder}
+          className="h-8 pl-9 pr-8 !border-oai-gray-200 dark:!border-oai-gray-800 focus:!border-oai-gray-400 focus:!ring-oai-gray-400/20 dark:focus:!border-oai-gray-500 dark:focus:!ring-oai-gray-500/20 [&::-webkit-search-cancel-button]:appearance-none"
+        />
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onSearchQuery("")}
+          aria-label={copy("skills.action.search_clear")}
+          aria-hidden={!searchQuery}
+          tabIndex={searchQuery ? 0 : -1}
+          className={cn(
+            "absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-oai-gray-400 transition duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] hover:bg-oai-gray-100 hover:text-oai-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-gray-400/40 motion-reduce:transition-none dark:hover:bg-oai-gray-800 dark:hover:text-oai-gray-200",
+            searchQuery ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0",
+          )}
+        >
+          <XIcon className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+
+      <span
+        role="status"
+        aria-live="polite"
+        className="ml-auto shrink-0 tabular-nums text-oai-gray-500 dark:text-oai-gray-400"
+      >
         {copy("skills.filter.result_count", { filtered: filteredCount, total: totalCount })}
       </span>
 
@@ -287,7 +326,7 @@ function FilterToolbar({
         <button
           type="button"
           onClick={onClearFilters}
-          className="ml-auto inline-flex h-7 items-center gap-1 rounded-full bg-oai-gray-100 px-2.5 text-[11px] font-medium text-oai-gray-700 transition hover:bg-oai-gray-200 focus:outline-none focus:ring-2 focus:ring-oai-gray-400/30 dark:bg-oai-gray-800/70 dark:text-oai-gray-200 dark:hover:bg-oai-gray-700"
+          className="shrink-0 inline-flex h-7 items-center gap-1 rounded-full bg-oai-gray-100 px-2.5 text-[11px] font-medium text-oai-gray-700 transition hover:bg-oai-gray-200 focus:outline-none focus:ring-2 focus:ring-oai-gray-400/30 dark:bg-oai-gray-800/70 dark:text-oai-gray-200 dark:hover:bg-oai-gray-700"
         >
           <XIcon className="h-3 w-3" aria-hidden />
           {copy("skills.filter.clear")}
@@ -366,6 +405,9 @@ function MySkillsView({
   onAgentFilter,
   anyFilter,
   onClearFilters,
+  searchQuery,
+  onSearchQuery,
+  searchPlaceholder,
   selectedId,
   onSelect,
   onToggleTarget,
@@ -398,6 +440,9 @@ function MySkillsView({
           totalCount={totalCount}
           anyFilter={anyFilter}
           onClearFilters={onClearFilters}
+          searchQuery={searchQuery}
+          onSearchQuery={onSearchQuery}
+          searchPlaceholder={searchPlaceholder}
         />
       )}
       {items.length === 0 ? (
@@ -664,6 +709,8 @@ export function SkillsPage() {
   const [source, setSource] = useState(SOURCE_ALL);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [myQuery, setMyQuery] = useState("");
+  const [myDebouncedQuery, setMyDebouncedQuery] = useState("");
   const [repoInput, setRepoInput] = useState("");
   const [manageOpen, setManageOpen] = useState(false);
   const [agentFilter, setAgentFilter] = useState("all");
@@ -842,6 +889,11 @@ export function SkillsPage() {
     const timer = setTimeout(() => setDebouncedQuery(query), 200);
     return () => clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setMyDebouncedQuery(myQuery), 120);
+    return () => clearTimeout(timer);
+  }, [myQuery]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1083,10 +1135,23 @@ export function SkillsPage() {
   const mySkills = installedData.skills || [];
 
   const filteredMySkills = useMemo(() => {
-    if (agentFilter === "all") return mySkills;
-    return mySkills.filter((skill) => (skill.targets || []).includes(agentFilter));
-  }, [mySkills, agentFilter]);
+    const byAgent =
+      agentFilter === "all"
+        ? mySkills
+        : mySkills.filter((skill) => (skill.targets || []).includes(agentFilter));
+    const q = myDebouncedQuery.trim().toLowerCase();
+    if (!q) return byAgent;
+    return byAgent.filter(
+      (skill) =>
+        (skill.name || "").toLowerCase().includes(q) ||
+        (skill.directory || "").toLowerCase().includes(q) ||
+        (skill.description || "").toLowerCase().includes(q),
+    );
+  }, [mySkills, agentFilter, myDebouncedQuery]);
 
+  // Search is not a "filter": the search box owns its own clear (×). The
+  // toolbar "Clear filters" pill is gated on the agent filter only, so typing
+  // a query never makes it appear.
   const myAnyFilter = agentFilter !== "all";
 
   const selectedSkill = useMemo(() => {
@@ -1096,6 +1161,7 @@ export function SkillsPage() {
 
   const handleClearMyFilters = useCallback(() => {
     setAgentFilter("all");
+    setMyQuery("");
   }, []);
 
   const handleSelectSkill = useCallback((skill) => {
@@ -1190,6 +1256,9 @@ export function SkillsPage() {
         onAgentFilter={setAgentFilter}
         anyFilter={myAnyFilter}
         onClearFilters={handleClearMyFilters}
+        searchQuery={myQuery}
+        onSearchQuery={setMyQuery}
+        searchPlaceholder={copy("skills.my.placeholder")}
         selectedId={selectedSkillId}
         onSelect={handleSelectSkill}
         onToggleTarget={handleToggleTarget}

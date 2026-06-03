@@ -547,6 +547,7 @@ skills.toast.installed,ui,SkillsPage,SkillsPage,toast_installed,"Installed {{nam
 skills.action.remove,ui,SkillsPage,SkillsPage,action_remove,Remove,,active
 skills.action.search,ui,SkillsPage,SkillsPage,action_search,Search,,active
 skills.action.search_aria,ui,SkillsPage,SkillsPage,action_search_aria,"Search skills",,active
+skills.action.search_clear,ui,SkillsPage,SkillsPage,action_search_clear,"Clear search",,active
 skills.target.synced_summary,ui,SkillsPage,InstalledSkillRow,target_synced_summary,"Synced to {{targets}}",,active
 skills.target.synced_none,ui,SkillsPage,InstalledSkillRow,target_synced_none,"Not synced to any agent",,active
 skills.row.open_details,ui,SkillsPage,InstalledSkillRow,row_open_details,"Open details for {{name}}",,active
@@ -557,6 +558,7 @@ skills.detail.remove_confirm_hint,ui,SkillsPage,SkillDetailPanel,detail_remove_c
 skills.filter.agent_label,ui,SkillsPage,SkillsPage,filter_agent_label,"Agent",,active
 skills.filter.agent_all,ui,SkillsPage,SkillsPage,filter_agent_all,"All agents",,active
 skills.filter.clear,ui,SkillsPage,SkillsPage,filter_clear,"Clear filters",,active
+skills.my.placeholder,ui,SkillsPage,SkillsPage,my_placeholder,"Filter installed skills…",,active
 skills.filter.result_count,ui,SkillsPage,SkillsPage,filter_result_count,"{{filtered}} of {{total}} skills",,active
 skills.filter.result_count_browse,ui,SkillsPage,SkillsPage,filter_result_count_browse,"{{count}} results",,active
 skills.empty.no_match,ui,SkillsPage,SkillsPage,empty_no_match,"No skills match the current filters.",,active
