@@ -10,21 +10,33 @@
 -- This function does the GROUP BY in Postgres and returns a SINGLE jsonb row
 -- (jsonb_agg), which sidesteps PostgREST's 1000-row response cap entirely: one
 -- round-trip, no pagination. The heaviest real user's 52-week heatmap dropped
--- from ~3.2s to ~137ms (827 grouped rows). SUM across the user's active devices
--- is byte-identical to the old in-edge aggregation; tz-local bucketing uses
--- `AT TIME ZONE` (same IANA tz database as the old JS Intl.DateTimeFormat path,
--- including DST — verified against the old functions across Asia/Shanghai,
--- America/New_York spanning a spring-forward, and a fixed UTC offset).
+-- from ~3.2s to ~137ms server-side (1240 grouped rows). SUM across the user's
+-- active devices is byte-identical to the old in-edge aggregation; tz-local
+-- bucketing uses `AT TIME ZONE` (same IANA tz database as the old JS
+-- Intl.DateTimeFormat path, including DST — verified against the old functions
+-- across Asia/Shanghai, America/New_York spanning a spring-forward, and a fixed
+-- UTC offset).
 --
 -- SECURITY INVOKER (the default): runs with the caller's privileges, so it
 -- never exposes more than a direct SELECT on tokentracker_hourly would. The
 -- edge functions call it with the service-role token AFTER verifying the user's
 -- JWT and resolving p_user_id / p_device_ids server-side.
 --
+-- Determinism (Codex review): jsonb_agg is ordered by (bucket, source, model)
+-- so the array — and therefore the model-breakdown `sources` ordering and the
+-- per-bucket `models` object key order built in the edge — is stable across
+-- query plans, mirroring the old `.order("hour_start")` behavior.
+--
+-- Invalid timezone (Codex review): an unrecognized p_tz would make
+-- `AT TIME ZONE p_tz` raise and 500 the endpoint. The old JS caught the
+-- Intl.DateTimeFormat throw and fell back to the offset. The tzr CTE validates
+-- p_tz against pg_timezone_names once; an unknown zone falls back to
+-- p_offset_min, then UTC — matching the old precedence.
+--
 -- p_trunc: 'hour' | 'day' | 'month' | 'none' (none = group by source+model only)
 -- p_tz:    IANA zone (e.g. 'Asia/Shanghai') or NULL
--- p_offset_min: fallback minutes east of UTC when p_tz is NULL (monthly passes
---               both NULL to bucket by UTC, matching the old hour_start slice).
+-- p_offset_min: fallback minutes east of UTC when p_tz is NULL/invalid (monthly
+--               passes both NULL to bucket by UTC, matching the old slice).
 --
 -- Idempotent (CREATE OR REPLACE). Rollback: DROP FUNCTION account_usage_grouped.
 
@@ -39,10 +51,20 @@ CREATE OR REPLACE FUNCTION account_usage_grouped(
 ) RETURNS jsonb
 LANGUAGE sql STABLE
 AS $func$
-  WITH loc AS (
+  WITH tzr AS (
+    -- Validate p_tz once; fall back to offset/UTC on an unknown zone instead of
+    -- raising (mirrors the old JS Intl.DateTimeFormat try/catch fallback).
+    SELECT CASE
+             WHEN p_tz IS NOT NULL AND p_tz <> ''
+                  AND EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = p_tz)
+             THEN p_tz
+             ELSE NULL
+           END AS tz
+  ),
+  loc AS (
     SELECT
       CASE
-        WHEN p_tz IS NOT NULL AND p_tz <> '' THEN (h.hour_start AT TIME ZONE p_tz)
+        WHEN tzr.tz IS NOT NULL THEN (h.hour_start AT TIME ZONE tzr.tz)
         WHEN p_offset_min IS NOT NULL THEN ((h.hour_start AT TIME ZONE 'UTC') + make_interval(mins => p_offset_min))
         ELSE (h.hour_start AT TIME ZONE 'UTC')
       END AS local_ts,
@@ -50,7 +72,7 @@ AS $func$
       h.total_tokens, h.input_tokens, h.output_tokens,
       h.cached_input_tokens, h.cache_creation_input_tokens,
       h.reasoning_output_tokens, h.conversations
-    FROM tokentracker_hourly h
+    FROM tokentracker_hourly h CROSS JOIN tzr
     WHERE h.user_id = p_user_id
       AND h.device_id = ANY(p_device_ids)
       AND h.hour_start >= p_from
@@ -75,5 +97,9 @@ AS $func$
     FROM loc
     GROUP BY 1, source, model
   )
-  SELECT COALESCE(jsonb_agg(to_jsonb(grouped.*)), '[]'::jsonb) FROM grouped
+  SELECT COALESCE(
+           jsonb_agg(to_jsonb(grouped.*) ORDER BY grouped.bucket, grouped.source, grouped.model),
+           '[]'::jsonb
+         )
+  FROM grouped
 $func$;
