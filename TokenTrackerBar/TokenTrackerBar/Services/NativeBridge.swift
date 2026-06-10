@@ -4,12 +4,6 @@ import ServiceManagement
 import WebKit
 import WidgetKit
 
-extension Notification.Name {
-    /// Posted whenever native UI settings or locale change via the bridge.
-    /// StatusBarController listens to refresh its display.
-    static let nativeSettingsChanged = Notification.Name("NativeSettingsChanged")
-}
-
 /// Bridges menu-bar app preferences and actions to the embedded dashboard WebView.
 ///
 /// The dashboard SettingsPage posts JSON messages via `window.webkit.messageHandlers.nativeBridge.postMessage(...)`.
@@ -49,12 +43,11 @@ final class NativeBridge {
             .sink { [weak self] _ in self?.pushSettings() }
             .store(in: &cancellables)
 
-        // Mirror local changes to the limits display mode (e.g. toggled in
-        // the menu-bar popover) so the embedded dashboard reflects the new
-        // rendering without a page reload.
-        LimitsSettingsStore.shared.$displayMode
-            .dropFirst()
-            .removeDuplicates()
+        // Mirror local limits preference changes (e.g. toggled in the
+        // menu-bar popover) so the embedded dashboard reflects them without a
+        // page reload.
+        let limitsSettings = LimitsSettingsStore.shared
+        limitsSettings.preferencesDidChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.pushSettings() }
             .store(in: &cancellables)
@@ -66,7 +59,8 @@ final class NativeBridge {
     private static func availableItemsFingerprint(for limits: UsageLimitsResponse?) -> String {
         MenuBarDisplayPreferences.availableItemIDs(
             for: limits,
-            keepingSelected: MenuBarDisplayPreferences.read()
+            keepingSelected: MenuBarDisplayPreferences.read(),
+            hiddenProviders: LimitsSettingsStore.shared.hiddenProviders
         )
             .joined(separator: "|")
     }
@@ -123,10 +117,13 @@ final class NativeBridge {
             launchAtLoginValue = false
             launchAtLoginSupported = false
         }
+        let limitsSettings = LimitsSettingsStore.shared
+        let hiddenProviders = limitsSettings.hiddenProviders
         let menuBarItems = MenuBarDisplayPreferences.read()
         let availableItemIDs = MenuBarDisplayPreferences.availableItemIDs(
             for: viewModel?.usageLimits,
-            keepingSelected: menuBarItems
+            keepingSelected: menuBarItems,
+            hiddenProviders: hiddenProviders
         )
         let normalizedMenuBarItems = MenuBarDisplayPreferences.normalize(
             menuBarItems,
@@ -141,7 +138,8 @@ final class NativeBridge {
             "menuBarItems": normalizedMenuBarItems,
             "menuBarAvailableItems": MenuBarDisplayPreferences.availableItemsPayload(
                 for: viewModel?.usageLimits,
-                keepingSelected: normalizedMenuBarItems
+                keepingSelected: normalizedMenuBarItems,
+                hiddenProviders: hiddenProviders
             ),
             "menuBarMaxItems": MenuBarDisplayPreferences.maxVisibleItems,
             "animatedIcon": UserDefaults.standard.object(forKey: "MenuBarAnimationEnabled") as? Bool ?? true,
@@ -155,7 +153,8 @@ final class NativeBridge {
             "currency": UserDefaults.standard.string(forKey: "MenuBarCurrency") ?? "USD",
             "currencySymbol": UserDefaults.standard.string(forKey: "MenuBarCurrencySymbol") ?? "$",
             "exchangeRate": UserDefaults.standard.object(forKey: "MenuBarExchangeRate") as? Double ?? 1.0,
-            "limitsDisplayMode": LimitsSettingsStore.shared.displayMode.bridgeKey,
+            "limitsDisplayMode": limitsSettings.displayMode.bridgeKey,
+            "limitsPreferences": limitsSettings.limitsPreferencesPayload,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
               let json = String(data: data, encoding: .utf8) else { return }
@@ -221,11 +220,18 @@ final class NativeBridge {
                 NotificationCenter.default.post(name: .nativeSettingsChanged, object: nil)
                 WidgetCenter.shared.reloadAllTimelines()
             }
+        case "limitsPreferences":
+            // Fall through to pushSettings even when the snapshot applies:
+            // provider visibility affects the selectable menu-bar metrics, so
+            // the stored selection must self-heal and the dropdown payload
+            // refresh. The echo is convergent — the dashboard receives its own
+            // snapshot back and does not write again.
+            if let raw = value as? [String: Any] {
+                _ = LimitsSettingsStore.shared.applyBridgeSnapshot(raw)
+            }
         case "limitsDisplayMode":
-            if let raw = value as? String, let parsed = LimitDisplayMode(rawValue: raw),
-               parsed != LimitsSettingsStore.shared.displayMode {
-                LimitsSettingsStore.shared.displayMode = parsed
-                NotificationCenter.default.post(name: .nativeSettingsChanged, object: nil)
+            if LimitsSettingsStore.shared.applyBridgeDisplayMode(value) {
+                return
             }
         default:
             break
