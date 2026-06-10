@@ -5,6 +5,9 @@ struct UsageLimitsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var settings = LimitsSettingsStore.shared
     @State private var showSettings = false
+    /// Width of the widest visible row label; all label columns match it so
+    /// bars align without reserving space for labels that aren't on screen.
+    @State private var labelColumnWidth: CGFloat = 0
     let limits: UsageLimitsResponse?
 
     /// At least one provider is configured and error-free.
@@ -50,6 +53,7 @@ struct UsageLimitsView: View {
                     }
                 }
             }
+            .onPreferenceChange(LimitLabelWidthKey.self) { labelColumnWidth = ceil($0) }
         } else if limits == nil {
             LimitsSkeleton()
         }
@@ -285,7 +289,11 @@ struct UsageLimitsView: View {
                 .font(.system(.caption, design: .default))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .frame(width: 56, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: LimitLabelWidthKey.self, value: proxy.size.width)
+                })
+                .frame(width: labelColumnWidth > 0 ? labelColumnWidth : nil, alignment: .leading)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -505,5 +513,13 @@ private struct LimitsSkeleton: View {
         RoundedRectangle(cornerRadius: radius)
             .fill(Color.gray.opacity(phase > 0 ? 0.14 : 0.06))
             .frame(width: width, height: height)
+    }
+}
+
+/// Reports the widest limit-row label so every row's label column can match it.
+private struct LimitLabelWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
