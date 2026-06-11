@@ -32,10 +32,11 @@ describe("useTrendData", () => {
 
   function hourlyStorageKey({
     cacheKey = "test-cache",
+    scopeKey = "local",
     day = "2026-05-29",
     timeZone = "UTC",
   } = {}) {
-    return `tokentracker.trend.${cacheKey}.localhost:7680.hourly.${day}.tz:${timeZone}`;
+    return `tokentracker.trend.${cacheKey}.${scopeKey}.localhost:7680.hourly.${day}.tz:${timeZone}`;
   }
 
   it("treats elapsed hourly slots with no usage rows as real zero observations", async () => {
