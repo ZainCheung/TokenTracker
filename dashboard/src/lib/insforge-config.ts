@@ -7,12 +7,14 @@ import { createClient } from "@insforge/sdk";
  * returns "" and every cloud call (leaderboard list, profile modal, OAuth
  * login) silently fails on the public site.
  *
- * Both values are public by design: the `ik_*` anon/publishable key is meant
- * to ship in the browser bundle, and both already appear in
- * `.github/workflows/*.yml` in this public repo. Explicit env vars still win.
+ * Both values are public by design: the anon key is a JWT (role=anon) meant to
+ * ship in the browser bundle and also appears in `.github/workflows/*.yml`.
+ * (Previously this mistakenly hardcoded the full-access `ik_*` API key, which
+ * has admin access and must never reach the frontend.) Explicit env vars still win.
  */
 const PROD_INSFORGE_BASE_URL = "https://srctyff5.us-east.insforge.app";
-const PROD_INSFORGE_ANON_KEY = "ik_9f35735991b684f7cf57fa00bb4d0487";
+const PROD_INSFORGE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNDU5NDd9.T0auta_IrVIh0uXW1bob5QSnzvsnJmN28r5XkSGEuQY";
 
 /**
  * InsForge 云端（SDK OAuth/Session）。`getInsforgeBaseUrl()` 在 localhost 有 env 时同样指向云端。

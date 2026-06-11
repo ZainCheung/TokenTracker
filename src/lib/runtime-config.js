@@ -1,11 +1,14 @@
 const DEFAULT_BASE_URL = "https://srctyff5.us-east.insforge.app";
 const DEFAULT_DASHBOARD_URL = "https://www.tokentracker.cc";
 const DEFAULT_HTTP_TIMEOUT_MS = 20_000;
-// Public InsForge anon/publishable key. Mirrors dashboard/src/lib/insforge-config.ts
-// (PROD_INSFORGE_ANON_KEY) — it is public by design (ships in the browser bundle
-// and appears in .github/workflows/*.yml). The local server needs it to call the
+// Public InsForge anon key (JWT, role=anon). Mirrors dashboard/src/lib/insforge-config.ts
+// (PROD_INSFORGE_ANON_KEY) — public by design (ships in the browser bundle and
+// appears in .github/workflows/*.yml). The local server needs it to call the
 // cross-device `tokentracker-account-*` edge functions on the popover's behalf.
-const DEFAULT_ANON_KEY = "ik_9f35735991b684f7cf57fa00bb4d0487";
+// (Previously this mistakenly used the full-access `ik_*` API key, which has
+// admin access and must never be shipped to clients.)
+const DEFAULT_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNDU5NDd9.T0auta_IrVIh0uXW1bob5QSnzvsnJmN28r5XkSGEuQY";
 
 function resolveRuntimeConfig({ cli = {}, config = {}, env = process.env, defaults = {} } = {}) {
   const baseUrl = pickString(

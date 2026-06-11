@@ -85,3 +85,6 @@ docs/launch/submit-awesome-pr.sh
 
 # Scratch / reference clones (not part of the project)
 scratch/
+
+# Local InsForge MCP config (contains full-access API_KEY — never commit)
+dashboard/.mcp.json
