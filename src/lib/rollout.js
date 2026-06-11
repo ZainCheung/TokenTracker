@@ -7590,15 +7590,23 @@ async function parseCopilotIncremental({ otelPaths, cursors, queuePath, onProgre
 
       const inputRaw = toNonNegativeInt(attrs["gen_ai.usage.input_tokens"]);
       const output = toNonNegativeInt(attrs["gen_ai.usage.output_tokens"]);
-      const cacheRead = toNonNegativeInt(attrs["gen_ai.usage.cache_read.input_tokens"]);
+      const cacheRead = toNonNegativeInt(
+        attrs["gen_ai.usage.cache_read.input_tokens"] ??
+          attrs["gen_ai.usage.cache_read_input_tokens"] ??
+          attrs["gen_ai.usage.cached_input_tokens"],
+      );
       // Copilot CLI: cache_write.input_tokens; Copilot Chat extension: cache_creation.input_tokens
       const cacheWrite = toNonNegativeInt(
         attrs["gen_ai.usage.cache_write.input_tokens"] ??
-          attrs["gen_ai.usage.cache_creation.input_tokens"],
+          attrs["gen_ai.usage.cache_creation.input_tokens"] ??
+          attrs["gen_ai.usage.cache_write_input_tokens"] ??
+          attrs["gen_ai.usage.cache_creation_input_tokens"],
       );
       // Copilot CLI: reasoning.output_tokens; Copilot Chat extension: reasoning_tokens
       const reasoning = toNonNegativeInt(
-        attrs["gen_ai.usage.reasoning.output_tokens"] ?? attrs["gen_ai.usage.reasoning_tokens"],
+        attrs["gen_ai.usage.reasoning.output_tokens"] ??
+          attrs["gen_ai.usage.reasoning_tokens"] ??
+          attrs["gen_ai.usage.reasoning_output_tokens"],
       );
       // OTEL input_tokens INCLUDES cache_read — subtract per project convention
       const cacheReadClamped = Math.min(cacheRead, inputRaw);

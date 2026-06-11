@@ -3652,6 +3652,43 @@ test("parseCopilotIncremental reads short cache_creation + reasoning_tokens keys
   }
 });
 
+test("parseCopilotIncremental reads flat cached/reasoning usage keys from Copilot OTEL", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-copilot-"));
+  try {
+    const otelPath = path.join(tmp, "vscode-chat.jsonl");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+
+    const record = makeCopilotChatLogRecord({
+      responseId: "r-flat-usage",
+      inputTokens: 1_588_603,
+      outputTokens: 15_768,
+      cacheRead: 0,
+      reasoning: 0,
+      model: "claude-sonnet-4-6",
+    });
+    delete record.attributes["gen_ai.usage.cache_read.input_tokens"];
+    delete record.attributes["gen_ai.usage.cache_creation.input_tokens"];
+    delete record.attributes["gen_ai.usage.reasoning_tokens"];
+    record.attributes["gen_ai.usage.cache_read_input_tokens"] = 1_517_440;
+    record.attributes["gen_ai.usage.reasoning_output_tokens"] = 9_301;
+
+    writeCopilotOtelFile(otelPath, [record]);
+
+    await parseCopilotIncremental({ otelPaths: [otelPath], cursors, queuePath });
+    const queued = await readJsonLines(queuePath);
+    const b = queued.find((r) => r.source === "copilot");
+    assert.ok(b, "copilot bucket present");
+    assert.equal(b.input_tokens, 71_163);
+    assert.equal(b.cached_input_tokens, 1_517_440);
+    assert.equal(b.output_tokens, 15_768);
+    assert.equal(b.reasoning_output_tokens, 9_301);
+    assert.equal(b.total_tokens, 1_613_672);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("parseCopilotIncremental migration: v1 cursor with empty seenIds + non-empty fileOffsets re-reads file", async () => {
   // Repro of the real bug: a user on v0.13.0 enabled Chat-extension OTEL output,
   // pre-v2 parser silently rejected the LogRecord shape and pushed the cursor
