@@ -5,7 +5,7 @@
   "stats.period.week": "本週",
   "stats.period.month": "本月",
   "stats.period.all": "全部",
-  "stats.period.convs": "對話",
+  "stats.period.convs": "convs",
   "dashboard.core_index.collapse_label": "▾",
   "dashboard.core_index.expand_label": "▸",
   "dashboard.core_index.collapse_aria": "摺疊模型分解",

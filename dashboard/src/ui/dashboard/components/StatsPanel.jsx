@@ -34,7 +34,6 @@ function buildSubscriptionItems(subscriptions) {
 }
 
 export function StatsPanel({
-  period = "month",
   rankLabel,
   streakDays,
   subscriptions = [],
@@ -63,20 +62,7 @@ export function StatsPanel({
     const formatted = formatCompactNumber(value, compactConfig);
     return formatted === "-" ? placeholder : formatted;
   };
-  const periodConversationLabel = (() => {
-    switch (period) {
-      case "day":
-        return copy("stats.period.today");
-      case "week":
-        return copy("stats.period.week");
-      case "month":
-        return copy("stats.period.month");
-      case "total":
-        return copy("stats.period.all");
-      default:
-        return copy("stats.period.convs");
-    }
-  })();
+  const periodConversationLabel = copy("stats.period.convs");
 
   const displayModels = topModels.slice(0, 3);
 

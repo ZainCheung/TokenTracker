@@ -404,10 +404,6 @@ auth.callback.success,ui,*,NativeAuthCallbackPage,success,"Signed in successfull
 auth.callback.redirecting,ui,*,NativeAuthCallbackPage,redirecting,"Returning to TokenTracker…",,active
 auth.callback.failed,ui,*,NativeAuthCallbackPage,failed,"Sign-in incomplete. Please try again.",,active
 auth.callback.close,ui,*,NativeAuthCallbackPage,close,"Close this page",,active
-stats.period.today,ui,DashboardPage,StatsPanel,period_today,"today",,active
-stats.period.week,ui,DashboardPage,StatsPanel,period_week,"week",,active
-stats.period.month,ui,DashboardPage,StatsPanel,period_month,"month",,active
-stats.period.all,ui,DashboardPage,StatsPanel,period_all,"all",,active
 stats.period.convs,ui,DashboardPage,StatsPanel,period_convs,"convs",,active
 leaderboard.column.est_cost,ui,LeaderboardPage,LeaderboardPage,column_est_cost,"Est. Cost",,active
 leaderboard.signin_prompt,ui,LeaderboardPage,LeaderboardPage,signin_prompt,"Sign in to join the leaderboard",,active
