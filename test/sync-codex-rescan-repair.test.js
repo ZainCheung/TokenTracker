@@ -203,4 +203,99 @@ describe("repairCodexRescanInflation (#187) — atomic guarded rebuild", () => {
       await fs.rm(home, { recursive: true, force: true });
     }
   });
+
+  it("RETRIES after a prior SKIP: a session moved sessions/ -> archived_sessions/ is reproducible by UUID (#187, easonlee05)", async () => {
+    const home = await makeTempHome();
+    try {
+      const uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+      // The session now lives FLAT in archived_sessions/ (Codex-Manager moved it).
+      const archDir = path.join(home, ".codex", "archived_sessions");
+      await fs.mkdir(archDir, { recursive: true });
+      const archivedFile = path.join(archDir, `rollout-2025-12-17T00-00-00-${uuid}.jsonl`);
+      await fs.writeFile(
+        archivedFile,
+        [
+          tokenCountLine({ ts: "2025-12-17T00:00:00.000Z", last: U1, total: U1 }),
+          tokenCountLine({ ts: "2025-12-17T00:00:01.000Z", last: U2, total: T2 }),
+        ].join("\n") + "\n",
+        "utf8",
+      );
+      // The OLD sessions/ path the cursor still points at no longer exists.
+      const staleSessionsPath = path.join(
+        home, ".codex", "sessions", "2025", "12", "17",
+        `rollout-2025-12-17T00-00-00-${uuid}.jsonl`,
+      );
+
+      const queuePath = path.join(home, "queue.jsonl");
+      const queueStatePath = path.join(home, "queue.state.json");
+      await fs.writeFile(
+        queuePath,
+        JSON.stringify({ source: "codex", model: "unknown", hour_start: "2025-12-17T00:00:00.000Z", total_tokens: 750 }) + "\n",
+        "utf8",
+      );
+      await fs.writeFile(queueStatePath, JSON.stringify({ offset: 1234 }), "utf8");
+
+      const cursors = {
+        hourly: { buckets: { "codex|unknown|2025-12-17T00:00:00.000Z": { totals: { total_tokens: 750 } } }, groupQueued: {} },
+        files: { [staleSessionsPath]: { inode: 1, offset: 5, lastTotal: { total_tokens: 750 } } },
+        codexHashes: [],
+        // Prior run SKIPPED (v0.53.3 didn't scan archived) — must NOT block retry.
+        migrations: {
+          [CODEX_RESCAN_DEDUP_REPAIR_KEY]: { skipped: true, reason: "codex_session_file_missing_or_unscanned", at: "2026-06-17T00:00:00.000Z" },
+        },
+      };
+
+      const ran = await repairCodexRescanInflation({
+        cursors,
+        queuePath,
+        queueStatePath,
+        rolloutFiles: [{ path: archivedFile, source: "codex" }],
+      });
+
+      assert.equal(ran, true, "prior skip must not block the retry");
+      assert.equal(codexBucketTotal(cursors), TRUE_CODEX_TOTAL, "de-inflated to true value");
+      assert.equal((await queueRowsBySource(queuePath)).codex.total, TRUE_CODEX_TOTAL);
+      assert.equal(JSON.parse(await fs.readFile(queueStatePath, "utf8")).offset, 0);
+      // Success now records a string timestamp (final), replacing the skip object.
+      assert.equal(typeof cursors.migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY], "string");
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("GUARD still defers for a genuinely deleted session (no file with that UUID anywhere in scan)", async () => {
+    const home = await makeTempHome();
+    try {
+      const codexFile = await writeCodexFile(home); // a present, scannable session
+      const queuePath = path.join(home, "queue.jsonl");
+      const queueStatePath = path.join(home, "queue.state.json");
+      await fs.writeFile(queuePath, JSON.stringify({ source: "codex", model: "unknown", hour_start: "2025-12-17T00:00:00.000Z", total_tokens: 750 }) + "\n", "utf8");
+      await fs.writeFile(queueStatePath, JSON.stringify({ offset: 88 }), "utf8");
+
+      // A DIFFERENT session UUID that exists nowhere on disk / in the scan.
+      const deletedPath = path.join(
+        home, ".codex", "sessions", "2025", "12", "10",
+        "rollout-2025-12-10T00-00-00-99999999-9999-9999-9999-999999999999.jsonl",
+      );
+      const cursors = {
+        hourly: { buckets: { "codex|unknown|2025-12-17T00:00:00.000Z": { totals: { total_tokens: 750 } } }, groupQueued: {} },
+        files: { [codexFile]: { inode: 1, offset: 5 }, [deletedPath]: { inode: 2, offset: 5 } },
+        codexHashes: ["keep:me"],
+        migrations: {},
+      };
+
+      const ran = await repairCodexRescanInflation({
+        cursors, queuePath, queueStatePath,
+        rolloutFiles: [{ path: codexFile, source: "codex" }],
+      });
+
+      assert.equal(ran, false, "an unreproducible deleted session must defer the repair");
+      assert.equal(codexBucketTotal(cursors), 750, "nothing mutated");
+      assert.equal(JSON.parse(await fs.readFile(queueStatePath, "utf8")).offset, 88);
+      assert.deepEqual(cursors.codexHashes, ["keep:me"]);
+      assert.equal(cursors.migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY].skipped, true);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
 });

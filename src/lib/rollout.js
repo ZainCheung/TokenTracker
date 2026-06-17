@@ -8632,6 +8632,7 @@ function isCjkCodePoint(code) {
 module.exports = {
   listRolloutFiles,
   listRolloutFilesDeep,
+  codexSessionIdFromPath,
   listClaudeProjectFiles,
   listGeminiSessionFiles,
   listOpencodeMessageFiles,

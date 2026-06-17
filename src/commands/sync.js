@@ -9,6 +9,7 @@ const { ensureDir, readJson, writeJson, openLock } = require("../lib/fs");
 const {
   listRolloutFiles,
   listRolloutFilesDeep,
+  codexSessionIdFromPath,
   listClaudeProjectFiles,
   listGeminiSessionFiles,
   listOpencodeMessageFiles,
@@ -2114,7 +2115,15 @@ async function migrateRolloutCumulativeDeltaBuckets({ cursors, queuePath, rollou
 async function repairCodexRescanInflation({ cursors, queuePath, queueStatePath, rolloutFiles }) {
   if (!cursors || typeof cursors !== "object") return false;
   const migrations = (cursors.migrations ||= {});
-  if (migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY]) return false;
+  // A COMPLETED run writes an ISO-string timestamp (final — never re-run). A
+  // prior SKIP writes an object {skipped:true} and MUST be retried: the skip
+  // condition can clear in a later version (e.g. v0.53.4 started scanning
+  // archived_sessions/, so a session that was "unscanned" under v0.53.3 is now
+  // found). Treating the skip sentinel as "done" is what left users like #187
+  // permanently stuck on the inflated value after upgrading (the key was truthy
+  // so the guard never got a second chance).
+  const priorRepair = migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY];
+  if (priorRepair && !(typeof priorRepair === "object" && priorRepair.skipped)) return false;
 
   // Codex session files THIS sync discovered (source === "codex").
   const codexFiles = [];
@@ -2127,22 +2136,33 @@ async function repairCodexRescanInflation({ cursors, queuePath, queueStatePath, 
 
   // GUARD (data-loss prevention, ref the v6 ground-truth-repair incident): the
   // rebuild can only reproduce buckets from the files this sync re-parses
-  // (codexFiles, now covering sessions/ AND archived_sessions/). If any codex
-  // file that previously contributed (has a cursor) is gone from disk OR not in
-  // this sync's scan — genuinely deleted (log rotation / user cleanup) — skip
-  // entirely. The forward dedup fix still stops NEW double-counting; only this
-  // historical correction defers.
+  // (codexFiles, now covering sessions/ AND archived_sessions/). If a session
+  // that previously contributed can no longer be reproduced, skip entirely —
+  // the forward dedup fix still stops NEW double-counting; only this historical
+  // correction defers.
+  //
+  // Reproducibility is keyed on the session UUID, NOT the exact cursor path:
+  // Codex-Manager MOVES a file sessions/ -> archived_sessions/ (path changes,
+  // UUID does not). A path-based check false-positives on every moved file as
+  // "missing" and skips forever (issue #187, easonlee05). Genuinely deleted
+  // sessions (no file with that UUID anywhere in the scan) still defer.
+  const scannedSessionIds = new Set();
+  for (const fp of codexFiles) {
+    const id = codexSessionIdFromPath(fp);
+    if (id) scannedSessionIds.add(id);
+  }
   if (cursors.files && typeof cursors.files === "object") {
     for (const fp of Object.keys(cursors.files)) {
       if (!/\/\.codex\/(?:archived_)?sessions\//.test(fp)) continue;
-      if (!fssync.existsSync(fp) || !codexFileSet.has(fp)) {
-        migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY] = {
-          skipped: true,
-          reason: "codex_session_file_missing_or_unscanned",
-          at: new Date().toISOString(),
-        };
-        return false;
-      }
+      if (codexFileSet.has(fp)) continue; // exact file re-scanned this run
+      const id = codexSessionIdFromPath(fp);
+      if (id && scannedSessionIds.has(id)) continue; // same session scanned elsewhere (moved)
+      migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY] = {
+        skipped: true,
+        reason: "codex_session_unreproducible",
+        at: new Date().toISOString(),
+      };
+      return false;
     }
   }
 
