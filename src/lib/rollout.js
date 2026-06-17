@@ -42,6 +42,30 @@ async function listRolloutFiles(sessionsDir) {
   return out;
 }
 
+// Collect rollout-*.jsonl at ANY depth under dir. listRolloutFiles requires the
+// strict YYYY/MM/DD/ nesting Codex itself writes, but Codex-Manager archives
+// sessions FLAT into ~/.codex/archived_sessions/ (issue #187), so the strict
+// scanner misses them. This recursive variant handles both flat and nested
+// layouts; safe because the codex event dedup keys on sessionUUID + timestamp,
+// so an archived copy of an already-counted session re-reads as a no-op.
+async function listRolloutFilesDeep(dir) {
+  const out = [];
+  async function walk(d) {
+    const entries = await safeReadDir(d);
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) {
+        await walk(p);
+      } else if (e.isFile() && e.name.startsWith("rollout-") && e.name.endsWith(".jsonl")) {
+        out.push(p);
+      }
+    }
+  }
+  await walk(dir);
+  out.sort((a, b) => a.localeCompare(b));
+  return out;
+}
+
 async function listClaudeProjectFiles(projectsDir) {
   const out = [];
   await walkClaudeProjects(projectsDir, out);
@@ -8607,6 +8631,7 @@ function isCjkCodePoint(code) {
 
 module.exports = {
   listRolloutFiles,
+  listRolloutFilesDeep,
   listClaudeProjectFiles,
   listGeminiSessionFiles,
   listOpencodeMessageFiles,

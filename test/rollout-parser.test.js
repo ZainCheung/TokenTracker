@@ -38,6 +38,7 @@ const {
   parseKimiCodeIncremental,
   resolveKimiCodeWireFiles,
   resolveKimiCodeDefaultModel,
+  listRolloutFilesDeep,
 } = require("../src/lib/rollout");
 
 const antigravityTestTokens = (text) => estimateAntigravityTokens(text || "");
@@ -143,6 +144,74 @@ test("parseRolloutIncremental does not re-count a session file rewritten with a 
 
     assert.equal(sumCodex(), afterFirst, "re-scan after inode change must not double-count");
     assert.equal(cursors.codexHashes.length, 2, "no new event keys on a pure re-scan");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("listRolloutFilesDeep finds flat archived_sessions files the strict scanner misses (issue #187)", async () => {
+  // Codex-Manager archives sessions FLAT into ~/.codex/archived_sessions/ (no
+  // YYYY/MM/DD nesting), which listRolloutFiles requires and therefore skips.
+  // listRolloutFilesDeep must find rollout-*.jsonl at any depth.
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-archived-"));
+  try {
+    const flat = path.join(tmp, "rollout-2026-02-04T11-55-57-019c26ca-e6bb-7e00-b33a-2ac67a11ddb9.jsonl");
+    const nestedDir = path.join(tmp, "2025", "12", "24");
+    await fs.mkdir(nestedDir, { recursive: true });
+    const nested = path.join(nestedDir, "rollout-2025-12-24T09-40-54-019b4e04-2bd1-7661-b050-066f82a96566.jsonl");
+    await fs.writeFile(flat, "{}\n", "utf8");
+    await fs.writeFile(nested, "{}\n", "utf8");
+    // a non-rollout file must be ignored
+    await fs.writeFile(path.join(tmp, "notes.txt"), "x", "utf8");
+
+    const found = await listRolloutFilesDeep(tmp);
+    assert.deepEqual(found.sort(), [flat, nested].sort());
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseRolloutIncremental does not double-count a session moved sessions/ -> archived_sessions/ (issue #187)", async () => {
+  // When Codex-Manager archives a session, the same rollout file (same session
+  // UUID + event timestamps) reappears at a different path. Now that sync scans
+  // archived_sessions/ too, re-reading the archived copy must be a no-op — the
+  // event dedup keys on sessionUUID:eventTimestamp, both stable across the move.
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-rollout-"));
+  try {
+    const uuid = "019b4e04-2bd1-7661-b050-066f82a96566";
+    const livePath = path.join(tmp, "sessions", "2025", "12", "24");
+    await fs.mkdir(livePath, { recursive: true });
+    const liveFile = path.join(livePath, `rollout-2025-12-24T09-40-54-${uuid}.jsonl`);
+    const archivedDir = path.join(tmp, "archived_sessions");
+    await fs.mkdir(archivedDir, { recursive: true });
+    const archivedFile = path.join(archivedDir, `rollout-2025-12-24T09-40-54-${uuid}.jsonl`);
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const usage1 = { input_tokens: 100, cached_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 0, total_tokens: 150 };
+    const totals2 = { input_tokens: 250, cached_input_tokens: 0, output_tokens: 120, reasoning_output_tokens: 0, total_tokens: 370 };
+    const usage2 = { input_tokens: 150, cached_input_tokens: 0, output_tokens: 70, reasoning_output_tokens: 0, total_tokens: 220 };
+    const lines = [
+      buildTokenCountLine({ ts: "2025-12-24T09:40:54.000Z", last: usage1, total: usage1 }),
+      buildTokenCountLine({ ts: "2025-12-24T09:40:55.000Z", last: usage2, total: totals2 }),
+    ];
+    const body = lines.join("\n") + "\n";
+    await fs.writeFile(liveFile, body, "utf8");
+
+    const sumCodex = () =>
+      Object.entries(cursors.hourly?.buckets || {})
+        .filter(([k]) => k.startsWith("codex|"))
+        .reduce((s, [, v]) => s + Number(v.totals?.total_tokens || 0), 0);
+
+    // Live: count once.
+    await parseRolloutIncremental({ rolloutFiles: [liveFile], cursors, queuePath, source: "codex" });
+    const afterLive = sumCodex();
+    assert.equal(afterLive, totals2.total_tokens);
+
+    // Archived (different path, same UUID + timestamps): must NOT re-count.
+    await fs.writeFile(archivedFile, body, "utf8");
+    await parseRolloutIncremental({ rolloutFiles: [archivedFile], cursors, queuePath, source: "codex" });
+    assert.equal(sumCodex(), afterLive, "archived copy of a counted session must not double-count");
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

@@ -8,6 +8,7 @@ const readline = require("node:readline");
 const { ensureDir, readJson, writeJson, openLock } = require("../lib/fs");
 const {
   listRolloutFiles,
+  listRolloutFilesDeep,
   listClaudeProjectFiles,
   listGeminiSessionFiles,
   listOpencodeMessageFiles,
@@ -209,6 +210,14 @@ async function cmdSync(argv) {
 
     const sources = [
       { source: "codex", sessionsDir: path.join(codexHome, "sessions") },
+      // Codex-Manager archives sessions to ~/.codex/archived_sessions/ on every
+      // account/channel switch (issue #187). Scanning it too keeps that usage
+      // counted instead of orphaning it in the cloud (a re-upload's upsert can
+      // never delete cloud rows whose local source file has vanished). Safe
+      // against double-counting: the codex event dedup keys on sessionUUID (in
+      // the filename) + event timestamp, both stable across a sessions/ ->
+      // archived_sessions/ move, so re-reading an archived copy is a no-op.
+      { source: "codex", sessionsDir: path.join(codexHome, "archived_sessions"), deep: true },
       { source: "every-code", sessionsDir: path.join(codeHome, "sessions") },
     ];
 
@@ -217,7 +226,9 @@ async function cmdSync(argv) {
     for (const entry of sources) {
       if (seenSessions.has(entry.sessionsDir)) continue;
       seenSessions.add(entry.sessionsDir);
-      const files = await listRolloutFiles(entry.sessionsDir);
+      const files = entry.deep
+        ? await listRolloutFilesDeep(entry.sessionsDir)
+        : await listRolloutFiles(entry.sessionsDir);
       for (const filePath of files) {
         rolloutFiles.push({ path: filePath, source: entry.source });
       }
@@ -2095,11 +2106,11 @@ async function migrateRolloutCumulativeDeltaBuckets({ cursors, queuePath, rollou
 // nothing larger, so its overwrite-upsert replaces the inflated cloud rows).
 //
 // GUARDED against the v6 ground-truth-repair data-loss incident: a clear+reparse
-// rebuilds codex buckets ONLY from sessions/ files the sync re-parses, so if any
-// codex file that previously contributed is gone from disk (deleted, or moved by
-// Codex-Manager to ~/.codex/archived_sessions/, which sync does not scan) the
-// migration is skipped entirely — the forward dedup fix still prevents new
-// double-counting; only this historical correction is deferred.
+// rebuilds codex buckets ONLY from the codex files this sync re-parses (now both
+// sessions/ AND archived_sessions/), so if any codex file that previously
+// contributed is gone from disk (genuinely deleted — Codex-Manager log rotation
+// or user cleanup) the migration is skipped entirely — the forward dedup fix
+// still prevents new double-counting; only this historical correction is deferred.
 async function repairCodexRescanInflation({ cursors, queuePath, queueStatePath, rolloutFiles }) {
   if (!cursors || typeof cursors !== "object") return false;
   const migrations = (cursors.migrations ||= {});
@@ -2116,14 +2127,14 @@ async function repairCodexRescanInflation({ cursors, queuePath, queueStatePath, 
 
   // GUARD (data-loss prevention, ref the v6 ground-truth-repair incident): the
   // rebuild can only reproduce buckets from the files this sync re-parses
-  // (codexFiles). If any codex session file that previously contributed (has a
-  // cursor) is gone from disk OR not in this sync's scan — deleted, or moved by
-  // Codex-Manager to ~/.codex/archived_sessions/ which listRolloutFiles does not
-  // scan — skip entirely. The forward dedup fix still stops NEW double-counting;
-  // only this historical correction defers.
+  // (codexFiles, now covering sessions/ AND archived_sessions/). If any codex
+  // file that previously contributed (has a cursor) is gone from disk OR not in
+  // this sync's scan — genuinely deleted (log rotation / user cleanup) — skip
+  // entirely. The forward dedup fix still stops NEW double-counting; only this
+  // historical correction defers.
   if (cursors.files && typeof cursors.files === "object") {
     for (const fp of Object.keys(cursors.files)) {
-      if (!/\/\.codex\/sessions\//.test(fp)) continue;
+      if (!/\/\.codex\/(?:archived_)?sessions\//.test(fp)) continue;
       if (!fssync.existsSync(fp) || !codexFileSet.has(fp)) {
         migrations[CODEX_RESCAN_DEDUP_REPAIR_KEY] = {
           skipped: true,
@@ -2243,7 +2254,7 @@ async function repairCodexRescanInflation({ cursors, queuePath, queueStatePath, 
   }
   cursors.files ||= {};
   for (const fp of Object.keys(cursors.files)) {
-    if (/\/\.codex\/sessions\//.test(fp)) delete cursors.files[fp];
+    if (/\/\.codex\/(?:archived_)?sessions\//.test(fp)) delete cursors.files[fp];
   }
   for (const [fp, v] of Object.entries(rebuilt.files)) {
     cursors.files[fp] = v;
