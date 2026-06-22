@@ -87,7 +87,7 @@ brew install mm7894215/tokentracker/tokentracker
 
 ## ✨ 機能
 
-- 🔌 **22 種類の AI ツールを標準対応** — Claude Code、Codex CLI、Cursor、Gemini CLI、Antigravity、Kiro、OpenCode、OpenClaw、Every Code、Hermes Agent、GitHub Copilot、Kimi Code、CodeBuddy、Grok Build、oh-my-pi、pi、Craft Agents、Kilo CLI、Kilo Code、Roo Code、Zed Agent、Goose
+- 🔌 **24 種類の AI ツールを標準対応** — Claude Code、Codex CLI、Cursor、Gemini CLI、Antigravity、Kiro、OpenCode、OpenClaw、Every Code、Hermes Agent、GitHub Copilot、Kimi Code、CodeBuddy、WorkBuddy、Grok Build、oh-my-pi、pi、Craft Agents、Kilo CLI、Kilo Code、Roo Code、Zed Agent、Goose、Mimo Code
 - 🏠 **100% ローカル** — トークンデータがマシンから外に出ることはありません。アカウント不要、API キー不要。
 - 🚀 **ゼロコンフィグ** — Hook は初回実行で自動インストール。0 からダッシュボードまで 30 秒。
 - 📊 **美しいダッシュボード** — 使用トレンド、モデル別コスト内訳、GitHub スタイルのアクティビティヒートマップ、プロジェクト別の帰属表示
@@ -167,6 +167,7 @@ brew install mm7894215/tokentracker/tokentracker
 | **Kimi Code** | ✅ 自動 | パッシブな `wire.jsonl` リーダー (`~/.kimi/sessions/**/wire.jsonl`) |
 | **oh-my-pi (Pi Coding Agent)** | ✅ 自動 | パッシブリーダー (`~/.omp/agent/sessions/**/*.jsonl`) |
 | **CodeBuddy** (Tencent) | ✅ 自動 | `~/.codebuddy/settings.json` 内の SessionEnd hook（Claude-Code fork） |
+| **WorkBuddy** (Tencent) | ✅ 自動 | `~/.workbuddy/settings.json` 内の SessionEnd hook（Claude-Code fork）+ パッシブな `projects/**/*.jsonl` スキャン |
 | **Grok Build** (xAI) | ✅ 自動 | SessionEnd hook + パッシブな `updates.jsonl` / `signals.json` スキャン (`~/.grok/sessions/**/`) |
 | **Kilo CLI** (kilo.ai) | ✅ 自動 | パッシブな SQLite リーダー (`~/.local/share/kilo/kilo.db`、OpenCode-fork スキーマ) |
 | **Kilo Code** (VS Code 拡張) | ✅ 自動 | パッシブな `ui_messages.json` リーダー (Cursor/Code/CodeBuddy/Windsurf の globalStorage) |
@@ -176,11 +177,12 @@ brew install mm7894215/tokentracker/tokentracker
 | **Roo Code** (VS Code 拡張) | ✅ 自動 | パッシブな `ui_messages.json` リーダー (`rooveterinaryinc.roo-cline`) |
 | **Zed Agent** | ✅ 自動 | パッシブな SQLite リーダー (`threads.db`、hosted `zed.dev` models only) |
 | **Goose** (Block) | ✅ 自動 | パッシブな SQLite リーダー (`sessions.db`、cumulative deltas) |
+| **Mimo Code** (mimocode) | ✅ 自動 | パッシブな SQLite リーダー (`~/.local/share/mimocode/mimocode.db`、OpenCode-fork schema; mimo ネイティブのターンのみ集計 — ミラーされた Claude/claude-mem 履歴は除外) |
 
 > **プラグインや hook を手動でインストールする必要はありますか?** いいえ。`tokentracker`（または `tokentracker init`）が初回実行ですべて処理します:
-> - **Hook ベース**のツール (Claude Code、Codex、Gemini、Every Code、**CodeBuddy**、**Grok Build**) — ツール自身の設定に SessionEnd hook または TOML notify エントリーを書き込みます。
+> - **Hook ベース**のツール (Claude Code、Codex、Gemini、Every Code、**CodeBuddy**、**WorkBuddy**、**Grok Build**) — ツール自身の設定に SessionEnd hook または TOML notify エントリーを書き込みます。
 > - **プラグインベース**のツール (OpenCode、**OpenClaw**) — プラグインは npm パッケージ内に同梱されています (`~/.tokentracker/app/openclaw-plugin/`)。ツール自身の CLI でリンクします (`openclaw plugins install --link …` + `enable`)。ダウンロードもドラッグ＆ドロップも不要です。
-> - **パッシブリーダー** (Cursor、Kiro、Hermes、Kimi Code、Copilot、**Grok Build**、**oh-my-pi**、**pi**、**Craft Agents**、**Kilo CLI**、**Kilo Code**、**Roo Code**、**Antigravity**、**Zed Agent**、**Goose**) — これらのツールには何もインストールしません。ツールがすでに出力しているファイル (SQLite DB、JSONL、OTEL エクスポート、session logs) を読むだけです。
+> - **パッシブリーダー** (Cursor、Kiro、Hermes、Kimi Code、Copilot、**Grok Build**、**oh-my-pi**、**pi**、**Craft Agents**、**Kilo CLI**、**Kilo Code**、**Roo Code**、**Antigravity**、**Zed Agent**、**Goose**、**Mimo Code**) — これらのツールには何もインストールしません。ツールがすでに出力しているファイル (SQLite DB、JSONL、OTEL エクスポート、session logs) を読むだけです。
 > - **Grok Build の推定** — 現在のローカルテレメトリは `updates.jsonl` の累積 `totalTokens` を公開していますが、安定したプロンプト/出力/キャッシュの内訳はありません。`signals.json` は `contextTokensUsed` のスナップショットを使ったフォールバックとして残っています。コールごとの利用詳細が利用可能になるまで、TokenTracker は Grok のコストを推定します。
 >
 > いつでも `tokentracker status` を実行すれば、各統合の状態を確認できます。`skipped` と表示されている場合、`detail` 列にその理由が示されます（例: ツール CLI が `PATH` にない、設定が読めない）。

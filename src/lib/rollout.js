@@ -2520,65 +2520,34 @@ function readOpencodeDbMessages(dbPath, sqliteOptions = {}) {
   return out;
 }
 
-// Mimo (mimocode) reuses OpenCode's `message` table schema, but its DB ALSO
-// contains the user's imported Claude Code history: on install, mimocode reads
-// ~/.claude/projects/*.jsonl and copies those sessions into its own DB,
-// recording each in the `claude_import` table (source_path → session_id +
-// message_ids). Those imported messages are already counted by the Claude
-// parser, so counting them here would double-count Claude usage AND mislabel it
-// as "mimo".
+// mimocode mirrors the user's Claude Code + claude-mem history into its own
+// `message` table — via an explicit `claude_import` AND a live observer /
+// session sync — so the overwhelming majority of rows are anthropic-endpoint
+// turns (providerID="anthropic") the Claude parser ALREADY counts as
+// source=claude. On the dev's box that's ~3.9B mirrored tokens vs ~22M genuine
+// mimo tokens. Counting the mirror under "mimo" double-counts and mislabels
+// Claude usage (user saw claude-* rows under the MIMO provider).
 //
-// `message_ids` was added to claude_import via a migration, so rows written by
-// an older mimocode have it NULL. For those we fall back to excluding the whole
-// imported session by session_id — a claude_import.session_id is always an
-// import-created session, never a native mimo one, so this is safe. Rows that
-// DO carry message_ids use precise per-id exclusion, which preserves any native
-// turns the user later added to an imported session.
-function readMimoImportedKeys(dbPath, sqliteOptions = {}) {
-  const sql = `SELECT session_id, message_ids FROM claude_import`;
-  let rows;
-  try {
-    rows = readSqliteJsonRows(dbPath, sql, {
-      label: "Mimo import",
-      maxBuffer: 200 * 1024 * 1024,
-      timeout: 30_000,
-      ...sqliteOptions,
-    });
-  } catch (_e) {
-    // claude_import table absent (older/newer mimocode) → treat as no imports.
-    return { ids: new Set(), sessions: new Set() };
-  }
-  const ids = new Set();
-  const sessions = new Set();
-  for (const row of rows) {
-    if (!row) continue;
-    let arr = null;
-    if (typeof row.message_ids === "string") {
-      try {
-        arr = JSON.parse(row.message_ids);
-      } catch (_e) {
-        arr = null;
-      }
-    }
-    if (Array.isArray(arr) && arr.length > 0) {
-      for (const id of arr) if (typeof id === "string") ids.add(id);
-    } else if (typeof row.session_id === "string" && row.session_id) {
-      sessions.add(row.session_id);
-    }
-  }
-  return { ids, sessions };
+// The discriminator is providerID, NOT the model id. mimo's own runtime tags
+// turns providerID="mimo" (its auto router) or "xiaomi". providerID="anthropic"
+// means the turn went through a Claude-compatible endpoint — plain Claude Code,
+// OR a mimo-named model the user picked IN Claude Code (e.g. model=mimo-v2.5-pro
+// run inside Claude Code, logged in ~/.claude, counted as source=claude). Keying
+// off the model id would wrongly re-count that mimo-v2.5-pro. claude_import is
+// irrelevant — it never covers the observer/session mirror; the provider rule
+// subsumes it.
+function isMimoNativeMessage(data) {
+  if (!data) return false;
+  const provider = String(data.providerID || "").toLowerCase();
+  return provider === "mimo" || provider === "xiaomi";
 }
 
-// Read only NATIVE mimo assistant messages — token-bearing rows that are not
-// part of any claude_import row (by message id, or session id for legacy import
-// rows without message_ids). See readMimoImportedKeys for why.
+// Read only genuine mimo assistant messages (mimo's own models), dropping the
+// mirrored Claude/claude-mem rows. See isMimoNativeMessage for why.
 function readMimoDbMessages(dbPath, sqliteOptions = {}) {
   if (!dbPath || !fssync.existsSync(dbPath)) return [];
   const all = readOpencodeDbMessages(dbPath, sqliteOptions);
-  if (all.length === 0) return all;
-  const { ids, sessions } = readMimoImportedKeys(dbPath, sqliteOptions);
-  if (ids.size === 0 && sessions.size === 0) return all;
-  return all.filter((m) => !ids.has(m.id) && !sessions.has(m.sessionID));
+  return all.filter((m) => isMimoNativeMessage(m.data));
 }
 
 async function parseOpencodeDbIncremental({

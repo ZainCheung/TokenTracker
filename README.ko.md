@@ -87,7 +87,7 @@ brew install mm7894215/tokentracker/tokentracker
 
 ## ✨ 기능
 
-- 🔌 **22개의 AI 도구 기본 지원** — Claude Code, Codex CLI, Cursor, Gemini CLI, Antigravity, Kiro, OpenCode, OpenClaw, Every Code, Hermes Agent, GitHub Copilot, Kimi Code, CodeBuddy, Grok Build, oh-my-pi, pi, Craft Agents, Kilo CLI, Kilo Code, Roo Code, Zed Agent, Goose
+- 🔌 **24개의 AI 도구 기본 지원** — Claude Code, Codex CLI, Cursor, Gemini CLI, Antigravity, Kiro, OpenCode, OpenClaw, Every Code, Hermes Agent, GitHub Copilot, Kimi Code, CodeBuddy, WorkBuddy, Grok Build, oh-my-pi, pi, Craft Agents, Kilo CLI, Kilo Code, Roo Code, Zed Agent, Goose, Mimo Code
 - 🏠 **100% 로컬** — 토큰 데이터가 기기를 떠나지 않습니다. 계정 없음, API Key 없음.
 - 🚀 **제로 설정** — 첫 실행 시 Hook 자동 설치. 0에서 대시보드까지 30초.
 - 📊 **아름다운 대시보드** — 사용 추세, 모델별 비용 분석, GitHub 스타일 활동 히트맵, 프로젝트 귀속 정보
@@ -167,6 +167,7 @@ brew install mm7894215/tokentracker/tokentracker
 | **Kimi Code** | ✅ 자동 | 패시브 `wire.jsonl` 리더 (`~/.kimi/sessions/**/wire.jsonl`) |
 | **oh-my-pi (Pi Coding Agent)** | ✅ 자동 | 패시브 리더 (`~/.omp/agent/sessions/**/*.jsonl`) |
 | **CodeBuddy** (Tencent) | ✅ 자동 | `~/.codebuddy/settings.json`의 SessionEnd hook (Claude-Code fork) |
+| **WorkBuddy** (Tencent) | ✅ 자동 | `~/.workbuddy/settings.json`의 SessionEnd hook (Claude-Code fork) + 패시브 `projects/**/*.jsonl` 스캔 |
 | **Grok Build** (xAI) | ✅ 자동 | SessionEnd hook + 패시브 `updates.jsonl` / `signals.json` 스캔 (`~/.grok/sessions/**/`) |
 | **Kilo CLI** (kilo.ai) | ✅ 자동 | 패시브 SQLite 리더 (`~/.local/share/kilo/kilo.db`, OpenCode-fork 스키마) |
 | **Kilo Code** (VS Code 확장) | ✅ 자동 | 패시브 `ui_messages.json` 리더 (Cursor/Code/CodeBuddy/Windsurf globalStorage) |
@@ -176,11 +177,12 @@ brew install mm7894215/tokentracker/tokentracker
 | **Roo Code** (VS Code 확장) | ✅ 자동 | 패시브 `ui_messages.json` 리더 (`rooveterinaryinc.roo-cline`) |
 | **Zed Agent** | ✅ 자동 | 패시브 SQLite 리더 (`threads.db`, hosted `zed.dev` models only) |
 | **Goose** (Block) | ✅ 자동 | 패시브 SQLite 리더 (`sessions.db`, cumulative deltas) |
+| **Mimo Code** (mimocode) | ✅ 자동 | 패시브 SQLite 리더 (`~/.local/share/mimocode/mimocode.db`, OpenCode-fork schema; mimo 네이티브 턴만 집계 — 미러링된 Claude/claude-mem 기록은 제외) |
 
 > **플러그인이나 hook을 수동으로 설치해야 하나요?** 아니요. `tokentracker` (또는 `tokentracker init`)가 첫 실행에서 모든 것을 처리합니다:
-> - **Hook 기반** 도구 (Claude Code, Codex, Gemini, Every Code, **CodeBuddy**, **Grok Build**) — 도구 자체의 설정에 SessionEnd hook 또는 TOML notify 엔트리를 작성합니다.
+> - **Hook 기반** 도구 (Claude Code, Codex, Gemini, Every Code, **CodeBuddy**, **WorkBuddy**, **Grok Build**) — 도구 자체의 설정에 SessionEnd hook 또는 TOML notify 엔트리를 작성합니다.
 > - **플러그인 기반** 도구 (OpenCode, **OpenClaw**) — 플러그인은 npm 패키지 안에 포함되어 있습니다 (`~/.tokentracker/app/openclaw-plugin/`). 도구 자체의 CLI로 링크합니다 (`openclaw plugins install --link …` + `enable`). 다운로드, 드래그 앤 드롭 불필요.
-> - **패시브 리더** (Cursor, Kiro, Hermes, Kimi Code, Copilot, **Grok Build**, **oh-my-pi**, **pi**, **Craft Agents**, **Kilo CLI**, **Kilo Code**, **Roo Code**, **Antigravity**, **Zed Agent**, **Goose**) — 이들 도구에는 아무것도 설치하지 않습니다. 도구가 이미 생성하는 파일 (SQLite DB, JSONL, OTEL export, session logs)만 읽습니다.
+> - **패시브 리더** (Cursor, Kiro, Hermes, Kimi Code, Copilot, **Grok Build**, **oh-my-pi**, **pi**, **Craft Agents**, **Kilo CLI**, **Kilo Code**, **Roo Code**, **Antigravity**, **Zed Agent**, **Goose**, **Mimo Code**) — 이들 도구에는 아무것도 설치하지 않습니다. 도구가 이미 생성하는 파일 (SQLite DB, JSONL, OTEL export, session logs)만 읽습니다.
 > - **Grok Build 추정** — 현재 로컬 텔레메트리는 `updates.jsonl`의 누적 `totalTokens`를 노출하지만, 안정적인 프롬프트/출력/캐시 분할은 제공하지 않습니다; `signals.json`은 `contextTokensUsed` 스냅샷을 사용한 폴백으로 남아 있습니다. 호출별 사용 상세 정보가 제공될 때까지 TokenTracker는 Grok 비용을 추정합니다.
 >
 > 언제든 `tokentracker status`로 각 통합의 상태를 확인할 수 있습니다. `skipped`로 표시되면 `detail` 컬럼이 이유를 설명합니다 (예: 도구 CLI가 `PATH`에 없음, 설정 읽기 불가).
