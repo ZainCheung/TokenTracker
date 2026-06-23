@@ -1,36 +1,49 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Heart } from "lucide-react";
 import { copy } from "../../../lib/copy";
-import { getProfileLikes, bumpProfileLike } from "../../../lib/api";
+import { getProfileLikes, setProfileLike } from "../../../lib/api";
+import { useInsforgeAuth } from "../../../contexts/InsforgeAuthContext";
 
-const STORAGE_KEY = "tokentracker_likes";
+// Per-browser anonymous like identity. The edge validates anon_id against a UUID
+// regex, so it must be a real v4 UUID. crypto.randomUUID needs a secure context
+// (https/localhost) — fall back to a manual v4 so embedded webviews still work.
+const ANON_ID_KEY = "tokentracker_anon_id";
+let cachedAnonId = null;
 
-function readLocalLiked(userId) {
-  if (!userId) return false;
+function genUuid() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    return Boolean(parsed?.[userId]);
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   } catch {
-    return false;
+    // fall through to manual v4
   }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
-function writeLocalLiked(userId, liked) {
-  if (!userId) return;
+function getAnonId() {
+  if (cachedAnonId) return cachedAnonId;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    if (liked) parsed[userId] = true;
-    else delete parsed[userId];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    let id = localStorage.getItem(ANON_ID_KEY);
+    if (!id) {
+      id = genUuid();
+      localStorage.setItem(ANON_ID_KEY, id);
+    }
+    cachedAnonId = id;
+    return id;
   } catch {
-    // ignore
+    // localStorage blocked (private mode / locked-down webview): cache for the
+    // page session so like/unlike/read still share one id. Anon dedup degrades
+    // to per-session instead of persistent — best-effort by design.
+    cachedAnonId = genUuid();
+    return cachedAnonId;
   }
 }
 
 export function LikeButton({ userId }) {
+  const { signedIn, getAccessToken } = useInsforgeAuth();
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [ready, setReady] = useState(false);
@@ -40,6 +53,24 @@ export function LikeButton({ userId }) {
   const [triggerNumAnim, setTriggerNumAnim] = useState(false);
 
   const particleIdRef = useRef(0);
+
+  // Resolve the caller's like identity. Signed in → a verified JWT (account-based
+  // dedup, identical across browser / macOS WKWebView / Windows WebView2). Else →
+  // a per-browser anonymous id. The server re-verifies the JWT, so it can't be
+  // forged; if token retrieval fails we degrade to anonymous rather than block.
+  // Signed-in calls also carry anonId so the server can merge a pre-login anon
+  // like into the account (no double-count, button stays in sync after login).
+  const resolveCreds = useCallback(async () => {
+    if (signedIn) {
+      try {
+        const accessToken = await getAccessToken();
+        if (accessToken) return { accessToken, anonId: getAnonId() };
+      } catch {
+        // fall through to anonymous identity
+      }
+    }
+    return { anonId: getAnonId() };
+  }, [signedIn, getAccessToken]);
 
   useEffect(() => {
     // Effect-local cancellation: a fresh `cancelled` per mount avoids the
@@ -53,22 +84,29 @@ export function LikeButton({ userId }) {
       };
     }
     setReady(false);
-    setIsLiked(readLocalLiked(userId));
-    getProfileLikes({ userId })
-      .then((res) => {
+    (async () => {
+      const creds = await resolveCreds();
+      try {
+        const res = await getProfileLikes({ userId, ...creds });
         if (cancelled) return;
         setLikesCount(Number(res?.count) || 0);
+        // `liked` is now server truth (per account / per anon id), so it survives
+        // reloads, cache clears on other devices, and is consistent cross-device
+        // for signed-in users — unlike the old localStorage-only flag.
+        setIsLiked(Boolean(res?.liked));
         setReady(true);
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return;
         setLikesCount(0);
+        setIsLiked(false);
         setReady(true);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+    // resolveCreds changes when auth flips (login/logout) → re-fetch liked state.
+  }, [userId, resolveCreds]);
 
   const triggerExplosion = () => {
     setIsPopping(true);
@@ -97,17 +135,19 @@ export function LikeButton({ userId }) {
     }, 850);
   };
 
-  const sendBump = async (delta) => {
+  const sendAction = async (action) => {
     setPending(true);
     try {
-      const res = await bumpProfileLike({ userId, delta });
-      const next = Number(res?.count);
-      if (Number.isFinite(next)) setLikesCount(next);
+      const creds = await resolveCreds();
+      const res = await setProfileLike({ userId, action, ...creds });
+      // Server returns the authoritative {count, liked} (count = COUNT(*), so it
+      // can't drift or double-count); trust it over the optimistic guess.
+      if (res && Number.isFinite(Number(res.count))) setLikesCount(Number(res.count));
+      if (res && typeof res.liked === "boolean") setIsLiked(res.liked);
     } catch {
-      // Rollback optimistic state so retry isn't blocked by a stuck local view.
+      // Roll back the optimistic toggle so a retry isn't blocked by a stale view.
       setIsLiked((prev) => !prev);
-      setLikesCount((prev) => Math.max(0, prev - delta));
-      writeLocalLiked(userId, !readLocalLiked(userId));
+      setLikesCount((prev) => (action === "like" ? Math.max(0, prev - 1) : prev + 1));
     } finally {
       setPending(false);
     }
@@ -120,14 +160,12 @@ export function LikeButton({ userId }) {
     if (isLiked) {
       setIsLiked(false);
       setLikesCount((prev) => Math.max(0, prev - 1));
-      writeLocalLiked(userId, false);
-      sendBump(-1);
+      sendAction("unlike");
     } else {
       setIsLiked(true);
       setLikesCount((prev) => prev + 1);
-      writeLocalLiked(userId, true);
       triggerExplosion();
-      sendBump(1);
+      sendAction("like");
     }
   };
 

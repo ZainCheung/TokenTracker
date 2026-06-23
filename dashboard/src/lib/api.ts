@@ -337,25 +337,31 @@ function mockLikeCount(userId: string | undefined | null) {
   return Math.abs(hash % 165) + 24;
 }
 
-export async function getProfileLikes({ userId }: AnyRecord = {}) {
+export async function getProfileLikes({ userId, anonId, accessToken }: AnyRecord = {}) {
   if (isMockEnabled()) {
-    return { count: mockLikeCount(userId) };
+    return { count: mockLikeCount(userId), liked: false };
   }
-  // Public read — same rationale as getLeaderboard: don't attach Authorization
-  // so a malformed/expired JWT can't 500 the gateway for unauthenticated callers.
+  // `liked` is per-caller: pass anon_id (anonymous) and/or a JWT (signed-in).
+  // fetchInsforgeFunction only attaches Authorization when isValidJwtShape passes,
+  // so a missing/malformed token degrades to an anonymous read. (isValidJwtShape
+  // checks shape, not expiry — a well-formed but expired token could still draw a
+  // gateway error; that rare case is caught by the LikeButton fetch catch, which
+  // falls back to count=0/liked=false rather than breaking the page.)
   return fetchInsforgeFunction("tokentracker-profile-likes", {
-    params: { user_id: userId },
+    accessToken,
+    params: { target_user_id: userId, anon_id: anonId },
   });
 }
 
-export async function bumpProfileLike({ userId, delta, accessToken }: AnyRecord = {}) {
+export async function setProfileLike({ userId, action, anonId, accessToken }: AnyRecord = {}) {
   if (isMockEnabled()) {
-    return { count: Math.max(0, mockLikeCount(userId) + Number(delta || 0)) };
+    const liked = action === "like";
+    return { count: Math.max(0, mockLikeCount(userId) + (liked ? 1 : 0)), liked };
   }
   return fetchInsforgeFunction("tokentracker-profile-likes", {
     accessToken,
     method: "POST",
-    body: { user_id: userId, delta },
+    body: { target_user_id: userId, action, anon_id: anonId },
   });
 }
 
