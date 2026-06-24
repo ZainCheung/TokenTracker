@@ -56,7 +56,8 @@ test("account-devices endpoint exists, verifies JWT, queries devices, sums per-d
     src.includes('.from("tokentracker_devices")'),
     "does not query tokentracker_devices",
   );
-  assert.ok(src.includes('"device_name"') || src.includes("device_name"), "no device_name field");
+  assert.ok(src.includes('"device_name"'), "no device_name field in select");
+  assert.ok(src.includes('.is("revoked_at", null)'), "must filter revoked devices");
   assert.ok(src.includes("account_usage_grouped"), "does not sum usage via the RPC");
   assert.ok(src.includes("total_tokens"), "does not return per-device total_tokens");
 });

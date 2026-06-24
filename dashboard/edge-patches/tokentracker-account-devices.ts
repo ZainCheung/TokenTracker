@@ -91,7 +91,10 @@ async function sumDeviceTokens(
     p_tz: tz,
     p_offset_min: tzOffsetMinutes,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error(`account-devices: usage sum failed for device ${deviceId}: ${error.message}`);
+    return 0;
+  }
   const rows = (Array.isArray(data) ? data : []) as GroupedRow[];
   let sum = 0;
   for (const r of rows) sum += Number(r.total_tokens) || 0;
@@ -111,7 +114,8 @@ export default async function (req: Request): Promise<Response> {
   const tzOffsetRaw = url.searchParams.get("tz_offset_minutes");
   const tzOffsetMinutes = tzOffsetRaw != null && tzOffsetRaw !== "" ? Number(tzOffsetRaw) : null;
 
-  const baseUrl = Deno.env.get("INSFORGE_BASE_URL")!;
+  const baseUrl = Deno.env.get("INSFORGE_BASE_URL");
+  if (!baseUrl) return json({ error: "server misconfigured" }, 500);
   const incomingApiKey =
     req.headers.get("apikey") ?? req.headers.get("Apikey") ?? req.headers.get("x-api-key") ?? undefined;
   const anonKey =
@@ -133,7 +137,7 @@ export default async function (req: Request): Promise<Response> {
   try {
     const { data, error } = await client.database
       .from("tokentracker_devices")
-      .select("id, device_name, platform, created_at")
+      .select(`id, "device_name", platform, created_at`)
       .eq("user_id", userId)
       .is("revoked_at", null);
     if (error) throw new Error(error.message);
