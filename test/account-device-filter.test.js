@@ -42,5 +42,9 @@ test("every account-* endpoint reads device_id and guards it with includes()", (
       /activeDeviceIds\s*=\s*\[\s*requestedDeviceId\s*\]/.test(src),
       `${name}: does not narrow activeDeviceIds to [requestedDeviceId]`,
     );
+    assert.ok(
+      src.includes("let activeDeviceIds"),
+      `${name}: activeDeviceIds must be declared 'let' (not const) so the narrow can re-assign it`,
+    );
   }
 });
