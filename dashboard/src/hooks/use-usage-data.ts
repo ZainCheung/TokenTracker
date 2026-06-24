@@ -25,6 +25,7 @@ export function useUsageData({
   accountAccessToken = null,
   accountRevision = 0,
   accountViewResolving = false,
+  deviceId = null,
 }: any = {}) {
   const useCloud = Boolean(accountView && accountAccessToken);
   const scopeKey = useCloud ? "cloud" : "local";
@@ -39,12 +40,13 @@ export function useUsageData({
   const tokenReady = isAccessTokenReady(accessToken);
   const cacheAllowed = !guestAllowed && !mockEnabled;
 
+  const deviceScope = deviceId || "all";
   const storageKey = (() => {
     if (!cacheKey) return null;
     const host = safeHost(baseUrl) || "default";
     const dailyKey = includeDaily ? "daily" : "summary";
     const tzKey = getTimeZoneCacheKey({ timeZone, offsetMinutes: tzOffsetMinutes });
-    return `tokentracker.usage.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${dailyKey}.${tzKey}`;
+    return `tokentracker.usage.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${dailyKey}.${tzKey}.${deviceScope}`;
   })();
 
   // Wipe state when the scope flips so the previously-rendered local data
@@ -128,6 +130,7 @@ export function useUsageData({
             accessToken: tokenForFetch,
             from,
             to,
+            device: deviceId,
             timeZone,
             tzOffsetMinutes,
           }),
@@ -136,6 +139,7 @@ export function useUsageData({
             accessToken: tokenForFetch,
             from,
             to,
+            device: deviceId,
             timeZone,
             tzOffsetMinutes,
             rolling: true,
@@ -150,6 +154,7 @@ export function useUsageData({
           accessToken: tokenForFetch,
           from,
           to,
+          device: deviceId,
           timeZone,
           tzOffsetMinutes,
           rolling: true,
@@ -173,6 +178,7 @@ export function useUsageData({
             accessToken: tokenForFetch,
             from,
             to,
+            device: deviceId,
             timeZone,
             tzOffsetMinutes,
             rolling: true,
@@ -263,6 +269,7 @@ export function useUsageData({
     useCloud,
     accountAccessToken,
     accountRevision,
+    deviceId,
   ]);
 
   useEffect(() => {

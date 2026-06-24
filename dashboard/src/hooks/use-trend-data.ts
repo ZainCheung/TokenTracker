@@ -33,6 +33,7 @@ export function useTrendData({
   accountAccessToken = null,
   accountRevision = 0,
   accountViewResolving = false,
+  deviceId = null,
 }: any = {}) {
   const useCloud = Boolean(accountView && accountAccessToken);
   const scopeKey = useCloud ? "cloud" : "local";
@@ -59,16 +60,17 @@ export function useTrendData({
     if (!cacheKey) return null;
     const host = safeHost(baseUrl) || "default";
     const tzKey = getTimeZoneCacheKey({ timeZone, offsetMinutes: tzOffsetMinutes });
+    const deviceScope = deviceId || "all";
     if (mode === "hourly") {
       const dayKey = to || from || "day";
-      return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.hourly.${dayKey}.${tzKey}`;
+      return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.hourly.${dayKey}.${tzKey}.${deviceScope}`;
     }
     if (mode === "monthly") {
       const toKey = to || "today";
-      return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.monthly.${months}.${toKey}.${tzKey}`;
+      return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.monthly.${months}.${toKey}.${tzKey}.${deviceScope}`;
     }
     const rangeKey = `${from || ""}.${to || ""}`;
-    return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.daily.${rangeKey}.${tzKey}`;
+    return `tokentracker.trend.${cacheKey}.${scopeKey}.${host}.daily.${rangeKey}.${tzKey}.${deviceScope}`;
   })();
 
   const readCache = useCallback(() => {
@@ -156,6 +158,7 @@ export function useTrendData({
           baseUrl,
           accessToken: tokenForFetch,
           day,
+          device: deviceId,
           timeZone,
           tzOffsetMinutes,
         });
@@ -165,6 +168,7 @@ export function useTrendData({
           accessToken: tokenForFetch,
           months,
           to,
+          device: deviceId,
           timeZone,
           tzOffsetMinutes,
         });
@@ -174,6 +178,7 @@ export function useTrendData({
           accessToken: tokenForFetch,
           from,
           to,
+          device: deviceId,
           timeZone,
           tzOffsetMinutes,
         });
@@ -306,6 +311,7 @@ export function useTrendData({
     useCloud,
     accountAccessToken,
     accountRevision,
+    deviceId,
   ]);
 
   useEffect(() => {

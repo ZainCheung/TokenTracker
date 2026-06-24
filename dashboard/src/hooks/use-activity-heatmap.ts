@@ -28,6 +28,7 @@ export function useActivityHeatmap({
   accountAccessToken = null,
   accountRevision = 0,
   accountViewResolving = false,
+  deviceId = null,
 }: any = {}) {
   const useCloud = Boolean(accountView && accountAccessToken);
   const scopeKey = useCloud ? "cloud" : "local";
@@ -49,8 +50,8 @@ export function useActivityHeatmap({
   const storageKey = useMemo(() => {
     if (!cacheKey) return null;
     const tzKey = getTimeZoneCacheKey({ timeZone, offsetMinutes: tzOffsetMinutes });
-    return `tokentracker.heatmap.${cacheKey}.${scopeKey}.${weeks}.${weekStartsOn}.${tzKey}`;
-  }, [cacheKey, scopeKey, timeZone, tzOffsetMinutes, weeks, weekStartsOn]);
+    return `tokentracker.heatmap.${cacheKey}.${scopeKey}.${weeks}.${weekStartsOn}.${tzKey}.${deviceId || "all"}`;
+  }, [cacheKey, deviceId, scopeKey, timeZone, tzOffsetMinutes, weeks, weekStartsOn]);
 
   const readCache = useCallback(() => {
     if (!storageKey || typeof window === "undefined") return null;
@@ -122,6 +123,7 @@ export function useActivityHeatmap({
           weeks,
           to: range.to,
           weekStartsOn,
+          device: deviceId,
           timeZone,
           tzOffsetMinutes,
         });
@@ -218,6 +220,7 @@ export function useActivityHeatmap({
         accessToken: tokenForFetch,
         from: range.from,
         to: range.to,
+        device: deviceId,
         timeZone,
         tzOffsetMinutes,
       });
@@ -299,6 +302,7 @@ export function useActivityHeatmap({
     useCloud,
     accountAccessToken,
     accountRevision,
+    deviceId,
   ]);
 
   useEffect(() => {
