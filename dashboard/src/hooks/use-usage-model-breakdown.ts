@@ -17,6 +17,7 @@ export function useUsageModelBreakdown({
   accountAccessToken = null,
   accountRevision = 0,
   accountViewResolving = false,
+  deviceId = null,
 }: any = {}) {
   const useCloud = Boolean(accountView && accountAccessToken);
   const scopeKey = useCloud ? "cloud" : "local";
@@ -32,8 +33,8 @@ export function useUsageModelBreakdown({
     if (!cacheKey) return null;
     const host = safeHost(baseUrl) || "default";
     const tzKey = getTimeZoneCacheKey({ timeZone, offsetMinutes: tzOffsetMinutes });
-    return `tokentracker.modelBreakdown.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${tzKey}`;
-  }, [baseUrl, cacheKey, from, scopeKey, timeZone, to, tzOffsetMinutes]);
+    return `tokentracker.modelBreakdown.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${tzKey}.${deviceId || "all"}`;
+  }, [baseUrl, cacheKey, deviceId, from, scopeKey, timeZone, to, tzOffsetMinutes]);
 
   const readCache = useCallback(() => {
     if (!storageKey || typeof window === "undefined") return null;
@@ -103,6 +104,7 @@ export function useUsageModelBreakdown({
         accessToken: tokenForFetch,
         from,
         to,
+        device: deviceId,
         timeZone,
         tzOffsetMinutes,
       });
@@ -153,6 +155,7 @@ export function useUsageModelBreakdown({
     useCloud,
     accountAccessToken,
     accountRevision,
+    deviceId,
   ]);
 
   useEffect(() => {

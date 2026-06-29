@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-28T17:50:03.523Z",
+  "generatedAt": "2026-06-29T16:13:51.811Z",
   "root": "dashboard/src",
   "rules": {
     "colors": "hex/rgb(a) literals",
@@ -7,7 +7,7 @@
   },
   "totals": {
     "colors": 271,
-    "rawText": 161
+    "rawText": 168
   },
   "files": {
     "dashboard/src/components/InsforgeUserHeaderControls.jsx": {
@@ -259,6 +259,24 @@
         "1 ? ("
       ]
     },
+    "dashboard/src/ui/dashboard/components/DeviceUsageCard.jsx": {
+      "colors": 0,
+      "rawText": 5,
+      "rawTextTokens": [
+        ") : ( /* Display state: the whole row toggles the filter; rename is a sibling overlay (a button must not nest inside a button — invalid DOM). */",
+        "0 ? ((tokens / total) * 100).toFixed(1) : \"0.0\"; const isSelected = selectedDeviceId === d.id; const name = formatDeviceLabel(d) || copy(\"dashboard.device_card.unnamed\"); const isEditing = editingId === d.id; const fillClass = isSelected ? \"bg-oai-brand\" : anySelected ? \"bg-oai-gray-300 dark:bg-oai-gray-600\" : \"bg-oai-brand/50\"; // While filtering, fade unselected rows so the active device stands out. const itemOpacity = anySelected && !isSelected ? \"opacity-40 hover:opacity-80\" : \"opacity-100\"; return (",
+        "; if (p.includes(\"linux\")) return",
+        "; if (p.includes(\"win\")) return",
+        "; return"
+      ]
+    },
+    "dashboard/src/ui/dashboard/components/DeviceUsageCard.test.jsx": {
+      "colors": 0,
+      "rawText": 1,
+      "rawTextTokens": [
+        ", ); await userEvent.click(screen.getByText(\"MacBook Pro\")); expect(onSelectDevice).toHaveBeenCalledWith(\"d1\"); rerender("
+      ]
+    },
     "dashboard/src/ui/dashboard/components/LikeButton.jsx": {
       "colors": 6,
       "rawText": 1,
@@ -317,10 +335,11 @@
     },
     "dashboard/src/ui/dashboard/components/UsageOverview.jsx": {
       "colors": 13,
-      "rawText": 2,
+      "rawText": 3,
       "rawTextTokens": [
         "0 && (",
-        "0); return ("
+        "0); return (",
+        "1 ? ("
       ]
     },
     "dashboard/src/ui/dashboard/components/__tests__/ActivityHeatmap3D.test.jsx": {
