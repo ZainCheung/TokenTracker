@@ -2300,6 +2300,11 @@ async function fetchAntigravityLimits({ home, commandRunner, requestFn, fetchImp
   } catch (error) {
     const cached = readAntigravityLimitsCache({ home, nowMs });
     if (cached) return cached;
+    // If there's no install evidence, this error is likely from a system that
+    // never had Antigravity — return neutral state like other providers.
+    if (!hasAntigravityInstallEvidence({ home })) {
+      return { configured: false };
+    }
     const message = error?.message === "timeout"
       ? "Antigravity quota request timed out."
       : error?.message || "Unknown error";
