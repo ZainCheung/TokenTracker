@@ -412,6 +412,26 @@ async function parseGeminiIncremental({
     const key = filePath;
     const prev = cursors.files[key] || null;
     const inode = st.ino || 0;
+    const size = Number.isFinite(st.size) ? st.size : 0;
+    const mtimeMs = Number.isFinite(st.mtimeMs) ? st.mtimeMs : 0;
+    const sameFileMetadata =
+      prev &&
+      prev.inode === inode &&
+      prev.size === size &&
+      prev.mtimeMs === mtimeMs;
+    if (!projectEnabled && sameFileMetadata) {
+      if (cb) {
+        cb({
+          index: idx + 1,
+          total: totalFiles,
+          filePath,
+          filesProcessed,
+          eventsAggregated,
+          bucketsQueued: touchedBuckets.size,
+        });
+      }
+      continue;
+    }
     let startIndex = prev && prev.inode === inode ? Number(prev.lastIndex || -1) : -1;
     let lastTotals = prev && prev.inode === inode ? prev.lastTotals || null : null;
     let lastModel = prev && prev.inode === inode ? prev.lastModel || null : null;
@@ -427,12 +447,38 @@ async function parseGeminiIncremental({
       : null;
     const projectRef = projectContext?.projectRef || null;
     const projectKey = projectContext?.projectKey || null;
+    const projectCursor =
+      projectKey &&
+      prev?.project &&
+      prev.project.projectKey === projectKey &&
+      prev.project.projectRef === projectRef
+        ? prev.project
+        : null;
+    const projectUpToDate =
+      projectKey &&
+      sameFileMetadata &&
+      projectCursor &&
+      Number(projectCursor.lastIndex ?? -1) >= Number(prev?.lastIndex ?? -1);
+    if (projectUpToDate) {
+      if (cb) {
+        cb({
+          index: idx + 1,
+          total: totalFiles,
+          filePath,
+          filesProcessed,
+          eventsAggregated,
+          bucketsQueued: touchedBuckets.size,
+        });
+      }
+      continue;
+    }
 
     const result = await parseGeminiFile({
       filePath,
       startIndex,
       lastTotals,
       lastModel,
+      projectCursor,
       hourlyState,
       touchedBuckets,
       source: fileSource,
@@ -444,11 +490,25 @@ async function parseGeminiIncremental({
 
     cursors.files[key] = {
       inode,
+      size,
+      mtimeMs,
       lastIndex: result.lastIndex,
       lastTotals: result.lastTotals,
       lastModel: result.lastModel,
       updatedAt: new Date().toISOString(),
     };
+    if (projectKey) {
+      cursors.files[key].project = {
+        projectKey,
+        projectRef,
+        lastIndex: result.projectLastIndex,
+        lastTotals: result.projectLastTotals,
+        lastModel: result.projectLastModel,
+        updatedAt: new Date().toISOString(),
+      };
+    } else if (prev?.project) {
+      cursors.files[key].project = prev.project;
+    }
 
     filesProcessed += 1;
     eventsAggregated += result.eventsAggregated;
@@ -1070,6 +1130,7 @@ async function parseGeminiFile({
   startIndex,
   lastTotals,
   lastModel,
+  projectCursor,
   hourlyState,
   touchedBuckets,
   source,
@@ -1098,57 +1159,96 @@ async function parseGeminiFile({
   let eventsAggregated = 0;
   let model = typeof lastModel === "string" ? lastModel : null;
   let totals = lastTotals && typeof lastTotals === "object" ? lastTotals : null;
-  const begin = Number.isFinite(startIndex) ? startIndex + 1 : 0;
+  const projectActive = Boolean(projectKey && projectState && projectTouchedBuckets);
+  let projectStartIndex =
+    projectActive && Number.isFinite(projectCursor?.lastIndex)
+      ? Number(projectCursor.lastIndex)
+      : -1;
+  let projectModel =
+    projectActive && typeof projectCursor?.lastModel === "string"
+      ? projectCursor.lastModel
+      : null;
+  let projectTotals =
+    projectActive && projectCursor?.lastTotals && typeof projectCursor.lastTotals === "object"
+      ? projectCursor.lastTotals
+      : null;
+  if (projectActive && projectStartIndex >= messages.length) {
+    projectStartIndex = -1;
+    projectTotals = null;
+    projectModel = null;
+  }
+  const hourlyBegin = Number.isFinite(startIndex) ? startIndex + 1 : 0;
+  const projectBegin = projectActive ? projectStartIndex + 1 : Number.POSITIVE_INFINITY;
+  const begin = Math.min(hourlyBegin, projectBegin);
 
   for (let idx = begin; idx < messages.length; idx++) {
     const msg = messages[idx];
     if (!msg || typeof msg !== "object") continue;
 
     const normalizedModel = normalizeModelInput(msg.model);
-    if (normalizedModel) model = normalizedModel;
+    if (normalizedModel && idx >= hourlyBegin) model = normalizedModel;
+    if (normalizedModel && idx >= projectBegin) projectModel = normalizedModel;
 
     const timestamp = typeof msg.timestamp === "string" ? msg.timestamp : null;
     const currentTotals = normalizeGeminiTokens(msg.tokens);
-    if (!timestamp || !currentTotals) {
+    if (idx >= hourlyBegin && (!timestamp || !currentTotals)) {
       totals = currentTotals || totals;
+    }
+    if (idx >= projectBegin && (!timestamp || !currentTotals)) {
+      projectTotals = currentTotals || projectTotals;
+    }
+    if (!timestamp || !currentTotals) {
       continue;
     }
 
-    const delta = diffGeminiTotals(currentTotals, totals);
-    if (!delta || isAllZeroUsage(delta)) {
-      totals = currentTotals;
-      continue;
+    let bucketStart = null;
+    if (idx >= hourlyBegin) {
+      const delta = diffGeminiTotals(currentTotals, totals);
+      if (!delta || isAllZeroUsage(delta)) {
+        totals = currentTotals;
+      } else {
+        delta.conversation_count = 1;
+        bucketStart = toUtcHalfHourStart(timestamp);
+        if (bucketStart) {
+          const bucket = getHourlyBucket(hourlyState, source, model, bucketStart);
+          addTotals(bucket.totals, delta);
+          touchedBuckets.add(bucketKey(source, model, bucketStart));
+          eventsAggregated += 1;
+        }
+        totals = currentTotals;
+      }
     }
-    delta.conversation_count = 1;
 
-    const bucketStart = toUtcHalfHourStart(timestamp);
-    if (!bucketStart) {
-      totals = currentTotals;
-      continue;
+    if (idx >= projectBegin) {
+      const projectDelta = diffGeminiTotals(currentTotals, projectTotals);
+      if (!projectDelta || isAllZeroUsage(projectDelta)) {
+        projectTotals = currentTotals;
+        continue;
+      }
+      projectDelta.conversation_count = 1;
+      bucketStart = bucketStart || toUtcHalfHourStart(timestamp);
+      if (bucketStart) {
+        const projectBucket = getProjectBucket(
+          projectState,
+          projectKey,
+          source,
+          bucketStart,
+          projectRef,
+        );
+        addTotals(projectBucket.totals, projectDelta);
+        projectTouchedBuckets.add(projectBucketKey(projectKey, source, bucketStart));
+      }
+      projectTotals = currentTotals;
     }
-
-    const bucket = getHourlyBucket(hourlyState, source, model, bucketStart);
-    addTotals(bucket.totals, delta);
-    touchedBuckets.add(bucketKey(source, model, bucketStart));
-    if (projectKey && projectState && projectTouchedBuckets) {
-      const projectBucket = getProjectBucket(
-        projectState,
-        projectKey,
-        source,
-        bucketStart,
-        projectRef,
-      );
-      addTotals(projectBucket.totals, delta);
-      projectTouchedBuckets.add(projectBucketKey(projectKey, source, bucketStart));
-    }
-    eventsAggregated += 1;
-    totals = currentTotals;
   }
 
   return {
     lastIndex: messages.length - 1,
     lastTotals: totals,
     lastModel: model,
+    projectLastIndex: projectActive ? messages.length - 1 : null,
+    projectLastTotals: projectTotals,
+    projectLastModel: projectModel,
     eventsAggregated,
   };
 }

@@ -59,3 +59,46 @@ test("purgeProjectUsage preserves queue offset after removing lines", async () =
   const expectedOffset = Buffer.byteLength(`${line2}\n`, "utf8");
   assert.equal(state.offset, expectedOffset);
 });
+
+test("purgeProjectUsage clears matching per-file project cursors", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-purge-cursors-"));
+  try {
+    const queuePath = path.join(tmp, "project.queue.jsonl");
+    const statePath = path.join(tmp, "project.queue.state.json");
+    await fs.writeFile(queuePath, "", "utf8");
+
+    const projectState = {
+      buckets: {
+        "blocked|gemini|2026-01-01T00:00:00.000Z": { totals: { input_tokens: 1 } },
+      },
+    };
+    const cursors = {
+      files: {
+        "/tmp/a.json": {
+          project: { projectKey: "blocked", lastIndex: 3 },
+        },
+        "/tmp/b.json": {
+          project: { projectKey: "keep", lastIndex: 4 },
+        },
+        "/tmp/c.json": {
+          lastIndex: 5,
+        },
+      },
+    };
+
+    const res = await purgeProjectUsage({
+      projectKey: "blocked",
+      projectQueuePath: queuePath,
+      projectQueueStatePath: statePath,
+      projectState,
+      cursors,
+    });
+
+    assert.equal(res.removedProjectCursors, 1);
+    assert.equal(cursors.files["/tmp/a.json"].project, undefined);
+    assert.deepEqual(cursors.files["/tmp/b.json"].project, { projectKey: "keep", lastIndex: 4 });
+    assert.equal(cursors.files["/tmp/c.json"].lastIndex, 5);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});

@@ -45,6 +45,7 @@ const {
   resolveKimiCodeDefaultModel,
   listRolloutFilesDeep,
 } = require("../src/lib/rollout");
+const { purgeProjectUsage } = require("../src/lib/project-usage-purge");
 
 const antigravityTestTokens = (text) => estimateAntigravityTokens(text || "");
 
@@ -1227,6 +1228,147 @@ test("parseGeminiIncremental recomputes total when Gemini reported total exclude
   }
 });
 
+test("parseGeminiIncremental keeps cumulative totals across messages without tokens", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-missing-tokens-"));
+  try {
+    const sessionPath = path.join(tmp, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+        {
+          id: "m2",
+          type: "assistant",
+          timestamp: "2025-12-26T08:10:00.000Z",
+          model: "gemini-3-flash-preview",
+        },
+        {
+          id: "m3",
+          type: "assistant",
+          timestamp: "2025-12-26T08:15:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 8, output: 2, cached: 0, thoughts: 0, tool: 0, total: 10 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+
+    const res = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(res.filesProcessed, 1);
+    assert.equal(res.eventsAggregated, 2);
+    assert.equal(res.bucketsQueued, 1);
+
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].input_tokens, 8);
+    assert.equal(queued[0].output_tokens, 2);
+    assert.equal(queued[0].total_tokens, 10);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental skips duplicate cumulative snapshots in one file", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-duplicate-"));
+  try {
+    const sessionPath = path.join(tmp, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const snapshot = { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 };
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: snapshot,
+        },
+        {
+          id: "m2",
+          type: "assistant",
+          timestamp: "2025-12-26T08:10:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: snapshot,
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+
+    const res = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(res.eventsAggregated, 1);
+    assert.equal(res.bucketsQueued, 1);
+
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].input_tokens, 5);
+    assert.equal(queued[0].output_tokens, 1);
+    assert.equal(queued[0].total_tokens, 6);
+    assert.equal(queued[0].conversation_count, 1);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental advances baseline for messages with tokens but no timestamp", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-missing-timestamp-"));
+  try {
+    const sessionPath = path.join(tmp, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+        {
+          id: "m2",
+          type: "assistant",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 8, output: 2, cached: 0, thoughts: 0, tool: 0, total: 10 },
+        },
+        {
+          id: "m3",
+          type: "assistant",
+          timestamp: "2025-12-26T08:15:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 9, output: 3, cached: 0, thoughts: 0, tool: 0, total: 12 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+
+    const res = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(res.eventsAggregated, 2);
+    assert.equal(res.bucketsQueued, 1);
+
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].input_tokens, 6);
+    assert.equal(queued[0].output_tokens, 2);
+    assert.equal(queued[0].total_tokens, 8);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("parseGeminiIncremental is idempotent with unchanged totals", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
   try {
@@ -1256,6 +1398,255 @@ test("parseGeminiIncremental is idempotent with unchanged totals", async () => {
 
     const afterSecond = await readJsonLines(queuePath);
     assert.equal(afterSecond.length, afterFirst.length);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental skips unchanged files when project state is disabled", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
+  try {
+    const sessionPath = path.join(tmp, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+
+    const first = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(first.filesProcessed, 1);
+    assert.equal(first.eventsAggregated, 1);
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].source, "gemini");
+    assert.equal(queued[0].model, "gemini-3-flash-preview");
+    assert.equal(queued[0].hour_start, "2025-12-26T08:00:00.000Z");
+    assert.equal(queued[0].input_tokens, 5);
+    assert.equal(queued[0].output_tokens, 1);
+    assert.equal(queued[0].total_tokens, 6);
+
+    const cursor = structuredClone(cursors.files[sessionPath]);
+    assert.equal(typeof cursor.size, "number");
+    assert.equal(typeof cursor.mtimeMs, "number");
+
+    const second = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(second.filesProcessed, 0);
+    assert.equal(second.eventsAggregated, 0);
+    assert.equal(second.bucketsQueued, 0);
+    assert.deepEqual(cursors.files[sessionPath].lastIndex, cursor.lastIndex);
+    assert.deepEqual(cursors.files[sessionPath].lastTotals, cursor.lastTotals);
+    assert.deepEqual(cursors.files[sessionPath].lastModel, cursor.lastModel);
+
+    const afterSecond = await readJsonLines(queuePath);
+    assert.deepEqual(afterSecond, queued);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental reprocesses old cursors without unchanged metadata", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
+  try {
+    const sessionPath = path.join(tmp, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+    await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    delete cursors.files[sessionPath].size;
+    delete cursors.files[sessionPath].mtimeMs;
+
+    const second = await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    assert.equal(second.filesProcessed, 1);
+    assert.equal(second.eventsAggregated, 0);
+    assert.equal(second.bucketsQueued, 0);
+    assert.equal(typeof cursors.files[sessionPath].size, "number");
+    assert.equal(typeof cursors.files[sessionPath].mtimeMs, "number");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental still processes unchanged files when project state is enabled", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-"));
+  try {
+    const projectRoot = path.join(tmp, "repo");
+    await fs.mkdir(path.join(projectRoot, ".git"), { recursive: true });
+    await fs.writeFile(
+      path.join(projectRoot, ".git", "config"),
+      `[remote "origin"]\n\turl = https://github.com/acme/alpha.git\n`,
+      "utf8",
+    );
+    const sessionPath = path.join(projectRoot, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const projectQueuePath = path.join(tmp, "project.queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+    await parseGeminiIncremental({ sessionFiles: [sessionPath], cursors, queuePath });
+    const queueAfterFirst = await readJsonLines(queuePath);
+    assert.equal(queueAfterFirst.length, 1);
+
+    const second = await parseGeminiIncremental({
+      sessionFiles: [sessionPath],
+      cursors,
+      queuePath,
+      projectQueuePath,
+      publicRepoResolver: async ({ projectRef }) => ({
+        status: "public_verified",
+        projectKey: "acme/alpha",
+        projectRef,
+      }),
+    });
+    assert.equal(second.filesProcessed, 1);
+    assert.equal(second.eventsAggregated, 0);
+    assert.equal(second.bucketsQueued, 0);
+    assert.equal(second.projectBucketsQueued, 1);
+
+    const queueAfterSecond = await readJsonLines(queuePath);
+    assert.deepEqual(queueAfterSecond, queueAfterFirst);
+
+    const projectQueued = await readJsonLines(projectQueuePath);
+    assert.equal(projectQueued.length, 1);
+    assert.equal(projectQueued[0].project_key, "acme/alpha");
+    assert.equal(projectQueued[0].project_ref, "https://github.com/acme/alpha");
+    assert.equal(projectQueued[0].source, "gemini");
+    assert.equal(projectQueued[0].hour_start, "2025-12-26T08:00:00.000Z");
+    assert.equal(projectQueued[0].input_tokens, 5);
+    assert.equal(projectQueued[0].output_tokens, 1);
+    assert.equal(projectQueued[0].total_tokens, 6);
+
+    const third = await parseGeminiIncremental({
+      sessionFiles: [sessionPath],
+      cursors,
+      queuePath,
+      projectQueuePath,
+      publicRepoResolver: async ({ projectRef }) => ({
+        status: "public_verified",
+        projectKey: "acme/alpha",
+        projectRef,
+      }),
+    });
+    assert.equal(third.filesProcessed, 0);
+    assert.equal(third.eventsAggregated, 0);
+    assert.equal(third.bucketsQueued, 0);
+    assert.equal(third.projectBucketsQueued, 0);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseGeminiIncremental rebuilds project buckets after purge clears file project cursor", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-gemini-purge-"));
+  try {
+    const projectRoot = path.join(tmp, "repo");
+    await fs.mkdir(path.join(projectRoot, ".git"), { recursive: true });
+    await fs.writeFile(
+      path.join(projectRoot, ".git", "config"),
+      `[remote "origin"]\n\turl = https://github.com/acme/alpha.git\n`,
+      "utf8",
+    );
+    const sessionPath = path.join(projectRoot, "session.json");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const projectQueuePath = path.join(tmp, "project.queue.jsonl");
+    const projectQueueStatePath = path.join(tmp, "project.queue.state.json");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+    const publicRepoResolver = async ({ projectRef }) => ({
+      status: "public_verified",
+      projectKey: "acme/alpha",
+      projectRef,
+    });
+
+    const session = buildGeminiSession({
+      messages: [
+        {
+          id: "m1",
+          type: "assistant",
+          timestamp: "2025-12-26T08:05:00.000Z",
+          model: "gemini-3-flash-preview",
+          tokens: { input: 5, output: 1, cached: 0, thoughts: 0, tool: 0, total: 6 },
+        },
+      ],
+    });
+
+    await fs.writeFile(sessionPath, JSON.stringify(session), "utf8");
+    const first = await parseGeminiIncremental({
+      sessionFiles: [sessionPath],
+      cursors,
+      queuePath,
+      projectQueuePath,
+      publicRepoResolver,
+    });
+    assert.equal(first.projectBucketsQueued, 1);
+    assert.equal(cursors.files[sessionPath].project.projectKey, "acme/alpha");
+
+    const purge = await purgeProjectUsage({
+      projectKey: "acme/alpha",
+      projectQueuePath,
+      projectQueueStatePath,
+      projectState: cursors.projectHourly,
+      cursors,
+    });
+    assert.equal(purge.removed, 1);
+    assert.equal(purge.removedBuckets, 1);
+    assert.equal(purge.removedProjectCursors, 1);
+    assert.equal(cursors.files[sessionPath].project, undefined);
+
+    const second = await parseGeminiIncremental({
+      sessionFiles: [sessionPath],
+      cursors,
+      queuePath,
+      projectQueuePath,
+      publicRepoResolver,
+    });
+    assert.equal(second.filesProcessed, 1);
+    assert.equal(second.eventsAggregated, 0);
+    assert.equal(second.bucketsQueued, 0);
+    assert.equal(second.projectBucketsQueued, 1);
+
+    const mainQueued = await readJsonLines(queuePath);
+    assert.equal(mainQueued.length, 1);
+
+    const projectQueued = await readJsonLines(projectQueuePath);
+    assert.equal(projectQueued.length, 1);
+    assert.equal(projectQueued[0].project_key, "acme/alpha");
+    assert.equal(projectQueued[0].source, "gemini");
+    assert.equal(projectQueued[0].total_tokens, 6);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

@@ -1185,6 +1185,7 @@ async function cmdSync(argv) {
           projectQueuePath,
           projectQueueStatePath,
           projectState: cursors.projectHourly,
+          cursors,
         });
         meta.purge_pending = false;
         meta.purged_at = new Date().toISOString();
