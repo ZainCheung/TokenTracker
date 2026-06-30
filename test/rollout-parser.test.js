@@ -557,18 +557,15 @@ test("parseRolloutIncremental re-reads same-inode truncation when project state 
       reasoning_output_tokens: 0,
       total_tokens: 10,
     };
-    const appendedBody =
+    await fs.appendFile(
+      rolloutPath,
       buildTokenCountLine({
         ts: "2026-01-26T00:30:00.000Z",
         last: thirdUsage,
         total: thirdUsage,
-      }) + "\n";
-    const appendHandle = await fs.open(rolloutPath, "a");
-    try {
-      await appendHandle.writeFile(appendedBody, "utf8");
-    } finally {
-      await appendHandle.close();
-    }
+      }) + "\n",
+      "utf8",
+    );
     const third = await parseRolloutIncremental({ rolloutFiles: [rolloutPath], cursors, queuePath });
     assert.equal(third.filesProcessed, 1);
     assert.equal(third.eventsAggregated, 1);

@@ -58,6 +58,7 @@ class DashboardViewModel: ObservableObject {
     @Published private(set) var topModels: [TopModel] = []
 
     private var refreshTask: Task<Void, Never>?
+    /// The timestamp of the last successful full synchronization run in the background.
     private var lastBackgroundSyncAt: Date?
     private let resetDetector = WeeklyLimitResetDetector()
 
@@ -273,6 +274,11 @@ class DashboardViewModel: ObservableObject {
 
     // MARK: - Auto Refresh
 
+    /// Starts the automatic background refresh loop.
+    ///
+    /// - Parameters:
+    ///   - interval: The interval between lightweight local refreshes.
+    ///   - syncInterval: The interval between full data synchronizations.
     func startAutoRefresh(
         interval: TimeInterval = BackgroundRefreshPolicy.defaultRefreshInterval,
         syncInterval: TimeInterval = BackgroundRefreshPolicy.defaultSyncInterval
