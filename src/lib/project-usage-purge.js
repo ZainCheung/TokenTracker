@@ -8,9 +8,10 @@ async function purgeProjectUsage({
   projectQueuePath,
   projectQueueStatePath,
   projectState,
+  cursors,
 }) {
   if (!projectKey || !projectQueuePath || !projectQueueStatePath || !projectState) {
-    return { removed: 0, kept: 0, removedBuckets: 0 };
+    return { removed: 0, kept: 0, removedBuckets: 0, removedProjectCursors: 0 };
   }
 
   let previousOffset = 0;
@@ -36,6 +37,16 @@ async function purgeProjectUsage({
     }
   }
   projectState.buckets = buckets;
+
+  let removedProjectCursors = 0;
+  const files = cursors?.files && typeof cursors.files === "object" ? cursors.files : {};
+  for (const cursor of Object.values(files)) {
+    if (!cursor || typeof cursor !== "object") continue;
+    if (cursor.project?.projectKey === projectKey) {
+      delete cursor.project;
+      removedProjectCursors += 1;
+    }
+  }
 
   let removed = 0;
   let kept = 0;
@@ -100,7 +111,7 @@ async function purgeProjectUsage({
 
   await fsp.writeFile(projectQueueStatePath, JSON.stringify({ offset: nextOffset }), "utf8");
 
-  return { removed, kept, removedBuckets };
+  return { removed, kept, removedBuckets, removedProjectCursors };
 }
 
 module.exports = { purgeProjectUsage };
