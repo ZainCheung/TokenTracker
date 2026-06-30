@@ -52,6 +52,71 @@ test("buildFleetData keeps usage tokens for fleet rows", async () => {
   assert.equal(fleetData[0].totalPercent, "100.0");
 });
 
+test("buildFleetData computes input-side cache hit rate per source", async () => {
+  const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
+  const buildFleetData = mod.buildFleetData;
+
+  const modelBreakdown = {
+    sources: [
+      {
+        // 900 reused / (100 + 900 + 0) input-side = 90%
+        source: "claude",
+        totals: {
+          total_tokens: 1020,
+          input_tokens: 100,
+          cached_input_tokens: 900,
+          cache_creation_input_tokens: 0,
+        },
+        models: [{ model: "claude-opus-4-8", model_id: "claude-opus-4-8", totals: { total_tokens: 1020 } }],
+      },
+      {
+        // No cache activity at all → rate omitted (null) so the UI hides the line.
+        source: "gemini",
+        totals: {
+          total_tokens: 500,
+          input_tokens: 300,
+          cached_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+        models: [{ model: "gemini-3-pro", model_id: "gemini-3-pro", totals: { total_tokens: 500 } }],
+      },
+    ],
+  };
+
+  const fleetData = buildFleetData(modelBreakdown);
+  const claude = fleetData.find((f) => f.source === "claude");
+  const gemini = fleetData.find((f) => f.source === "gemini");
+
+  assert.equal(claude.cacheHitRate, 90);
+  assert.equal(claude.cacheReusedTokens, 900);
+  assert.equal(claude.cacheInputTokens, 1000);
+
+  // Cache writes but no reads is still cache activity → a real 0%, not null.
+  assert.equal(gemini.cacheHitRate, null, "no cache reads or writes must omit the rate");
+});
+
+test("buildFleetData reports 0% when cache is written but never read", async () => {
+  const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
+  const buildFleetData = mod.buildFleetData;
+
+  const fleetData = buildFleetData({
+    sources: [
+      {
+        source: "codex",
+        totals: {
+          total_tokens: 600,
+          input_tokens: 100,
+          cached_input_tokens: 0,
+          cache_creation_input_tokens: 500,
+        },
+        models: [{ model: "gpt-5.4", model_id: "gpt-5.4", totals: { total_tokens: 600 } }],
+      },
+    ],
+  });
+
+  assert.equal(fleetData[0].cacheHitRate, 0, "cache writes with zero reads is a real 0%, not null");
+});
+
 test("buildFleetData returns model ids for stable keys", async () => {
   const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
   const buildFleetData = mod.buildFleetData;
@@ -481,6 +546,41 @@ test("merged Kiro source: IDE + CLI rows produce ONE sources[] entry with distin
     for (const entry of top) {
       assert.equal(entry.source, undefined, "buildTopModels entries must NOT expose a .source field");
     }
+  } finally {
+    await fs.promises.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("end-to-end: model-breakdown endpoint feeds buildFleetData a usable cache hit rate", async () => {
+  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), "tt-cache-hitrate-"));
+  try {
+    const queuePath = path.join(tmp, "queue.jsonl");
+    // 9000 cache reads / (1000 + 9000 + 0) input-side = 90%.
+    await writeQueue(queuePath, [
+      {
+        source: "claude",
+        model: "claude-opus-4-8",
+        hour_start: "2026-04-20T10:00:00.000Z",
+        input_tokens: 1000,
+        output_tokens: 200,
+        cached_input_tokens: 9000,
+        cache_creation_input_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 10200,
+        conversation_count: 1,
+      },
+    ]);
+
+    const { body } = await callModelBreakdown(queuePath, "2026-04-20", "2026-04-20");
+    const claude = body.sources.find((s) => s.source === "claude");
+    assert.ok(claude, "endpoint must return a claude source");
+    // The real endpoint must carry the input-side cache fields at SOURCE totals.
+    assert.equal(claude.totals.cached_input_tokens, 9000);
+
+    const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
+    const fleet = mod.buildFleetData(body);
+    const claudeFleet = fleet.find((f) => f.source === "claude");
+    assert.equal(claudeFleet.cacheHitRate, 90, "fleet cache hit rate must reflect endpoint totals");
   } finally {
     await fs.promises.rm(tmp, { recursive: true, force: true });
   }

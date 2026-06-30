@@ -39,6 +39,9 @@ export function buildFleetData(modelBreakdown: any, { copyFn }: AnyRecord = {}) 
         source: entry?.source,
         totalTokens: Number.isFinite(totalTokens) ? totalTokens : 0,
         totalCost: Number.isFinite(totalCost) ? totalCost : 0,
+        inputTokens: Math.max(0, toFiniteNumber(entry?.totals?.input_tokens) ?? 0),
+        cacheRead: Math.max(0, toFiniteNumber(entry?.totals?.cached_input_tokens) ?? 0),
+        cacheCreate: Math.max(0, toFiniteNumber(entry?.totals?.cache_creation_input_tokens) ?? 0),
         models: Array.isArray(entry?.models) ? entry.models : [],
       };
     })
@@ -79,12 +82,26 @@ export function buildFleetData(modelBreakdown: any, { copyFn }: AnyRecord = {}) 
           return { id, name, share, usage: modelTokens, cost: modelCost };
         })
         .filter(Boolean);
+      // Input-side cache hit rate = cache reads / all input-side tokens
+      // (non-cached input + cache reads + cache writes). cached_input_tokens are
+      // reads, cache_creation_input_tokens are writes. null when the source does
+      // no caching at all (e.g. Gemini/Antigravity report neither) so the UI omits
+      // the line instead of showing a meaningless 0%.
+      const cacheInputTokens = entry.inputTokens + entry.cacheRead + entry.cacheCreate;
+      const hasCacheActivity = entry.cacheRead + entry.cacheCreate > 0;
+      const cacheHitRate =
+        hasCacheActivity && cacheInputTokens > 0
+          ? Math.round((entry.cacheRead / cacheInputTokens) * 100)
+          : null;
       return {
         source: entry.source,
         label,
         totalPercent: String(totalPercent),
         usd: entry.totalCost,
         usage: entry.totalTokens,
+        cacheHitRate,
+        cacheReusedTokens: entry.cacheRead,
+        cacheInputTokens,
         models,
       };
     });

@@ -481,6 +481,23 @@ function ProviderExpandedSection({ provider, color, providerHeading, contextSour
                           )}
                         </div>
 
+                        {/* Input-side cache hit rate for this provider. Omitted
+                            entirely when the source does no prompt caching (rate
+                            is null) so we never render a misleading 0%. */}
+                        {provider.cacheHitRate != null && (
+                          <p className="mb-3 text-[11px] leading-snug text-oai-gray-500 dark:text-oai-gray-400 tabular-nums">
+                            <span className="font-medium text-oai-gray-600 dark:text-oai-gray-300">
+                              {copy("usage.overview.cache_hit_rate_label")}
+                            </span>{" "}
+                            <span className="text-oai-black dark:text-oai-white">{provider.cacheHitRate}%</span>
+                            {" · "}
+                            {copy("usage.overview.cache_hit_rate_detail", {
+                              reused: formatTokens(provider.cacheReusedTokens) || "0",
+                              input: formatTokens(provider.cacheInputTokens) || "0",
+                            })}
+                          </p>
+                        )}
+
                         {/* Antigravity transcripts carry no usage field — every token
                             here is a 4-char/token estimate that ignores Gemini prompt
                             caching. Inline footnote, same muted style as the Context
