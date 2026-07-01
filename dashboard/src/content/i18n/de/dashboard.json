@@ -319,5 +319,20 @@
   "dashboard.expired_gate.feature.restore.title": "Nahtlose Wiederherstellung",
   "dashboard.expired_gate.feature.restore.desc": "Setze deine Charts sofort fort – ohne Terminal-Hooks neu zu konfigurieren.",
   "dashboard.expired_gate.feature.cloud.title": "Geräteübergreifende Synchronisation",
-  "dashboard.expired_gate.feature.cloud.desc": "Über das synchronisierte Dashboard kannst du Token-Logs von überall einsehen."
+  "dashboard.expired_gate.feature.cloud.desc": "Über das synchronisierte Dashboard kannst du Token-Logs von überall einsehen.",
+  "dashboard.device_card.title": "Nach Gerät",
+  "dashboard.device_card.unnamed": "Unbekanntes Gerät",
+  "dashboard.device_filter.all": "Alle Geräte",
+  "dashboard.device_filter.aria": "Nach Gerät filtern",
+  "stats.period.avg": "⌀",
+  "stats.period.last_30d": "30 T",
+  "stats.period.last_7d": "7 T",
+  "usage.overview.cache_hit_rate_detail": "{{reused}} wiederverwendet / {{input}} Input",
+  "usage.overview.cache_hit_rate_label": "Cache-Trefferquote",
+  "dashboard.device_card.empty": "Keine aktiven Geräte gefunden",
+  "dashboard.device_card.rename_aria": "Gerät umbenennen",
+  "dashboard.device_card.rename_cancel": "Abbrechen",
+  "dashboard.device_card.rename_error": "Umbenennung fehlgeschlagen – dieser Name wird möglicherweise bereits verwendet.",
+  "dashboard.device_card.rename_placeholder": "Gerätename",
+  "dashboard.device_card.rename_save": "Namen speichern"
 }

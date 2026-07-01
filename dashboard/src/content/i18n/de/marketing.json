@@ -167,5 +167,6 @@
   "share.card.annual.estimated_cost": "Geschätzte Kosten",
   "share.card.annual.longest_streak": "Längste Serie",
   "share.card.annual.days_count": "{{days}} Tage",
-  "share.card.annual.top_model": "Top-Modell"
+  "share.card.annual.top_model": "Top-Modell",
+  "leaderboard.profile.nav.download": "Herunterladen"
 }
