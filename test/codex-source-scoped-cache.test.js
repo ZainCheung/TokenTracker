@@ -591,13 +591,15 @@ test("Codex day inventory cache rejects corrupt cached filenames", async () => {
     const dayDir = path.dirname(rolloutPath);
     const cache = { version: 1, days: {} };
     await listRolloutFiles(sessionsDir, { dayInventoryCache: cache });
-    cache.days[dayDir].files = ["rollout-x/evil.jsonl"];
+    for (const badName of ["rollout-x/evil.jsonl", "rollout-x\\evil.jsonl", "../rollout-x.jsonl"]) {
+      cache.days[dayDir].files = [badName];
 
-    const stats = {};
-    const found = await listRolloutFiles(sessionsDir, { dayInventoryCache: cache, stats });
-    assert.deepEqual(found, [rolloutPath]);
-    assert.equal(stats.dayInventoryCacheMisses, 1);
-    assert.ok(cache.days[dayDir].files.includes(path.basename(rolloutPath)));
+      const stats = {};
+      const found = await listRolloutFiles(sessionsDir, { dayInventoryCache: cache, stats });
+      assert.deepEqual(found, [rolloutPath]);
+      assert.equal(stats.dayInventoryCacheMisses, 1);
+      assert.ok(cache.days[dayDir].files.includes(path.basename(rolloutPath)));
+    }
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
