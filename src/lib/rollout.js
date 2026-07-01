@@ -290,7 +290,32 @@ async function parseClaudeIncremental({
     const truncated = sameInode && prevOffset > st.size;
     const startOffset = sameInode && !truncated ? prevOffset : 0;
 
-    if (!projectEnabled && sameInode && !truncated && startOffset >= st.size) {
+    // Claude's launch cwd is fixed for a session file's lifetime, so once
+    // resolved (found, or confirmed absent) from content it never needs
+    // re-extracting. Cache it — and the resolved project's git-config
+    // freshness fingerprint — on the cursor so idle files with project
+    // tracking enabled don't re-walk the filesystem on every sync.
+    //
+    // "No cwd found" / "cwd not inside a git checkout" only count as settled
+    // for genuinely idle files (no new bytes) — there's nothing new to
+    // attribute either way. A file that's still growing gets retried: an
+    // early sync can catch a session file before its cwd-bearing line lands,
+    // and treating that as permanent would silently drop the rest of the
+    // session's usage from the project queue.
+    const idle = sameInode && !truncated && startOffset >= st.size;
+    const cachedCwd = sameInode && !truncated ? prev?.claudeCwd : undefined;
+    const cachedProjectFileContext =
+      sameInode && !truncated ? prev?.projectFileContext || null : null;
+    const cachedContextAbsent = cachedProjectFileContext?.absent === true;
+    const projectContextFresh =
+      projectEnabled && cachedProjectFileContext && !cachedContextAbsent
+        ? await isProjectFileContextFresh(cachedProjectFileContext)
+        : false;
+    const projectKnownAbsent = cachedCwd === null || cachedContextAbsent;
+    const projectSettled =
+      !projectEnabled || (idle && projectKnownAbsent) || projectContextFresh;
+
+    if (idle && projectSettled) {
       if (cb) {
         cb({
           index: idx + 1,
@@ -304,17 +329,32 @@ async function parseClaudeIncremental({
       continue;
     }
 
-    const projectContext = projectEnabled
-      ? await resolveProjectContextForFile({
-          filePath,
+    let projectRef = sameInode && !truncated ? prev?.projectRef || null : null;
+    let projectKey = sameInode && !truncated ? prev?.projectKey || null : null;
+    let nextCwd = cachedCwd;
+    let nextProjectFileContext = cachedProjectFileContext;
+
+    if (projectEnabled && !projectSettled) {
+      if (nextCwd === undefined || nextCwd === null) {
+        nextCwd = await resolveClaudeFileCwd(filePath);
+      }
+      if (nextCwd) {
+        const projectContext = await resolveProjectContextForPath({
+          startDir: nextCwd,
           projectMetaCache,
           publicRepoCache,
           publicRepoResolver,
           projectState,
-        })
-      : null;
-    const projectRef = projectContext?.projectRef || null;
-    const projectKey = projectContext?.projectKey || null;
+        });
+        projectRef = projectContext?.projectRef || null;
+        projectKey = projectContext?.projectKey || null;
+        nextProjectFileContext = buildProjectFileContext(projectContext);
+      } else {
+        projectRef = null;
+        projectKey = null;
+        nextProjectFileContext = { absent: true };
+      }
+    }
 
     const result = await parseClaudeFile({
       filePath,
@@ -334,6 +374,14 @@ async function parseClaudeIncremental({
       inode,
       offset: result.endOffset,
       updatedAt: new Date().toISOString(),
+      ...(projectEnabled
+        ? {
+            claudeCwd: nextCwd === undefined ? null : nextCwd,
+            projectFileContext: nextProjectFileContext,
+            projectRef,
+            projectKey,
+          }
+        : {}),
     };
 
     filesProcessed += 1;
@@ -2089,7 +2137,15 @@ async function resolveProjectMetaForPath(startDir, cache) {
     if (configPath) {
       const remoteUrl = await readGitRemoteUrl(configPath);
       const projectRef = canonicalizeProjectRef(remoteUrl);
-      const meta = { projectRef: projectRef || null, repoRoot: current };
+      const configStat = await fs.stat(configPath).catch(() => null);
+      const meta = {
+        projectRef: projectRef || null,
+        repoRoot: current,
+        configPath,
+        configMtimeMs:
+          configStat && Number.isFinite(configStat.mtimeMs) ? configStat.mtimeMs : null,
+        configSize: configStat && Number.isFinite(configStat.size) ? configStat.size : null,
+      };
       if (cache) {
         for (const entry of visited) cache.set(entry, meta);
       }
@@ -2229,14 +2285,84 @@ async function resolveProjectContextForPath({
     repoRootHash: meta?.repoRootHash || repoRootHash,
   };
   recordProjectMeta(projectState, normalized);
+  const configFields = {
+    configPath: projectMeta.configPath || null,
+    configMtimeMs: projectMeta.configMtimeMs ?? null,
+    configSize: projectMeta.configSize ?? null,
+  };
   if (normalized.status !== "public_verified") {
-    return { projectRef: normalized.projectRef, projectKey: null, status: normalized.status };
+    return {
+      projectRef: normalized.projectRef,
+      projectKey: null,
+      status: normalized.status,
+      ...configFields,
+    };
   }
   return {
     projectRef: normalized.projectRef,
     projectKey: normalized.projectKey,
     status: normalized.status,
+    ...configFields,
   };
+}
+
+// Builds a small, cursor-persistable freshness fingerprint for a resolved
+// project context's git config file, so a later sync can tell whether the
+// resolution is still valid without re-walking the filesystem.
+function buildProjectFileContext(context) {
+  const configPath = typeof context?.configPath === "string" ? context.configPath : null;
+  if (!configPath) return { absent: true };
+  return {
+    configPath,
+    configMtimeMs: Number.isFinite(context.configMtimeMs) ? context.configMtimeMs : null,
+    configSize: Number.isFinite(context.configSize) ? context.configSize : null,
+  };
+}
+
+async function isProjectFileContextFresh(projectFileContext) {
+  if (!projectFileContext || typeof projectFileContext !== "object") return false;
+  if (projectFileContext.absent === true) return false;
+  const configPath =
+    typeof projectFileContext.configPath === "string" ? projectFileContext.configPath : null;
+  if (!configPath) return false;
+  const st = await fs.stat(configPath).catch(() => null);
+  if (!st || !st.isFile()) return false;
+  return st.mtimeMs === projectFileContext.configMtimeMs && st.size === projectFileContext.configSize;
+}
+
+// Claude Code session files log the launch cwd on message lines (top-level
+// "cwd" field) — unlike the file's on-disk location under
+// ~/.claude/projects/<dash-encoded-cwd>/, which is not itself inside the
+// real project's git checkout and can never resolve a project via directory
+// walk. The encoded name can't be decoded reliably either (dashes in the
+// real path collide with the path-separator encoding), so read the real cwd
+// from content instead. It's set once at session start and bounded scan is
+// cheap since it's a top-level field on the first several lines.
+const CLAUDE_CWD_SCAN_MAX_BYTES = 65536;
+
+async function resolveClaudeFileCwd(filePath) {
+  const stream = fssync.createReadStream(filePath, {
+    encoding: "utf8",
+    start: 0,
+    end: CLAUDE_CWD_SCAN_MAX_BYTES,
+  });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of rl) {
+      if (!line || !line.includes('"cwd"')) continue;
+      let obj;
+      try {
+        obj = JSON.parse(line);
+      } catch (_e) {
+        continue;
+      }
+      if (typeof obj?.cwd === "string" && obj.cwd.trim()) return obj.cwd.trim();
+    }
+  } finally {
+    rl.close();
+    stream.close?.();
+  }
+  return null;
 }
 
 async function resolveGitConfigPath(rootDir) {

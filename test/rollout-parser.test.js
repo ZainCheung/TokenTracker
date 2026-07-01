@@ -3183,7 +3183,7 @@ test("parseClaudeIncremental aggregates usage into half-hour buckets", async () 
   }
 });
 
-test("parseClaudeIncremental still processes unchanged files when project state is enabled", async () => {
+test("parseClaudeIncremental skips unchanged files once project context is settled", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
   try {
     const claudePath = path.join(tmp, "agent-claude.jsonl");
@@ -3210,6 +3210,122 @@ test("parseClaudeIncremental still processes unchanged files when project state 
     });
     assert.equal(first.filesProcessed, 1);
 
+    // No cwd on the fixture line, so project context is confirmed absent —
+    // an idle re-run should now skip the file entirely instead of re-doing
+    // a doomed-to-fail project resolution on every sync.
+    const second = await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(second.filesProcessed, 0);
+    assert.equal(second.eventsAggregated, 0);
+    assert.equal(second.bucketsQueued, 0);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseClaudeIncremental resolves project from content-embedded cwd, not the ~/.claude/projects storage path", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
+  try {
+    // Simulate the real ~/.claude/projects/<dash-encoded-cwd>/ storage layout:
+    // the file's own directory is NOT inside the real git checkout, so a
+    // directory-walk from the file path can never find a project. Only the
+    // "cwd" field logged inside the file's content points at the real repo.
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-repo-"));
+    await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, ".git", "config"),
+      '[remote "origin"]\n\turl = https://github.com/acme/widgets.git\n',
+      "utf8",
+    );
+
+    const storageDir = path.join(tmp, "-some-unrelated-claude-storage-dir");
+    await fs.mkdir(storageDir, { recursive: true });
+    const claudePath = path.join(storageDir, "session.jsonl");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const projectQueuePath = path.join(tmp, "project.queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+    const model = "claude-sonnet-4";
+
+    const lines = [
+      JSON.stringify({ type: "attachment", cwd: repoRoot, timestamp: "2025-12-25T01:00:00.000Z" }),
+      buildClaudeUsageLine({ ts: "2025-12-25T01:10:00.000Z", input: 100, output: 50, model }),
+    ];
+    await fs.writeFile(claudePath, lines.join("\n") + "\n", "utf8");
+
+    const res = await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(res.filesProcessed, 1);
+
+    const projectRows = await readJsonLines(projectQueuePath);
+    assert.equal(projectRows.length, 1);
+    assert.equal(projectRows[0].project_key, "acme/widgets");
+
+    assert.equal(cursors.files[claudePath].claudeCwd, repoRoot);
+    assert.equal(cursors.files[claudePath].projectKey, "acme/widgets");
+
+    // A second, idle run must not re-walk the filesystem for project
+    // context — the cached git-config fingerprint is still fresh.
+    const again = await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(again.filesProcessed, 0);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseClaudeIncremental retries cwd resolution when a growing file's cwd line lands after an earlier sync", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
+  try {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-repo-"));
+    await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, ".git", "config"),
+      '[remote "origin"]\n\turl = https://github.com/acme/late-cwd.git\n',
+      "utf8",
+    );
+
+    const storageDir = path.join(tmp, "-some-unrelated-claude-storage-dir");
+    await fs.mkdir(storageDir, { recursive: true });
+    const claudePath = path.join(storageDir, "session.jsonl");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const projectQueuePath = path.join(tmp, "project.queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+    const model = "claude-sonnet-4";
+
+    // First sync catches the file before its cwd-bearing line lands — only a
+    // bare summary line exists so far, so cwd resolution comes up empty.
+    await fs.writeFile(
+      claudePath,
+      JSON.stringify({ type: "summary", sessionId: "s1" }) + "\n",
+      "utf8",
+    );
+    await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(cursors.files[claudePath].claudeCwd, null);
+
+    // File grows: the cwd line lands, along with a usage line.
+    const lines = [
+      JSON.stringify({ type: "attachment", cwd: repoRoot, timestamp: "2025-12-25T01:00:00.000Z" }),
+      buildClaudeUsageLine({ ts: "2025-12-25T01:10:00.000Z", input: 100, output: 50, model }),
+    ];
+    await fs.appendFile(claudePath, lines.join("\n") + "\n", "utf8");
+
     const second = await parseClaudeIncremental({
       projectFiles: [{ path: claudePath, source: "claude" }],
       cursors,
@@ -3217,8 +3333,52 @@ test("parseClaudeIncremental still processes unchanged files when project state 
       projectQueuePath,
     });
     assert.equal(second.filesProcessed, 1);
-    assert.equal(second.eventsAggregated, 0);
-    assert.equal(second.bucketsQueued, 0);
+
+    const projectRows = await readJsonLines(projectQueuePath);
+    assert.equal(projectRows.length, 1);
+    assert.equal(projectRows[0].project_key, "acme/late-cwd");
+    assert.equal(cursors.files[claudePath].claudeCwd, repoRoot);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseClaudeIncremental skips re-walking git for an idle file whose cwd has no git checkout", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-claude-"));
+  try {
+    const nonRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-norepo-"));
+    const storageDir = path.join(tmp, "-some-unrelated-claude-storage-dir");
+    await fs.mkdir(storageDir, { recursive: true });
+    const claudePath = path.join(storageDir, "session.jsonl");
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const projectQueuePath = path.join(tmp, "project.queue.jsonl");
+    const cursors = { version: 1, files: {}, updatedAt: null };
+    const model = "claude-sonnet-4";
+
+    const lines = [
+      JSON.stringify({ type: "attachment", cwd: nonRepoDir, timestamp: "2025-12-25T01:00:00.000Z" }),
+      buildClaudeUsageLine({ ts: "2025-12-25T01:10:00.000Z", input: 100, output: 50, model }),
+    ];
+    await fs.writeFile(claudePath, lines.join("\n") + "\n", "utf8");
+
+    const first = await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(first.filesProcessed, 1);
+    assert.equal(cursors.files[claudePath].claudeCwd, nonRepoDir);
+    assert.deepEqual(cursors.files[claudePath].projectFileContext, { absent: true });
+
+    // Idle + already-confirmed-no-git-checkout must fully skip, not re-walk.
+    const second = await parseClaudeIncremental({
+      projectFiles: [{ path: claudePath, source: "claude" }],
+      cursors,
+      queuePath,
+      projectQueuePath,
+    });
+    assert.equal(second.filesProcessed, 0);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
