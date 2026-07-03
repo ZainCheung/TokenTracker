@@ -8,8 +8,6 @@ const os = require("node:os");
 const { resolveInstallPaths, ensureNamespacedCursors } = require("../src/lib/install-resolver");
 const wsl = require("../src/lib/wsl-probe");
 
-const { mockPlatform } = require("./helpers/mock");
-
 // ── resolveInstallPaths ───────────────────────────────────────────────────────
 
 test("resolveInstallPaths returns single path on non-Windows", (t) => {
