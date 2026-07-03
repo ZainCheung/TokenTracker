@@ -6512,7 +6512,8 @@ function resolveZedDbPath(env = process.env) {
     const local = env.LOCALAPPDATA || path.join(home, "AppData", "Local");
     const native = path.join(local, "Zed", "threads", "threads.db");
     const wslThreadsDir = wsl.shouldProbeWsl(env) ? wsl.discoverWslHome(".local/share/zed/threads", { env }) : null;
-    const wslDbPath = wslThreadsDir ? path.join(wslThreadsDir, "threads.db") : null;
+    const wslDbPath = wslThreadsDir && fssync.existsSync(path.join(wslThreadsDir, "threads.db"))
+      ? path.join(wslThreadsDir, "threads.db") : null;
     const paths = resolveInstallPaths("zed", { nativeValue: native, wslValue: wslDbPath }, env);
     const picked = paths.native || paths.wsl;
     if (picked) return picked;
@@ -6892,7 +6893,8 @@ function resolveGooseDbPath(env = process.env) {
     const appData = env.APPDATA || path.join(home, "AppData", "Roaming");
     const native = path.join(appData, "goose", "sessions", "sessions.db");
     const wslDir = wsl.shouldProbeWsl(env) ? wsl.discoverWslHome(".local/share/goose/sessions", { env }) : null;
-    const wslValue = wslDir ? path.join(wslDir, "sessions.db") : null;
+    const wslValue = wslDir && fssync.existsSync(path.join(wslDir, "sessions.db"))
+      ? path.join(wslDir, "sessions.db") : null;
     const paths = resolveInstallPaths("goose", { nativeValue: native, wslValue }, env);
     const picked = paths.native || paths.wsl;
     if (picked) candidates.push(picked);
