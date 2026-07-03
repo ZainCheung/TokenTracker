@@ -48,7 +48,9 @@ async function getLocalAuthToken(handler) {
 
 function loadLocalApiWithSpawn(fakeSpawn) {
   const childProcess = require("node:child_process");
+  const cloudAccount = require("../src/lib/cloud-account");
   const originalSpawn = childProcess.spawn;
+  cloudAccount.__resetCloudAccountCacheForTests();
   childProcess.spawn = fakeSpawn;
   delete require.cache[require.resolve("../src/lib/local-api")];
   const mod = require("../src/lib/local-api");
@@ -56,6 +58,7 @@ function loadLocalApiWithSpawn(fakeSpawn) {
     mod,
     restore() {
       childProcess.spawn = originalSpawn;
+      cloudAccount.__resetCloudAccountCacheForTests();
       delete require.cache[require.resolve("../src/lib/local-api")];
     },
   };
@@ -73,6 +76,42 @@ function createSuccessfulSpawn(calls) {
       child.emit("close", 0);
     });
     return child;
+  };
+}
+
+function createRelayedLoginFixture(prefix, { cloudSyncEnabled = true, includeRefreshToken = true } = {}) {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const prevHome = process.env.HOME;
+  const prevUserProfile = process.env.USERPROFILE;
+  const prevBaseUrl = process.env.TOKENTRACKER_INSFORGE_BASE_URL;
+  process.env.HOME = tmpHome;
+  process.env.USERPROFILE = tmpHome;
+  process.env.TOKENTRACKER_INSFORGE_BASE_URL = "https://cloud.example";
+
+  const trackerDir = path.join(tmpHome, ".tokentracker", "tracker");
+  fs.mkdirSync(trackerDir, { recursive: true });
+  fs.writeFileSync(path.join(trackerDir, "cloud-sync-pref.json"), JSON.stringify({ enabled: cloudSyncEnabled }));
+  fs.writeFileSync(path.join(trackerDir, "config.json"), JSON.stringify({ machineId: "machine-abcdef12" }));
+  if (includeRefreshToken) {
+    fs.writeFileSync(
+      path.join(trackerDir, "relay-cookies.json"),
+      JSON.stringify({
+        insforge_refresh_token: "insforge_refresh_token=refresh-xyz; Path=/; HttpOnly; SameSite=Lax",
+      }),
+    );
+  }
+
+  return {
+    trackerDir,
+    restore() {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      if (prevUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = prevUserProfile;
+      if (prevBaseUrl === undefined) delete process.env.TOKENTRACKER_INSFORGE_BASE_URL;
+      else process.env.TOKENTRACKER_INSFORGE_BASE_URL = prevBaseUrl;
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    },
   };
 }
 
@@ -225,6 +264,234 @@ test("local sync only treats boolean true as drain", async () => {
     } finally {
       restore();
     }
+  }
+});
+
+test("local sync non-drain request mints a device token from relayed login when none is provided", async () => {
+  const calls = [];
+  const fixture = createRelayedLoginFixture("tt-local-sync-auto-");
+  const prevFetch = global.fetch;
+
+  const fetchCalls = [];
+  global.fetch = async (urlStr, opts = {}) => {
+    fetchCalls.push({ url: String(urlStr), opts });
+    if (String(urlStr) === "https://cloud.example/api/auth/refresh?client_type=mobile") {
+      return { ok: true, status: 200, json: async () => ({ accessToken: "access-token" }) };
+    }
+    if (String(urlStr) === "https://cloud.example/functions/tokentracker-device-token-issue") {
+      assert.equal(opts.headers.Authorization, "Bearer access-token");
+      const body = JSON.parse(String(opts.body || "{}"));
+      assert.equal(body.machine_id, "machine-abcdef12");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ token: "issued-device-token", device_id: "device-id" }),
+      };
+    }
+    throw new Error(`unexpected fetch ${urlStr}`);
+  };
+
+  const { mod, restore } = loadLocalApiWithSpawn(createSuccessfulSpawn(calls));
+
+  try {
+    const handler = mod.createLocalApiHandler({
+      queuePath: path.join(fixture.trackerDir, "queue.jsonl"),
+    });
+    const localAuthToken = await getLocalAuthToken(handler);
+    const req = createRequest({
+      method: "POST",
+      headers: { "x-tokentracker-local-auth": localAuthToken },
+      body: JSON.stringify({}),
+    });
+    const res = createResponse();
+
+    const handled = await handler(
+      req,
+      res,
+      new URL("http://127.0.0.1/functions/tokentracker-local-sync"),
+    );
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args.slice(-2), [path.join(process.cwd(), "bin/tracker.js"), "sync"]);
+    assert.equal(calls[0].options.env.TOKENTRACKER_DEVICE_TOKEN, "issued-device-token");
+    assert.ok(fetchCalls.some((c) => c.url.endsWith("/api/auth/refresh?client_type=mobile")));
+    assert.ok(fetchCalls.some((c) => c.url.endsWith("/functions/tokentracker-device-token-issue")));
+  } finally {
+    restore();
+    global.fetch = prevFetch;
+    fixture.restore();
+  }
+});
+
+test("local sync non-drain request keeps explicit device token without relayed minting", async () => {
+  const calls = [];
+  const fixture = createRelayedLoginFixture("tt-local-sync-explicit-token-");
+  const prevFetch = global.fetch;
+
+  global.fetch = async (urlStr) => {
+    throw new Error(`unexpected fetch ${urlStr}`);
+  };
+
+  const { mod, restore } = loadLocalApiWithSpawn(createSuccessfulSpawn(calls));
+
+  try {
+    const handler = mod.createLocalApiHandler({
+      queuePath: path.join(fixture.trackerDir, "queue.jsonl"),
+    });
+    const localAuthToken = await getLocalAuthToken(handler);
+    const req = createRequest({
+      method: "POST",
+      headers: { "x-tokentracker-local-auth": localAuthToken },
+      body: JSON.stringify({ deviceToken: "explicit-device-token" }),
+    });
+    const res = createResponse();
+
+    const handled = await handler(
+      req,
+      res,
+      new URL("http://127.0.0.1/functions/tokentracker-local-sync"),
+    );
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args.slice(-2), [path.join(process.cwd(), "bin/tracker.js"), "sync"]);
+    assert.equal(calls[0].options.env.TOKENTRACKER_DEVICE_TOKEN, "explicit-device-token");
+  } finally {
+    restore();
+    global.fetch = prevFetch;
+    fixture.restore();
+  }
+});
+
+test("local sync non-drain request falls back to local sync when relayed device token cannot be issued", async () => {
+  const calls = [];
+  const fixture = createRelayedLoginFixture("tt-local-sync-auto-fail-");
+  const prevFetch = global.fetch;
+
+  global.fetch = async (urlStr) => {
+    if (String(urlStr) === "https://cloud.example/api/auth/refresh?client_type=mobile") {
+      return { ok: true, status: 200, json: async () => ({ accessToken: "access-token" }) };
+    }
+    if (String(urlStr) === "https://cloud.example/functions/tokentracker-device-token-issue") {
+      return { ok: false, status: 502, json: async () => ({ error: "upstream unavailable" }) };
+    }
+    throw new Error(`unexpected fetch ${urlStr}`);
+  };
+
+  const { mod, restore } = loadLocalApiWithSpawn(createSuccessfulSpawn(calls));
+
+  try {
+    const handler = mod.createLocalApiHandler({
+      queuePath: path.join(fixture.trackerDir, "queue.jsonl"),
+    });
+    const localAuthToken = await getLocalAuthToken(handler);
+    const req = createRequest({
+      method: "POST",
+      headers: { "x-tokentracker-local-auth": localAuthToken },
+      body: JSON.stringify({}),
+    });
+    const res = createResponse();
+
+    const handled = await handler(
+      req,
+      res,
+      new URL("http://127.0.0.1/functions/tokentracker-local-sync"),
+    );
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args.slice(-2), [path.join(process.cwd(), "bin/tracker.js"), "sync"]);
+    assert.equal(calls[0].options.env.TOKENTRACKER_DEVICE_TOKEN, undefined);
+  } finally {
+    restore();
+    global.fetch = prevFetch;
+    fixture.restore();
+  }
+});
+
+test("local sync non-drain request skips relayed minting when cloud sync is disabled", async () => {
+  const calls = [];
+  const fixture = createRelayedLoginFixture("tt-local-sync-cloud-off-", { cloudSyncEnabled: false });
+  const prevFetch = global.fetch;
+
+  global.fetch = async (urlStr) => {
+    throw new Error(`unexpected fetch ${urlStr}`);
+  };
+
+  const { mod, restore } = loadLocalApiWithSpawn(createSuccessfulSpawn(calls));
+
+  try {
+    const handler = mod.createLocalApiHandler({
+      queuePath: path.join(fixture.trackerDir, "queue.jsonl"),
+    });
+    const localAuthToken = await getLocalAuthToken(handler);
+    const req = createRequest({
+      method: "POST",
+      headers: { "x-tokentracker-local-auth": localAuthToken },
+      body: JSON.stringify({}),
+    });
+    const res = createResponse();
+
+    const handled = await handler(
+      req,
+      res,
+      new URL("http://127.0.0.1/functions/tokentracker-local-sync"),
+    );
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args.slice(-2), [path.join(process.cwd(), "bin/tracker.js"), "sync"]);
+    assert.equal(calls[0].options.env.TOKENTRACKER_DEVICE_TOKEN, undefined);
+  } finally {
+    restore();
+    global.fetch = prevFetch;
+    fixture.restore();
+  }
+});
+
+test("local sync non-drain request skips relayed minting when refresh token is absent", async () => {
+  const calls = [];
+  const fixture = createRelayedLoginFixture("tt-local-sync-no-refresh-", { includeRefreshToken: false });
+  const prevFetch = global.fetch;
+
+  global.fetch = async (urlStr) => {
+    throw new Error(`unexpected fetch ${urlStr}`);
+  };
+
+  const { mod, restore } = loadLocalApiWithSpawn(createSuccessfulSpawn(calls));
+
+  try {
+    const handler = mod.createLocalApiHandler({
+      queuePath: path.join(fixture.trackerDir, "queue.jsonl"),
+    });
+    const localAuthToken = await getLocalAuthToken(handler);
+    const req = createRequest({
+      method: "POST",
+      headers: { "x-tokentracker-local-auth": localAuthToken },
+      body: JSON.stringify({}),
+    });
+    const res = createResponse();
+
+    const handled = await handler(
+      req,
+      res,
+      new URL("http://127.0.0.1/functions/tokentracker-local-sync"),
+    );
+
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].args.slice(-2), [path.join(process.cwd(), "bin/tracker.js"), "sync"]);
+    assert.equal(calls[0].options.env.TOKENTRACKER_DEVICE_TOKEN, undefined);
+  } finally {
+    restore();
+    global.fetch = prevFetch;
+    fixture.restore();
   }
 });
 

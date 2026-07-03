@@ -1470,13 +1470,16 @@ function createLocalApiHandler({ queuePath }) {
           }
           extraEnv.TOKENTRACKER_INSFORGE_BASE_URL = allowedBaseUrl;
         }
-        if (drain && !extraEnv.TOKENTRACKER_DEVICE_TOKEN && getCloudSyncPref() && getRefreshTokenForCloud()) {
+        if (!extraEnv.TOKENTRACKER_DEVICE_TOKEN && getCloudSyncPref() && getRefreshTokenForCloud()) {
           const issuedToken = await issueDeviceTokenForDrainSync(qp).catch(() => null);
           if (!issuedToken) {
-            json(res, { ok: false, error: "Unable to issue cloud device token for drain sync" }, 502);
-            return true;
+            if (drain) {
+              json(res, { ok: false, error: "Unable to issue cloud device token for drain sync" }, 502);
+              return true;
+            }
+          } else {
+            extraEnv.TOKENTRACKER_DEVICE_TOKEN = issuedToken;
           }
-          extraEnv.TOKENTRACKER_DEVICE_TOKEN = issuedToken;
         }
         const result = await runSyncCommand(extraEnv, { drain });
         try {
