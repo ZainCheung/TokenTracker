@@ -33,6 +33,9 @@ const {
   parseCursorApiIncremental,
   parseKiroIncremental,
   parseHermesIncremental,
+  gooseInstallOwnsCursor,
+  zedInstallOwnsCursor,
+  hermesInstallOwnsCursor,
   parseCopilotIncremental,
   resolveKimiWireFiles,
   parseKimiIncremental,
@@ -748,6 +751,7 @@ async function cmdSync(argv) {
             gooseResult = await multiInstallParse({
               paths: goosePaths, parserFn: parseGooseIncremental, providerName: "goose",
               cursors, getParams: (p) => ({ dbPath: p }), queuePath, onProgress: gooseOnProgress,
+              detectInstall: gooseInstallOwnsCursor,
             });
           } catch (err) { warnProviderParseFailure("Goose", err, opts); }
         }
@@ -815,6 +819,7 @@ async function cmdSync(argv) {
             zedResult = await multiInstallParse({
               paths: zedPaths, parserFn: parseZedIncremental, providerName: "zed",
               cursors, getParams: (p) => ({ dbPath: p }), queuePath, onProgress: zedOnProgress,
+              detectInstall: zedInstallOwnsCursor,
             });
           } catch (err) { warnProviderParseFailure("Zed Agent", err, opts); }
         }
@@ -976,6 +981,7 @@ async function cmdSync(argv) {
               getParams: (path) => ({ hermesPath: path }),
               queuePath,
               onProgress: hermesOnProgress,
+              detectInstall: hermesInstallOwnsCursor,
             });
           } catch (err) {
             warnProviderParseFailure("Hermes", err, opts);

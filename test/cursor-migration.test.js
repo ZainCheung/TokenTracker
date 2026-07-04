@@ -70,39 +70,108 @@ test("ensureFlatCursor no-ops on already-flat cursor", () => {
   assert.equal(cursors.hermes.lastCompletedStartedAt, 50);
 });
 
-test("dual-parse after migration maintains independent namespace state", async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tt-cursor-migrate-"));
-  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
-  const queuePath = path.join(tmpDir, "queue.jsonl");
+function mockParserFn() {
+  return async ({ cursors: c }) => {
+    c.hermes = c.hermes || {};
+    c.hermes.lastRun = c.hermes.lastRun || 0;
+    c.hermes.lastRun += 1;
+    c.hermes.unfinishedSessionIds = c.hermes.unfinishedSessionIds || [];
+    c.hermes.unfinishedSessionIds.push(`session-${Date.now()}`);
+    return { recordsProcessed: 1 };
+  };
+}
 
-  const cursors = {
+function flatHermesCursors() {
+  return {
     hourly: { buckets: {} },
     hermes: { lastCompletedStartedAt: 100, unfinishedSessionIds: ["old"], snapshots: {} },
   };
+}
 
-  const r = await multiInstallParse({
+async function runDualParse(t, { cursors, detectInstall }) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tt-cursor-migrate-"));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  return await multiInstallParse({
     paths: { native: "/native-hermes", wsl: "/wsl-hermes" },
-    parserFn: async ({ cursors: c }) => {
-      c.hermes = c.hermes || {};
-      c.hermes.lastRun = c.hermes.lastRun || 0;
-      c.hermes.lastRun += 1;
-      c.hermes.unfinishedSessionIds = c.hermes.unfinishedSessionIds || [];
-      c.hermes.unfinishedSessionIds.push(`session-${Date.now()}`);
-      return { recordsProcessed: 1 };
-    },
+    parserFn: mockParserFn(),
     providerName: "hermes",
     cursors,
     getParams: (p) => ({ hermesPath: p }),
-    queuePath,
+    queuePath: path.join(tmpDir, "queue.jsonl"),
+    detectInstall,
+  });
+}
+
+test("dual-parse migration backfills the unproven install when ownership is detected", async (t) => {
+  const cursors = flatHermesCursors();
+  const r = await runDualParse(t, {
+    cursors,
+    // Probe proves the flat cursor's sessions live in the WSL install.
+    detectInstall: (installPath) => installPath === "/wsl-hermes",
   });
 
   assert.equal(r.recordsProcessed, 2, "both installs should parse");
-  assert.ok(cursors.hermes.native, "native namespace exists");
-  assert.ok(cursors.hermes.wsl, "wsl namespace exists");
   assert.ok(cursors.hermes.native.lastRun >= 1);
   assert.ok(cursors.hermes.wsl.lastRun >= 1);
   assert.ok(cursors.hermes.native.lastCompletedStartedAt === undefined,
-    "only wsl namespace gets flat cursor data in migration");
+    "unproven namespace starts empty so its history backfills");
   assert.ok(cursors.hermes.wsl.lastCompletedStartedAt === 100,
-    "wsl namespace inherited flat cursor data");
+    "proven namespace inherited flat cursor data");
+});
+
+test("dual-parse migration respects native ownership evidence", async (t) => {
+  const cursors = flatHermesCursors();
+  await runDualParse(t, {
+    cursors,
+    detectInstall: (installPath) => installPath === "/native-hermes",
+  });
+
+  assert.ok(cursors.hermes.native.lastCompletedStartedAt === 100,
+    "proven native namespace inherited flat cursor data");
+  assert.ok(cursors.hermes.wsl.lastCompletedStartedAt === undefined,
+    "unproven wsl namespace starts empty");
+});
+
+test("dual-parse migration seeds both namespaces without a probe", async (t) => {
+  const cursors = flatHermesCursors();
+  await runDualParse(t, { cursors });
+
+  assert.ok(cursors.hermes.native.lastCompletedStartedAt === 100,
+    "no probe → native seeded (never double count)");
+  assert.ok(cursors.hermes.wsl.lastCompletedStartedAt === 100,
+    "no probe → wsl seeded (never double count)");
+});
+
+test("dual-parse migration seeds both namespaces on ambiguous or failing probes", async (t) => {
+  for (const detectInstall of [
+    () => true, // both match — ambiguous
+    () => false, // neither matches — no evidence
+    () => { throw new Error("db locked"); }, // probe error
+  ]) {
+    const cursors = flatHermesCursors();
+    await runDualParse(t, { cursors, detectInstall });
+    assert.ok(cursors.hermes.native.lastCompletedStartedAt === 100,
+      "fallback seeds native with flat data");
+    assert.ok(cursors.hermes.wsl.lastCompletedStartedAt === 100,
+      "fallback seeds wsl with flat data");
+  }
+});
+
+test("dual-parse skips detection for already-namespaced cursors", async (t) => {
+  const cursors = {
+    hourly: { buckets: {} },
+    hermes: {
+      native: { lastCompletedStartedAt: 50 },
+      wsl: { lastCompletedStartedAt: 100 },
+    },
+  };
+  let probeCalls = 0;
+  await runDualParse(t, {
+    cursors,
+    detectInstall: () => { probeCalls += 1; return true; },
+  });
+
+  assert.equal(probeCalls, 0, "namespaced cursors never re-run the ownership probe");
+  assert.equal(cursors.hermes.native.lastCompletedStartedAt, 50);
+  assert.equal(cursors.hermes.wsl.lastCompletedStartedAt, 100);
 });

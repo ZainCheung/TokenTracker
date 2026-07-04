@@ -3921,6 +3921,86 @@ function readHermesSessions(dbPath, lastCompletedEpoch, unfinishedSessionIds = [
   }
 }
 
+// ── Dual-install cursor ownership probes ────────────────────────────────────
+// When a flat (pre-namespaced) cursor migrates to per-install namespaces
+// (multiInstallParse "both" mode), the migration must know which install the
+// flat cursor was tracking: only then may the OTHER install's namespace start
+// empty so its full history backfills. Guessing wrong wipes dedup state
+// (snapshots / sessionTotals / threadTotals) for an already-counted install,
+// and every re-read session lands in the hourly buckets a second time.
+// These probes answer "does this install's DB contain the flat cursor's own
+// ids?" — sampled from the cursor's per-session dedup maps. Any failure or
+// missing evidence returns false so the caller falls back to seeding every
+// namespace (bounded backfill loss, never a double count).
+
+function sqliteDbContainsIds(dbPath, table, ids, sqliteOptions = {}) {
+  if (!dbPath || !Array.isArray(ids) || ids.length === 0) return false;
+  if (!fssync.existsSync(dbPath)) return false;
+  const inList = ids.map(sqliteStringLiteral).join(",");
+  const sql = `SELECT id FROM ${table} WHERE id IN (${inList}) LIMIT 1`;
+
+  let snapshot = null;
+  let effectiveDbPath = dbPath;
+  if (isUncPath(dbPath)) {
+    try {
+      snapshot = snapshotSqliteDb(dbPath);
+      effectiveDbPath = snapshot.path;
+    } catch (_e) { }
+  }
+  try {
+    const rows = readSqliteJsonRows(effectiveDbPath, sql, {
+      label: "InstallProbe",
+      maxBuffer: 1024 * 1024,
+      timeout: 10_000,
+      ...sqliteOptions,
+    });
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (_e) {
+    return false;
+  } finally {
+    if (snapshot) snapshot.cleanup();
+  }
+}
+
+// Sample the most recently inserted keys — most likely to still exist in the
+// DB (providers may delete old sessions, which would blind the probe).
+function sampleRecentKeys(obj, limit = 16) {
+  if (!obj || typeof obj !== "object") return [];
+  const keys = Object.keys(obj).filter((k) => typeof k === "string" && k.length > 0);
+  return keys.slice(-limit);
+}
+
+function gooseInstallOwnsCursor(dbPath, flatState, sqliteOptions) {
+  return sqliteDbContainsIds(dbPath, "sessions", sampleRecentKeys(flatState?.sessionTotals), sqliteOptions);
+}
+
+function zedInstallOwnsCursor(dbPath, flatState, sqliteOptions) {
+  return sqliteDbContainsIds(dbPath, "threads", sampleRecentKeys(flatState?.threadTotals), sqliteOptions);
+}
+
+function hermesInstallOwnsCursor(hermesPath, flatState, sqliteOptions) {
+  const ids = new Set();
+  const collect = (state) => {
+    if (!state || typeof state !== "object") return;
+    for (const key of sampleRecentKeys(state.snapshots)) ids.add(key);
+    if (Array.isArray(state.unfinishedSessionIds)) {
+      for (const id of state.unfinishedSessionIds) {
+        if (typeof id === "string" && id.length > 0) ids.add(id);
+      }
+    }
+  };
+  collect(flatState);
+  if (flatState?.profiles && typeof flatState.profiles === "object") {
+    for (const profileState of Object.values(flatState.profiles)) collect(profileState);
+  }
+  const sample = [...ids].slice(-16);
+  if (sample.length === 0) return false;
+
+  const dbPaths = resolveAllHermesDBPaths({ hermesPath });
+  const allDbs = [dbPaths.default, ...Object.values(dbPaths.profiles)].filter(Boolean);
+  return allDbs.some((db) => sqliteDbContainsIds(db, "sessions", sample, sqliteOptions));
+}
+
 function hasLegacyHermesDefaultState(hermesState) {
   return (
     typeof hermesState.lastStartedAt === "number" ||
@@ -9900,6 +9980,9 @@ module.exports = {
   parseCursorApiIncremental,
   parseKiroIncremental,
   parseHermesIncremental,
+  gooseInstallOwnsCursor,
+  zedInstallOwnsCursor,
+  hermesInstallOwnsCursor,
   parseCopilotIncremental,
   resolveKimiWireFiles,
   resolveKimiDefaultModel,

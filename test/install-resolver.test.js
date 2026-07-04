@@ -103,16 +103,39 @@ test("ensureNamespacedCursors transparent for already-namespaced cursors", () =>
   assert.equal(ns.wsl.lastCompletedStartedAt, 0);
 });
 
-test("ensureNamespacedCursors migrates flat cursor to active namespace only", () => {
+test("ensureNamespacedCursors default seeds every namespace (no ownership evidence)", () => {
   const cursors = {
     hermes: { lastCompletedStartedAt: 100, unfinishedSessionIds: ["abc"] },
   };
   const ns = ensureNamespacedCursors(cursors, "hermes");
+  assert.equal(ns.native.lastCompletedStartedAt, 100, "native seeded with flat data");
+  assert.deepEqual(ns.native.unfinishedSessionIds, ["abc"]);
+  assert.equal(ns.wsl.lastCompletedStartedAt, 100, "wsl seeded with flat data");
+  assert.deepEqual(ns.wsl.unfinishedSessionIds, ["abc"]);
+  assert.notEqual(ns.native, ns.wsl, "namespaces are independent copies");
+  ns.wsl.unfinishedSessionIds.push("wsl-only");
+  assert.deepEqual(ns.native.unfinishedSessionIds, ["abc"], "deep copies do not alias");
+  assert.ok(ns === cursors.hermes, "cursors.hermes should be replaced with namespace object");
+});
+
+test("ensureNamespacedCursors seeds only the proven active namespace", () => {
+  const cursors = {
+    hermes: { lastCompletedStartedAt: 100, unfinishedSessionIds: ["abc"] },
+  };
+  const ns = ensureNamespacedCursors(cursors, "hermes", ["wsl"]);
   assert.equal(ns.native.lastCompletedStartedAt, undefined, "non-active namespace starts empty");
   assert.equal(ns.native.unfinishedSessionIds, undefined, "non-active namespace starts empty");
   assert.equal(ns.wsl.lastCompletedStartedAt, 100, "active namespace gets flat data");
   assert.deepEqual(ns.wsl.unfinishedSessionIds, ["abc"]);
-  assert.ok(ns === cursors.hermes, "cursors.hermes should be replaced with namespace object");
+});
+
+test("ensureNamespacedCursors accepts a bare string activeKey", () => {
+  const cursors = {
+    hermes: { lastCompletedStartedAt: 100 },
+  };
+  const ns = ensureNamespacedCursors(cursors, "hermes", "native");
+  assert.equal(ns.native.lastCompletedStartedAt, 100);
+  assert.equal(ns.wsl.lastCompletedStartedAt, undefined);
 });
 
 test("ensureNamespacedCursors handles empty provider state", () => {

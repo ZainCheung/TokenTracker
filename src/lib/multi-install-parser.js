@@ -5,7 +5,7 @@ function emptyResult() {
   return { recordsProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
 }
 
-async function multiInstallParse({ paths, parserFn, providerName, cursors, getParams, onProgress, ...shared }) {
+async function multiInstallParse({ paths, parserFn, providerName, cursors, getParams, onProgress, detectInstall, ...shared }) {
   const installKeys = Object.keys(paths).filter(k => paths[k]);
   if (installKeys.length === 0) return emptyResult();
   const env = shared.env || process.env;
@@ -20,9 +20,8 @@ async function multiInstallParse({ paths, parserFn, providerName, cursors, getPa
     });
   }
 
-  const mode = wsl.getWslMode(env);
-  const legacyKey = mode === "native-first" || mode === "native-only" ? "native" : "wsl";
-  const ns = ensureNamespacedCursors(cursors, providerName, legacyKey);
+  const activeKeys = resolveMigrationSeedKeys({ paths, installKeys, providerName, cursors, detectInstall });
+  const ns = ensureNamespacedCursors(cursors, providerName, activeKeys);
   let recordsProcessed = 0;
   let eventsAggregated = 0;
   let bucketsQueued = 0;
@@ -47,6 +46,32 @@ async function multiInstallParse({ paths, parserFn, providerName, cursors, getPa
   cursors[providerName] = ns;
 
   return { recordsProcessed, eventsAggregated, bucketsQueued };
+}
+
+// Decide which namespaces the one-time flat→namespaced cursor migration seeds
+// with the flat state. `detectInstall(installPath, flatState, installKey)` is
+// a provider-specific probe answering "does this install's DB contain the
+// flat cursor's session ids?". Only when EXACTLY ONE install matches do we
+// know who owned the flat cursor — the other namespace then starts empty so
+// its full history backfills. No probe, no match, multiple matches, or a
+// probe error all fall back to seeding every namespace: an install re-parsed
+// without its dedup state would double-count its entire history, and a
+// bounded backfill gap is the cheaper failure.
+function resolveMigrationSeedKeys({ paths, installKeys, providerName, cursors, detectInstall }) {
+  if (typeof detectInstall !== "function") return installKeys;
+  const state = cursors[providerName] && typeof cursors[providerName] === "object" ? cursors[providerName] : {};
+  const isFlat = state.native === undefined && state.wsl === undefined;
+  if (!isFlat || Object.keys(state).length === 0) return installKeys;
+
+  const hits = [];
+  for (const key of installKeys) {
+    let owns = false;
+    try {
+      owns = detectInstall(paths[key], state, key) === true;
+    } catch (_e) { }
+    if (owns) hits.push(key);
+  }
+  return hits.length === 1 ? hits : installKeys;
 }
 
 function wrapProgress(onProgress, installKey) {

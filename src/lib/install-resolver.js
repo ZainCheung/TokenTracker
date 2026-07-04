@@ -19,16 +19,27 @@ function pathExists(p, existsSync) {
   try { return (existsSync || fssync.existsSync)(p) ? p : null; } catch (_e) { return null; }
 }
 
-function ensureNamespacedCursors(cursors, providerName, activeKey = "wsl") {
+// Migrate a flat (single-install) cursor to { native, wsl } namespaces.
+// `activeKeys` names the namespaces seeded with a copy of the flat state; the
+// others start empty so their install's full history backfills on first parse.
+// Leaving a namespace empty is only safe when its install was NEVER counted
+// under the flat cursor — the flat state holds the per-session dedup maps, and
+// an already-counted install re-parsed without them double-counts everything.
+// Callers that cannot prove which install the flat cursor tracked must seed
+// ALL namespaces (the default): bounded backfill loss, never a double count.
+function ensureNamespacedCursors(cursors, providerName, activeKeys = ["native", "wsl"]) {
   const state = cursors[providerName] && typeof cursors[providerName] === "object" ? cursors[providerName] : {};
 
   if (state.native !== undefined || state.wsl !== undefined) {
     return state;
   }
 
+  const keys = Array.isArray(activeKeys) ? activeKeys : [activeKeys];
   cursors[providerName] = { native: {}, wsl: {} };
   if (Object.keys(state).length > 0) {
-    cursors[providerName][activeKey] = JSON.parse(JSON.stringify(state));
+    for (const key of keys) {
+      cursors[providerName][key] = JSON.parse(JSON.stringify(state));
+    }
   }
   return cursors[providerName];
 }
