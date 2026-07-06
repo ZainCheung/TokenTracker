@@ -768,6 +768,8 @@ function createLocalApiHandler({ queuePath }) {
   const localAuthToken = crypto.randomBytes(24).toString("hex");
   const trackerDataDir = path.join(os.homedir(), ".tokentracker", "tracker");
   const cookiePath = path.join(trackerDataDir, "relay-cookies.json");
+  const localSyncDeviceTokenCache = new Map();
+  const localSyncDeviceTokenInflight = new Map();
 
   // Load persisted cookies on startup
   try {
@@ -941,65 +943,93 @@ function createLocalApiHandler({ queuePath }) {
     }
   }
 
-  async function issueDeviceTokenForDrainSync(queuePathForMachineId) {
+  function localSyncDeviceTokenCacheKey(refreshToken, machineId, baseUrl) {
+    return `${baseUrl}\0${refreshToken}\0${machineId}`;
+  }
+
+  async function issueDeviceTokenForLocalSync(queuePathForMachineId, options = {}) {
     if (!getCloudSyncPref()) return null;
     const refreshToken = getRefreshTokenForCloud();
     if (!refreshToken) return null;
-
-    const runtime = resolveRuntimeConfig();
-    const baseUrl = runtime.baseUrl || DEFAULT_BASE_URL;
-    const minted = await mintAccessToken({
-      baseUrl,
-      anonKey: runtime.anonKey,
-      refreshToken,
-      timeoutMs: runtime.httpTimeoutMs,
-    });
-    if (!minted?.accessToken) return null;
-    if (minted.refreshToken) setRelayRefreshToken(minted.refreshToken);
-    if (minted.csrfToken) setRelayCsrfToken(minted.csrfToken);
-
     const machineId = getOrCreateMachineId(queuePathForMachineId);
     if (!machineId) return null;
 
-    const root = String(baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
-    const headers = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${minted.accessToken}`,
-    };
-    if (runtime.anonKey) headers.apikey = runtime.anonKey;
+    const runtime = resolveRuntimeConfig();
+    const baseUrl =
+      normalizeRemoteHttpBaseUrl(options.baseUrl) ||
+      normalizeRemoteHttpBaseUrl(runtime.baseUrl) ||
+      normalizeRemoteHttpBaseUrl(DEFAULT_BASE_URL);
+    const cacheKey = localSyncDeviceTokenCacheKey(refreshToken, machineId, baseUrl);
+    const cachedToken = localSyncDeviceTokenCache.get(cacheKey);
+    if (cachedToken) return cachedToken;
+    const inflightToken = localSyncDeviceTokenInflight.get(cacheKey);
+    if (inflightToken) return inflightToken;
 
-    let timeoutId;
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    if (controller && runtime.httpTimeoutMs > 0) {
-      timeoutId = setTimeout(() => controller.abort(), runtime.httpTimeoutMs);
+    const issuePromise = (async () => {
+      const minted = await mintAccessToken({
+        baseUrl,
+        anonKey: runtime.anonKey,
+        refreshToken,
+        timeoutMs: runtime.httpTimeoutMs,
+      });
+      if (!minted?.accessToken) return null;
+      const rotatedRefreshToken =
+        typeof minted.refreshToken === "string" && minted.refreshToken.trim()
+          ? minted.refreshToken.trim()
+          : "";
+      if (rotatedRefreshToken) setRelayRefreshToken(rotatedRefreshToken);
+      if (minted.csrfToken) setRelayCsrfToken(minted.csrfToken);
+
+      const root = String(baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${minted.accessToken}`,
+      };
+      if (runtime.anonKey) headers.apikey = runtime.anonKey;
+
+      let timeoutId;
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (controller && runtime.httpTimeoutMs > 0) {
+        timeoutId = setTimeout(() => controller.abort(), runtime.httpTimeoutMs);
+      }
+
+      const dashboardPlatform =
+        process.platform === "darwin" ? "MacIntel" :
+          process.platform === "win32" ? "Win32" :
+            process.platform === "linux" ? "Linux x86_64" :
+              "web";
+
+      const res = await fetch(`${root}/functions/tokentracker-device-token-issue`, {
+        method: "POST",
+        headers,
+        signal: controller ? controller.signal : undefined,
+        body: JSON.stringify({
+          // 必须和 dashboard/src/lib/cloud-sync.ts 使用同一个设备身份。
+          // 旧云端设备按 (platform, device_name) 认领；如果这里发明
+          // local-sync 身份，会多出一个 active device，账户视图会把历史求和两次。
+          device_name: `Token Tracker (dashboard) #${machineId.slice(0, 8)}`,
+          platform: dashboardPlatform,
+          machine_id: machineId,
+        }),
+      }).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+      });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      const token = typeof data?.token === "string" ? data.token.trim() : "";
+      if (token) {
+        const activeRefreshToken = rotatedRefreshToken || refreshToken;
+        localSyncDeviceTokenCache.set(localSyncDeviceTokenCacheKey(activeRefreshToken, machineId, baseUrl), token);
+      }
+      return token || null;
+    })();
+    localSyncDeviceTokenInflight.set(cacheKey, issuePromise);
+    try {
+      return await issuePromise;
+    } finally {
+      localSyncDeviceTokenInflight.delete(cacheKey);
     }
-
-    const dashboardPlatform =
-      process.platform === "darwin" ? "MacIntel" :
-        process.platform === "win32" ? "Win32" :
-          process.platform === "linux" ? "Linux x86_64" :
-            "web";
-
-    const res = await fetch(`${root}/functions/tokentracker-device-token-issue`, {
-      method: "POST",
-      headers,
-      signal: controller ? controller.signal : undefined,
-      body: JSON.stringify({
-        // 必须和 dashboard/src/lib/cloud-sync.ts 使用同一个设备身份。
-        // 旧云端设备按 (platform, device_name) 认领；如果这里发明
-        // local-sync 身份，会多出一个 active device，账户视图会把历史求和两次。
-        device_name: `Token Tracker (dashboard) #${machineId.slice(0, 8)}`,
-        platform: dashboardPlatform,
-        machine_id: machineId,
-      }),
-    }).finally(() => {
-      if (timeoutId) clearTimeout(timeoutId);
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    const token = typeof data?.token === "string" ? data.token.trim() : "";
-    return token || null;
   }
 
   // Returns "served" when the cross-device aggregate was written to `res`, or
@@ -1462,6 +1492,7 @@ function createLocalApiHandler({ queuePath }) {
         if (typeof body.deviceToken === "string" && body.deviceToken.trim()) {
           extraEnv.TOKENTRACKER_DEVICE_TOKEN = body.deviceToken.trim();
         }
+        let localSyncBaseUrl = null;
         if (body.insforgeBaseUrl != null) {
           const allowedBaseUrl = resolveAllowedInsforgeBaseUrl(body.insforgeBaseUrl);
           if (!allowedBaseUrl) {
@@ -1469,14 +1500,25 @@ function createLocalApiHandler({ queuePath }) {
             return true;
           }
           extraEnv.TOKENTRACKER_INSFORGE_BASE_URL = allowedBaseUrl;
+          localSyncBaseUrl = allowedBaseUrl;
         }
-        if (drain && !extraEnv.TOKENTRACKER_DEVICE_TOKEN && getCloudSyncPref() && getRefreshTokenForCloud()) {
-          const issuedToken = await issueDeviceTokenForDrainSync(qp).catch(() => null);
-          if (!issuedToken) {
-            json(res, { ok: false, error: "Unable to issue cloud device token for drain sync" }, 502);
-            return true;
+        if (!extraEnv.TOKENTRACKER_DEVICE_TOKEN && getCloudSyncPref() && getRefreshTokenForCloud()) {
+          let issuedToken = null;
+          try {
+            issuedToken = await issueDeviceTokenForLocalSync(qp, { baseUrl: localSyncBaseUrl });
+          } catch (e) {
+            if (resolveRuntimeConfig().debug) {
+              console.warn("[LocalAPI] local sync device token issue failed:", e?.message || e);
+            }
           }
-          extraEnv.TOKENTRACKER_DEVICE_TOKEN = issuedToken;
+          if (!issuedToken) {
+            if (drain) {
+              json(res, { ok: false, error: "Unable to issue cloud device token for local sync" }, 502);
+              return true;
+            }
+          } else {
+            extraEnv.TOKENTRACKER_DEVICE_TOKEN = issuedToken;
+          }
         }
         const result = await runSyncCommand(extraEnv, { drain });
         try {
