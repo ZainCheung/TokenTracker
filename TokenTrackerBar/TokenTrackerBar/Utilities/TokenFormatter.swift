@@ -48,12 +48,28 @@ enum TokenFormatter {
         return defaultExchangeRate
     }
 
+    /// Grouped decimal with exactly two fraction digits (14941.83 -> "14,941.83").
+    /// Fixed POSIX locale so the menu bar / popover render identically everywhere.
+    private static let costNumberFormatter: NumberFormatter = {
+        let fmt = NumberFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.numberStyle = .decimal
+        fmt.usesGroupingSeparator = true
+        fmt.minimumFractionDigits = 2
+        fmt.maximumFractionDigits = 2
+        return fmt
+    }()
+
     /// Formats a cost value using the active currency. Example: 1.5 -> "$1.50" (USD)
-    /// or "¥10.80" (CNY @ 7.2) or "€1.38" (EUR @ 0.92).
+    /// or "¥10.80" (CNY @ 7.2) or "€1.38" (EUR @ 0.92). Large values gain a
+    /// thousands separator: "$14,941.83".
     static func formatCost(_ value: Double) -> String {
         let symbol = currentCurrencySymbol()
         let rate = currentExchangeRate()
-        return String(format: "\(symbol)%.2f", value * rate)
+        let converted = value * rate
+        let number = costNumberFormatter.string(from: NSNumber(value: converted))
+            ?? String(format: "%.2f", converted)
+        return "\(symbol)\(number)"
     }
 
     /// Parses a cost string (e.g. "1.234567") and formats per the current currency.

@@ -71,9 +71,9 @@ export function LeaderboardMeChip({
     <Tag
       {...interactiveProps}
       className={cn(
-        "group inline-flex h-9 items-center gap-2.5 rounded-full border pl-1 pr-3.5 transition-all duration-300 select-none shadow-[0_1px_2px_rgba(0,0,0,0.03)]",
+        "group inline-flex h-9 items-center gap-2.5 rounded-full border pl-1 pr-3.5 transition-all duration-300 select-none",
         interactive
-          ? "border-oai-gray-200 hover:border-oai-brand-400 dark:border-oai-gray-800 dark:hover:border-oai-brand-500/80 bg-oai-gray-50/50 dark:bg-white/[0.02] backdrop-blur-md hover:bg-oai-brand-50/40 dark:hover:bg-oai-brand-950/20 active:scale-[0.97] hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:hover:shadow-[0_4px_20px_rgba(0,0,0,0.25)] dark:ring-1 dark:ring-white/[0.04] dark:hover:ring-white/[0.08]"
+          ? "border-oai-gray-200 hover:border-oai-brand-400 dark:border-oai-gray-800 dark:hover:border-oai-brand-500/80 bg-oai-gray-50/50 dark:bg-white/[0.02] backdrop-blur-md hover:bg-oai-brand-50/40 dark:hover:bg-oai-brand-950/20 active:scale-[0.97] dark:ring-1 dark:ring-white/[0.04] dark:hover:ring-white/[0.08]"
           : "border-oai-gray-100 dark:border-oai-gray-800/60 bg-oai-gray-50/20 dark:bg-white/[0.01] backdrop-blur-sm dark:ring-1 dark:ring-white/[0.02]",
         className,
       )}

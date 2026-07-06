@@ -54,10 +54,16 @@ const LeaderboardProfileModal = lazy(() =>
     default: m.LeaderboardProfileModal,
   })),
 );
+const CommunityStatsModal = lazy(() =>
+  import("../components/leaderboard/CommunityStatsModal.jsx").then((m) => ({
+    default: m.CommunityStatsModal,
+  })),
+);
 import { LeaderboardSkeleton } from "../components/LeaderboardSkeleton.jsx";
 import { SortableColumnHeader } from "../components/SortableColumnHeader.jsx";
 import { useColumnOrder } from "../hooks/use-column-order.js";
 import { LeaderboardMeChip } from "../components/LeaderboardSummaryCard.jsx";
+import { useCommunityStats } from "../hooks/use-community-stats.js";
 import {
   LB_STICKY_TH_RANK,
   LB_STICKY_TH_USER,
@@ -100,6 +106,44 @@ function TotalTokens({ value }) {
       <span className="sm:hidden">{formatCompactNumber(value)}</span>
       <span className="hidden sm:inline">{toDisplayNumber(value)}</span>
     </>
+  );
+}
+
+function CommunityStatsChip({ communityStats, onClick }) {
+  if (communityStats.status !== "ready") return null;
+
+  return (
+    <button 
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-9 items-center gap-2.5 rounded-full border border-oai-gray-200 dark:border-oai-gray-800 bg-oai-gray-50/50 dark:bg-white/[0.02] backdrop-blur-md px-3.5 select-none text-xs text-oai-gray-500 dark:text-oai-gray-400 hover:border-oai-brand-400 dark:hover:border-oai-brand-500/80 hover:bg-oai-brand-50/40 dark:hover:bg-oai-brand-950/20 transition-all duration-300 active:scale-[0.97] cursor-pointer"
+      title={copy("leaderboard.community.view_stats")}
+    >
+      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/80 opacity-75 duration-1000" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      </span>
+      
+      <span className="flex items-center gap-1">
+        <span className="font-semibold text-oai-black dark:text-white tabular-nums">
+          {Math.round(communityStats.tokenFloor).toLocaleString("en-US")}
+        </span>
+        <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-500">
+          {copy("leaderboard.community.tokens_chip")}
+        </span>
+      </span>
+
+      <span className="text-oai-gray-200 dark:text-oai-gray-800 select-none">·</span>
+
+      <span className="flex items-center gap-1">
+        <span className="font-semibold text-oai-black dark:text-white tabular-nums">
+          {(Number(communityStats.totalEntries) || 0).toLocaleString("en-US")}
+        </span>
+        <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-500">
+          {copy("leaderboard.community.devs_chip")}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -287,6 +331,7 @@ export function LeaderboardPage({
   const [listPage, setListPage] = useState(1);
   const [pageSize, setPageSizeState] = useState(readStoredPageSize);
   const [modalUserId, setModalUserId] = useState(null);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const openProfileModal = useCallback((userId) => {
     if (typeof userId === "string" && userId.trim()) setModalUserId(userId.trim());
   }, []);
@@ -488,6 +533,10 @@ export function LeaderboardPage({
   const from = listData?.from || null;
   const to = listData?.to || null;
   const generatedAt = listData?.generated_at || null;
+
+  // All-time community pulse for the title row (independent of the period
+  // filter); hidden entirely until the public fetch resolves.
+  const communityStats = useCommunityStats();
   const me = listData?.me || null;
   const meLabel = copy("leaderboard.me_label");
   const anonLabel = copy("leaderboard.anon_label");
@@ -755,7 +804,7 @@ export function LeaderboardPage({
     <div className="flex flex-col flex-1 text-oai-black dark:text-oai-white font-oai antialiased">
       <main className="flex-1 pt-8 sm:pt-10 pb-12 sm:pb-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          {/* Title gets its own row. */}
+          {/* Title row gets its own row. */}
           <div className="mb-5 sm:mb-6">
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-oai-black dark:text-white mb-2 sm:mb-3">
               {copy("leaderboard.title")}
@@ -774,10 +823,9 @@ export function LeaderboardPage({
             </p>
           </div>
 
-          {/* One row: period filter (left) + personal me-chip (right). The chip
-              drops its name/percentile below sm so both fit on a single line. */}
-          <div className="mb-6 sm:mb-8 flex flex-row items-center justify-between gap-3">
-            <div className="inline-flex h-9 p-1 border border-oai-gray-200 dark:border-oai-gray-800 rounded-full items-center relative">
+          {/* One row: period filter (left) + community status & me-chip (right). */}
+          <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="inline-flex h-9 p-1 border border-oai-gray-200 dark:border-oai-gray-800 rounded-full items-center relative self-start">
               {["week", "month", "total"].map((p) => {
                 const isActive = period === p;
                 return (
@@ -807,15 +855,21 @@ export function LeaderboardPage({
               })}
             </div>
 
-            <LeaderboardMeChip
-              me={me}
-              totalEntries={totalEntries}
-              meLabel={meLabel}
-              onOpenProfile={me?.user_id ? () => openProfileModal(me.user_id) : undefined}
-              onJumpToMe={handleJumpToMe}
-              canJump={myPage != null && !onMyPage && !currentListState.loading}
-              className="shrink-0"
-            />
+            <div className="flex flex-row items-center gap-2.5 self-end sm:self-auto shrink-0 flex-wrap">
+              <CommunityStatsChip
+                communityStats={communityStats}
+                onClick={() => setIsStatsModalOpen(true)}
+              />
+              <LeaderboardMeChip
+                me={me}
+                totalEntries={totalEntries}
+                meLabel={meLabel}
+                onOpenProfile={me?.user_id ? () => openProfileModal(me.user_id) : undefined}
+                onJumpToMe={handleJumpToMe}
+                canJump={myPage != null && !onMyPage && !currentListState.loading}
+                className="shrink-0"
+              />
+            </div>
           </div>
 
           {!signedIn && (
@@ -919,6 +973,11 @@ export function LeaderboardPage({
           period={period}
           accessToken={effectiveAuthToken}
           onClose={closeProfileModal}
+        />
+        <CommunityStatsModal
+          isOpen={isStatsModalOpen}
+          onClose={() => setIsStatsModalOpen(false)}
+          communityStats={communityStats}
         />
       </Suspense>
     </div>

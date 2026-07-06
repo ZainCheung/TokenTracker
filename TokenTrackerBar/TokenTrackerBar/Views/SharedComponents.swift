@@ -24,6 +24,22 @@ struct FontWeightModifier: ViewModifier {
     }
 }
 
+/// Animates numeric text changes (`.contentTransition(.numericText())`) on
+/// macOS 13+ and is a no-op on older versions. `value` is the trigger: the
+/// transition plays when it changes (e.g. a stat refresh).
+struct NumericTextTransitionModifier: ViewModifier {
+    let value: String
+    func body(content: Content) -> some View {
+        if #available(macOS 13, *) {
+            content
+                .contentTransition(.numericText())
+                .animation(.easeOut(duration: 0.35), value: value)
+        } else {
+            content
+        }
+    }
+}
+
 /// Unified section header used across all dashboard sections.
 struct SectionHeader<Trailing: View>: View {
     let title: String

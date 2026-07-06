@@ -1,0 +1,186 @@
+import React, { useLayoutEffect, useRef } from "react";
+import { motion } from "motion/react";
+import { gsap, ScrollTrigger } from "./gsap.js";
+import { TokenGalaxy } from "./TokenGalaxy.jsx";
+import { InstallCommand } from "./InstallCommand.jsx";
+import { DownloadButtons } from "./DownloadButtons.jsx";
+import { CountUp } from "../../components/CountUp.jsx";
+
+/**
+ * Split-stage hero: the copy (headline, install command, CTAs) sits on clean
+ * black in the upper half; the token galaxy is a fully visible top-down
+ * vortex rising from the bottom edge, with the live community counter
+ * floating directly over its bright core — every provider stream visibly
+ * feeds that number. A scrubbed ScrollTrigger writes 0..1 into `progressRef`
+ * so scrolling dives the camera into the vortex while the copy drifts away.
+ */
+export function HeroSection({
+  copy,
+  animate,
+  effectsReady,
+  stats,
+  tokenFallback,
+  devsFallback,
+  installCommand,
+  installCopied,
+  onCopyInstallCommand,
+  githubLabel,
+}) {
+  const sectionRef = useRef(null);
+  const copyRef = useRef(null);
+  const statRef = useRef(null);
+  const progressRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (!animate) return undefined;
+    const ctx = gsap.context(() => {
+      // Raw progress for the galaxy camera (smoothed inside TokenGalaxy).
+      ScrollTrigger.create({
+        trigger: sectionRef.current,
+        start: "top top",
+        end: "bottom bottom",
+        scrub: true,
+        onUpdate: (st) => {
+          progressRef.current = st.progress;
+        },
+      });
+      // One smoothed exit timeline for the whole hero: copy leaves first,
+      // the counter dissolves last, and the section unpins the moment the
+      // stage is empty — no dead scroll at the tail.
+      const tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 0.5,
+        },
+      });
+      tl.to(copyRef.current, { yPercent: -16, autoAlpha: 0, duration: 0.35 }, 0.12);
+      tl.to(statRef.current, { y: -28, scale: 0.94, autoAlpha: 0, duration: 0.24 }, 0.66);
+      tl.to({}, { duration: 0.1 });
+    }, sectionRef);
+    return () => ctx.revert();
+  }, [animate]);
+
+  const tokenTotal = stats.status === "ready" ? stats.tokenFloor : tokenFallback;
+  const devsTotal = stats.status === "ready" ? stats.totalEntries : devsFallback;
+  // Estimated live feed: ~0.4% community growth per day, spread across the
+  // seconds — enough to keep the trailing digits visibly spinning. The real
+  // fetch calibrates the base on every page load.
+  const tokensPerSec = (tokenTotal * 0.004) / 86400;
+  const galaxyMode = animate && effectsReady ? "full" : "static";
+
+  return (
+    <section ref={sectionRef} className={animate ? "relative h-[150vh]" : "relative"}>
+      <div className={animate ? "sticky top-0 h-[100svh] overflow-hidden" : "relative min-h-[100svh] overflow-hidden"}>
+        {/* Upper stage: hero copy on clean black — no particles behind it. */}
+        <div
+          ref={copyRef}
+          className="relative z-20 mx-auto flex max-w-3xl flex-col items-center px-4 pt-24 text-center sm:px-6 sm:pt-28"
+        >
+          <motion.div
+            initial={animate ? { opacity: 0, y: 24 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="flex flex-col items-center"
+          >
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-oai-gray-400">
+              <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[color:var(--lv3-accent)] opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[color:var(--lv3-accent)]" />
+              </span>
+              {copy("landing.v3.hero.kicker")}
+            </p>
+
+            <h1 className="text-balance text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-[4rem]">
+              {copy("landing.v2.hero.title_line1")}
+              <br />
+              <span
+                className="bg-gradient-to-b from-white via-[color:var(--lv3-accent-soft)] to-[color:var(--lv3-accent)] bg-clip-text font-bold tracking-tight text-transparent"
+                style={{ WebkitTextStroke: "1px rgba(255, 255, 255, 0.12)" }}
+              >
+                {copy("landing.v2.hero.title_line2")}
+              </span>
+            </h1>
+
+            <p className="mt-5 max-w-2xl text-base leading-relaxed text-oai-gray-400 sm:text-lg">
+              {copy("landing.v2.hero.subtagline")} {copy("landing.v2.install.availability")}
+            </p>
+
+            <div className="mt-7 w-full">
+              <InstallCommand
+                copy={copy}
+                installCommand={installCommand}
+                installCopied={installCopied}
+                onCopyInstallCommand={onCopyInstallCommand}
+                reduceMotion={!animate}
+              />
+            </div>
+
+            <div className="mt-5 w-full">
+              <DownloadButtons copy={copy} githubLabel={githubLabel} />
+            </div>
+          </motion.div>
+        </div>
+
+        {/* The galaxy canvas covers the whole viewport — no container edge can
+            slice it — while the disc itself is parked in the lower half, with
+            the live counter floating on its bright core. */}
+        <div className="absolute inset-0 z-0">
+          <TokenGalaxy mode={galaxyMode} progressRef={progressRef} />
+
+          {/* Outer div owns the centering; GSAP animates the inner one so the
+              -50% translate never gets clobbered by the tween's transform. */}
+          <div className="pointer-events-none absolute left-1/2 top-[68%] z-10 -translate-x-1/2 -translate-y-1/2">
+            <div ref={statRef} className="flex flex-col items-center gap-2">
+            {/* Frosted dark pad: blurs the particles directly behind the
+                counter and dims them, with a radial mask so it melts into the
+                galaxy with no visible edge. */}
+            <div
+              className="absolute -inset-x-28 -inset-y-12 -z-10"
+              style={{
+                backdropFilter: "blur(9px)",
+                WebkitBackdropFilter: "blur(9px)",
+                background: "radial-gradient(closest-side, var(--lv3-scrim), transparent 76%)",
+                maskImage: "radial-gradient(closest-side, black 55%, transparent 100%)",
+                WebkitMaskImage: "radial-gradient(closest-side, black 55%, transparent 100%)",
+              }}
+              aria-hidden="true"
+            />
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-oai-gray-300">
+              {copy("landing.v3.hero.stat_label")}
+            </p>
+            <p
+              className="font-mono text-4xl font-bold tabular-nums leading-none text-white sm:text-5xl"
+              style={{
+                textShadow:
+                  "0 2px 24px rgba(0, 0, 0, 0.9), 0 0 90px var(--lv3-accent-faint), 0 0 30px var(--lv3-accent-ghost)",
+              }}
+            >
+              <CountUp
+                value={tokenTotal}
+                animate={animate}
+                ratePerSec={tokensPerSec}
+                format={(v) => Math.round(v).toLocaleString("en-US")}
+              />
+            </p>
+              <p className="font-mono text-sm text-oai-gray-300">
+                {copy("landing.v3.stats.devs_syncing", {
+                  count: (Number(devsTotal) || 0).toLocaleString("en-US"),
+                })}
+              </p>
+            </div>
+          </div>
+
+          {/* Fade the vortex into the page background at the bottom edge. */}
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-24"
+            style={{ background: "linear-gradient(to bottom, transparent, var(--lv3-bg) 85%)" }}
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}

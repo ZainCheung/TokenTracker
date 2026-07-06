@@ -357,6 +357,7 @@ struct UsageLimitsView: View {
                 pacePercent: pacePercent,
                 paceOver: paceOver
             )
+            .animation(.easeOut(duration: 0.5), value: displayValue)
 
             Text(displayPercentLabel(displayValue))
                 .font(.system(.caption, design: .monospaced))
@@ -676,6 +677,18 @@ private struct ProviderClickableStyle: ViewModifier {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.primary.opacity(isActive ? 0.08 : (hovering ? 0.05 : 0)))
             )
+            // Click affordance: the hover highlight alone doesn't say "clickable",
+            // so fade in an info glyph at the title line while hovered / open.
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 6)
+                    .padding(.trailing, 8)
+                    .opacity(hovering || isActive ? 1 : 0)
+                    .animation(.easeOut(duration: 0.12), value: hovering)
+                    .allowsHitTesting(false)
+            }
             .contentShape(RoundedRectangle(cornerRadius: 8))
             .onHover { hovering in
                 self.hovering = hovering

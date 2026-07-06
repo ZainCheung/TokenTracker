@@ -20,7 +20,7 @@ struct DashboardView: View {
                     loadingView
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: 16) {
                             SummaryCardsView(
                                 todayTokens: viewModel.todayTokens,
                                 todayCost: viewModel.todayCost,

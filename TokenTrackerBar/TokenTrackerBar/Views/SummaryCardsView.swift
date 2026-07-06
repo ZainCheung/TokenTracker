@@ -53,6 +53,7 @@ private struct StatCard: View {
                 .font(.system(.title3, design: .monospaced).weight(.bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .modifier(NumericTextTransitionModifier(value: value))
             Text(subtitle)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -61,7 +62,16 @@ private struct StatCard: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
+        // Flat fill + hairline instead of .regularMaterial: on macOS 26 the popover
+        // chrome is already Liquid Glass, and material-on-glass reads muddy.
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                )
+        )
         .accessibilityElement(children: .combine)
     }
 }

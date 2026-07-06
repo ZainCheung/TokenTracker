@@ -24,14 +24,28 @@ struct ActivityHeatmapView: View {
                 // Use native SwiftUI views instead of Canvas for reliable rendering
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: spacing) {
-                            ForEach(Array(h.weeks.enumerated()), id: \.offset) { idx, week in
-                                VStack(spacing: spacing) {
-                                    ForEach(0..<7, id: \.self) { dayIdx in
-                                        cellView(week: week, weekIdx: idx, dayIdx: dayIdx)
-                                    }
+                        let labels = monthLabels(h)
+                        VStack(alignment: .leading, spacing: spacing) {
+                            // Month anchors above the grid — a year of cells is
+                            // unreadable without a time axis.
+                            HStack(alignment: .top, spacing: spacing) {
+                                ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                                    Text(label ?? "")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.tertiary)
+                                        .fixedSize()
+                                        .frame(width: cellSize, height: 10, alignment: .leading)
                                 }
-                                .id(idx)
+                            }
+                            HStack(alignment: .top, spacing: spacing) {
+                                ForEach(Array(h.weeks.enumerated()), id: \.offset) { idx, week in
+                                    VStack(spacing: spacing) {
+                                        ForEach(0..<7, id: \.self) { dayIdx in
+                                            cellView(week: week, weekIdx: idx, dayIdx: dayIdx)
+                                        }
+                                    }
+                                    .id(idx)
+                                }
                             }
                         }
                     }
@@ -118,6 +132,41 @@ struct ActivityHeatmapView: View {
 
     private func hoverSummary(_ cell: HeatmapCell) -> String {
         "\(Self.formattedDay(cell.day)) · \(TokenFormatter.formatCompact(cell.totalTokens)) \(Strings.tokensUnit)"
+    }
+
+    // MARK: - Month labels
+
+    /// One slot per week column; a localized month name where the month first
+    /// changes, nil elsewhere. Labels overflow their 11pt slot to the right —
+    /// months are ≥4 columns apart so they never collide.
+    private func monthLabels(_ h: HeatmapResponse) -> [String?] {
+        var labels: [String?] = []
+        var lastMonth: Substring?
+        for week in h.weeks {
+            guard let day = week.compactMap({ $0?.day }).first, day.count >= 7 else {
+                labels.append(nil)
+                continue
+            }
+            let month = day.prefix(7) // "yyyy-MM"
+            if month != lastMonth {
+                labels.append(Self.formattedMonth(day))
+                lastMonth = month
+            } else {
+                labels.append(nil)
+            }
+        }
+        return labels
+    }
+
+    /// Localizes a `yyyy-MM-dd` day into a short standalone month label
+    /// (e.g. "Jun" / "6月").
+    private static func formattedMonth(_ iso: String) -> String? {
+        guard let date = isoDayParser.date(from: iso) else { return nil }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: NativeLocalization.currentResolvedLocale)
+        out.timeZone = TimeZone(identifier: "UTC")
+        out.setLocalizedDateFormatFromTemplate("MMM")
+        return out.string(from: date)
     }
 
     // MARK: - Helpers

@@ -229,6 +229,17 @@ export async function getLeaderboard({
   });
 }
 
+/**
+ * Public, unauthenticated endpoint that returns per-model token aggregates
+ * across the entire community for the current week. Used by the Community
+ * Stats modal to show real model names (e.g. "claude-sonnet-4-6") instead
+ * of provider-level buckets.
+ */
+export async function getCommunityModels() {
+  if (isMockEnabled()) return { top_models: [] };
+  return fetchInsforgeFunction("tokentracker-community-models", {});
+}
+
 export async function getPublicVisibility({ accessToken }: AnyRecord = {}) {
   return fetchInsforgeFunction("tokentracker-public-visibility", {
     accessToken,

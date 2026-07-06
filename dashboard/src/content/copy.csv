@@ -49,8 +49,6 @@ error.boundary.hint,shared,*,ErrorBoundary,hint,"Open the console, then reload t
 error.boundary.no_details,shared,*,ErrorBoundary,details,"No error details",,active
 error.boundary.action.reload,shared,*,ErrorBoundary,action_reload,"Reload",,active
 
-landing.handle.default,landing,LandingPage,LandingPage,handle_default,"VIBE_USER",,active
-landing.handle.special,landing,LandingPage,LandingPage,handle_special,"VOLT",,active
 landing.screenshot.alt,landing,LandingPage,LandingPage,screenshot_alt,"TokenTracker dashboard screenshot",,active
 landing.nav.login,landing,LandingPage,LandingPage,nav_login,"LOGIN",,active
 landing.nav.signup,landing,LandingPage,LandingPage,nav_signup,"SIGN UP",,active
@@ -71,10 +69,6 @@ share.meta.og_type,share,SharePage,Meta,og_type,"website",,active
 share.meta.og_image,share,SharePage,Meta,og_image,"https://www.tokentracker.cc/dashboard-dark.png",,active
 share.meta.og_url,share,SharePage,Meta,og_url,"https://www.tokentracker.cc/share",,active
 share.meta.twitter_card,share,SharePage,Meta,twitter_card,"summary_large_image",,active
-landing.handle.placeholder,landing,LandingPage,LandingPage,handle_placeholder,"TRY '{{handle}}'",,active
-landing.rank.expectation,landing,LandingPage,LandingPage,rank_expectation,"RANK_EXPECTATION: {{rank}}",,active
-landing.rank.singularity,landing,LandingPage,LandingPage,rank_singularity,"APEX",,active
-landing.rank.unranked,landing,LandingPage,LandingPage,rank_unranked,"UNRANKED",,active
 landing.cta.primary,landing,LandingPage,LandingPage,cta_primary,"View Dashboard",,active
 landing.cta.secondary,landing,LandingPage,LandingPage,cta_secondary,"GitHub",,active
 
@@ -92,31 +86,50 @@ landing.v2.install.os_macos,landing,LandingPage,MarketingLanding,os_macos,"macOS
 landing.v2.install.os_windows,landing,LandingPage,MarketingLanding,os_windows,"Windows",,active
 landing.v2.install.availability,landing,LandingPage,MarketingLanding,availability,"Available for macOS and Windows",,active
 landing.v2.models.title,landing,LandingPage,MarketingLanding,models_title,"SUPPORTED AI CLI TOOLS",,active
-landing.v2.compare.kicker,landing,LandingPage,MarketingLanding,compare_kicker,"SEAMLESS TRACKING",,active
-landing.v2.compare.title,landing,LandingPage,MarketingLanding,compare_title,"Stop guessing your AI usage.",,active
-landing.v2.compare.subtitle,landing,LandingPage,MarketingLanding,compare_subtitle,"AI CLI tools hide raw usage data in obscure local files. TokenTracker consolidates them into a local-first dashboard in real-time.",,active
 landing.v2.distill.body,landing,LandingPage,MarketingLanding,distill_body,"100% local processing. No prompts or code are ever collected.",,active
-landing.v2.compare.with.title,landing,LandingPage,MarketingLanding,with_title,"WITH TOKEN TRACKER",,active
-landing.v2.compare.with.p1,landing,LandingPage,MarketingLanding,with_p1,"Centralized usage dashboard",,active
-landing.v2.compare.with.p2,landing,LandingPage,MarketingLanding,with_p2,"Real-time token metrics",,active
-landing.v2.compare.with.p3,landing,LandingPage,MarketingLanding,with_p3,"100% local, privacy-guaranteed",,active
-landing.v2.compare.with.p4,landing,LandingPage,MarketingLanding,with_p4,"Multi-client terminal audit trail",,active
-landing.v2.compare.without.title,landing,LandingPage,MarketingLanding,without_title,"WITHOUT IT",,active
-landing.v2.compare.without.p1,landing,LandingPage,MarketingLanding,without_p1,"Scattered JSON log files",,active
-landing.v2.compare.without.p2,landing,LandingPage,MarketingLanding,without_p2,"Blind to token consumption",,active
-landing.v2.compare.without.p3,landing,LandingPage,MarketingLanding,without_p3,"Unexpected API bills",,active
-landing.v2.compare.without.p4,landing,LandingPage,MarketingLanding,without_p4,"Zero historical audit logs",,active
 landing.v2.footer.line,landing,LandingPage,MarketingLanding,footer_line,"Token Tracker — Made by developers, for developers.",,active
 landing.v2.nav.status,landing,LandingPage,MarketingLanding,nav_status,"Status",,active
 landing.v2.nav.github,landing,LandingPage,MarketingLanding,nav_github,"GitHub",,active
-landing.v2.models.agent.codex,landing,LandingPage,MarketingLanding,agent_codex,"CODEX",,active
-landing.v2.models.agent.claude_code,landing,LandingPage,MarketingLanding,agent_claude_code,"CLAUDE CODE",,active
-landing.v2.models.agent.cursor,landing,LandingPage,MarketingLanding,agent_cursor,"CURSOR",,active
-landing.v2.models.agent.gemini,landing,LandingPage,MarketingLanding,agent_gemini,"GEMINI",,active
-landing.v2.models.agent.opencode,landing,LandingPage,MarketingLanding,agent_opencode,"OPENCODE",,active
-landing.v2.models.agent.openclaw,landing,LandingPage,MarketingLanding,agent_openclaw,"OPENCLAW",,active
 landing.v2.cta.primary,landing,LandingPage,MarketingLanding,cta_primary,"Dashboard",,active
 landing.v2.hero.subtagline,landing,LandingPage,MarketingLanding,hero_subtagline,"Automatically monitor token usage across Claude Code, Cursor, Codex, and more. Local-first, privacy-focused, and zero manual configuration.",,active
+landing.v3.hero.kicker,landing,LandingPage,HeroSection,hero_kicker,"Open source · Local-first · Realtime",,active
+landing.v3.hero.stat_label,landing,LandingPage,HeroSection,hero_stat_label,"Tokens tracked by the community",,active
+landing.v3.hero.scroll_hint,landing,LandingPage,HeroSection,hero_scroll_hint,"Scroll",,active
+landing.v3.stats.devs_syncing,landing,LandingPage,HeroSection,stats_devs_syncing,"{{count}} developers syncing",,active
+landing.v3.stats.fallback_tokens,landing,LandingPage,HeroSection,stats_fallback_tokens,"2200000000000",,active
+landing.v3.stats.fallback_devs,landing,LandingPage,HeroSection,stats_fallback_devs,"600",,active
+landing.v3.tools.count,landing,LandingPage,ToolsStrip,tools_count,"{{count}}+ AI coding agents supported out of the box.",,active
+landing.v3.how.kicker,landing,LandingPage,HowItWorksSection,how_kicker,"How it works",,active
+landing.v3.how.title,landing,LandingPage,HowItWorksSection,how_title,"From keystroke to dashboard in milliseconds.",,active
+landing.v3.how.subtitle,landing,LandingPage,HowItWorksSection,how_subtitle,"No proxies. No API keys to paste. TokenTracker reads the usage your CLI already writes — entirely on your machine.",,active
+landing.v3.how.step1.title,landing,LandingPage,HowItWorksSection,how_step1_title,"You run your agent",,active
+landing.v3.how.step1.body,landing,LandingPage,HowItWorksSection,how_step1_body,"Claude Code, Codex, Cursor, Gemini — keep working exactly the way you already do.",,active
+landing.v3.how.step2.title,landing,LandingPage,HowItWorksSection,how_step2_title,"A hook captures usage",,active
+landing.v3.how.step2.body,landing,LandingPage,HowItWorksSection,how_step2_body,"Every turn's token counts are parsed straight from the CLI's own local session logs.",,active
+landing.v3.how.step3.title,landing,LandingPage,HowItWorksSection,how_step3_title,"Queued on your machine",,active
+landing.v3.how.step3.body,landing,LandingPage,HowItWorksSection,how_step3_body,"Counts are normalized into an append-only queue under ~/.tokentracker. Nothing leaves your disk.",,active
+landing.v3.how.step4.title,landing,LandingPage,HowItWorksSection,how_step4_title,"Rendered live",,active
+landing.v3.how.step4.body,landing,LandingPage,HowItWorksSection,how_step4_body,"The local dashboard aggregates every agent, model and hour the moment it lands.",,active
+landing.v3.cap.kicker,landing,LandingPage,CapabilitiesSection,cap_kicker,"Everything in view",,active
+landing.v3.cap.title,landing,LandingPage,CapabilitiesSection,cap_title,"One dashboard for every agent.",,active
+landing.v3.cap.subtitle,landing,LandingPage,CapabilitiesSection,cap_subtitle,"Spend, limits, rhythm and models — the full picture of your AI usage, aggregated locally in real time.",,active
+landing.v3.cap.limits.title,landing,LandingPage,CapabilitiesSection,cap_limits_title,"Usage-limit radar",,active
+landing.v3.cap.limits.body,landing,LandingPage,CapabilitiesSection,cap_limits_body,"Watch 5-hour, weekly and monthly windows across providers — before you hit the wall mid-task.",,active
+landing.v3.cap.heatmap.title,landing,LandingPage,CapabilitiesSection,cap_heatmap_title,"365-day activity heatmap",,active
+landing.v3.cap.heatmap.body,landing,LandingPage,CapabilitiesSection,cap_heatmap_body,"Your coding rhythm at a glance, GitHub-style — every hour bucketed on your machine.",,active
+landing.v3.cap.devices.title,landing,LandingPage,CapabilitiesSection,cap_devices_title,"Every device, one picture",,active
+landing.v3.cap.devices.body,landing,LandingPage,CapabilitiesSection,cap_devices_body,"Menu bar on macOS, tray on Windows, CLI everywhere — optionally synced into a single account view.",,active
+landing.v3.privacy.kicker,landing,LandingPage,PrivacySection,privacy_kicker,"Local-first",,active
+landing.v3.privacy.title,landing,LandingPage,PrivacySection,privacy_title,"Your prompts never leave your machine.",,active
+landing.v3.privacy.p1,landing,LandingPage,PrivacySection,privacy_p1,"Token counts only",,active
+landing.v3.privacy.p2,landing,LandingPage,PrivacySection,privacy_p2,"No prompts. No code.",,active
+landing.v3.privacy.p3,landing,LandingPage,PrivacySection,privacy_p3,"Open source on GitHub",,active
+landing.v3.leaderboard.panel_title,landing,LandingPage,LeaderboardSection,leaderboard_panel_title,"Community rankings (global)",,active
+landing.v3.leaderboard.live,landing,LandingPage,LeaderboardSection,leaderboard_live,"Live",,active
+landing.v3.leaderboard.anonymous,landing,LandingPage,LeaderboardSection,leaderboard_anonymous,"Anonymous",,active
+landing.v3.leaderboard.tokens_synced,landing,LandingPage,LeaderboardSection,leaderboard_tokens_synced,"{{count}} tokens synced",,active
+landing.v3.download.title,landing,LandingPage,DownloadSection,download_title,"Start tracking in 30 seconds.",,active
+landing.v3.download.subtitle,landing,LandingPage,DownloadSection,download_subtitle,"One command or one download. Free, open source, yours.",,active
 
 
 
@@ -349,6 +362,23 @@ limits.settings.display_mode_label,ui,LimitsPage,LimitsSettingsPanel,display_mod
 limits.settings.display_mode_used,ui,LimitsPage,LimitsSettingsPanel,display_mode_used,"Used",,active
 limits.settings.display_mode_remaining,ui,LimitsPage,LimitsSettingsPanel,display_mode_remaining,"Remaining",,active
 limits.page.openSettings,ui,LimitsPage,LimitsPage,open_settings,"Display settings",,active
+leaderboard.community.tokens_label,ui,LeaderboardPage,LeaderboardPage,community_tokens_label,"Tokens tracked by the community",,active
+leaderboard.community.devs,ui,LeaderboardPage,LeaderboardPage,community_devs,"{{count}} developers syncing",,active
+leaderboard.community.view_stats,ui,LeaderboardPage,CommunityStatsChip,view_stats,"View global community stats",,active
+leaderboard.community.tokens_chip,ui,LeaderboardPage,CommunityStatsChip,tokens_chip,"Community Tokens",,active
+leaderboard.community.devs_chip,ui,LeaderboardPage,CommunityStatsChip,devs_chip,"Devs",,active
+leaderboard.community.modal.title,ui,LeaderboardPage,CommunityStatsModal,title,"Global Metrics",,active
+leaderboard.community.modal.description,ui,LeaderboardPage,CommunityStatsModal,description,"Anonymous aggregates across all community syncs.",,active
+leaderboard.community.modal.total_tokens,ui,LeaderboardPage,CommunityStatsModal,total_tokens,"Total Tokens",,active
+leaderboard.community.modal.active_devs,ui,LeaderboardPage,CommunityStatsModal,active_devs,"Active Devs",,active
+leaderboard.community.modal.active_devs_detail,ui,LeaderboardPage,CommunityStatsModal,active_devs_detail,"{{count}} syncing",,active
+leaderboard.community.modal.global_spend,ui,LeaderboardPage,CommunityStatsModal,global_spend,"Est. Spend",,active
+leaderboard.community.modal.global_spend_detail,ui,LeaderboardPage,CommunityStatsModal,global_spend_detail,"${{amount}} USD",,active
+leaderboard.community.modal.top_models,ui,LeaderboardPage,CommunityStatsModal,top_models,"Top Models",,active
+leaderboard.community.modal.all_time,ui,LeaderboardPage,CommunityStatsModal,all_time,"All time",,active
+leaderboard.community.modal.tokens_title,ui,LeaderboardPage,CommunityStatsModal,tokens_title,"{{count}} tokens",,active
+leaderboard.community.modal.note,ui,LeaderboardPage,CommunityStatsModal,note,"Model distribution aggregated from all-time cumulative syncs across the community.",,active
+shared.dialog.close,shared,*,Dialog,close,"Close dialog",,active
 nav.group.general,shared,*,Sidebar,group_general,"General",,active
 nav.group.tools,shared,*,Sidebar,group_tools,"Tools",,active
 nav.group.account,shared,*,Sidebar,group_account,"Account",,active
@@ -1042,5 +1072,4 @@ settings.menubar.updates.modalConfirm,ui,SettingsPage,NativeAppFooter,updates_co
 settings.menubar.updates.modalCancel,ui,SettingsPage,NativeAppFooter,updates_cancel,"Cancel","取消",active
 settings.menubar.updates.footerCore,ui,SettingsPage,NativeAppFooter,updates_footer_core,"TokenTracker v{{version}}",,active
 settings.menubar.updates.footerCombined,ui,SettingsPage,NativeAppFooter,updates_footer_combined,"TokenTrackerBar v{{barVersion}} (Core v{{coreVersion}})",,active
-
 

@@ -13,9 +13,16 @@ import SwiftUI
 /// pace). Punching first means the stripe sits over cleared pixels, so it stays
 /// visible even when its color matches the fill underneath. Warning markers are
 /// thin rounded ticks at configured threshold percentages.
-struct UsageLimitBar: View {
+struct UsageLimitBar: View, Animatable {
     /// Filled portion, 0...100, already adjusted for used/remaining mode.
-    let percent: Double
+    var percent: Double
+
+    /// Interpolates `percent` so fill changes animate when the caller attaches
+    /// `.animation(_:value:)` — Canvas alone doesn't tween its inputs.
+    var animatableData: Double {
+        get { percent }
+        set { percent = newValue }
+    }
     /// Fill color (the unified green→amber→red threshold color).
     let fillColor: Color
     /// Pace position, 0...100 in the same display space as `percent`; `nil` hides the tip.

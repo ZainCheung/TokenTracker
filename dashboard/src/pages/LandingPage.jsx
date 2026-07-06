@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { copy } from "../lib/copy";
 import { safeWriteClipboard } from "../lib/safe-browser";
 import { isScreenshotModeEnabled } from "../lib/screenshot-mode";
@@ -43,11 +43,6 @@ function useDeferredMount(delayMs = 0, shouldDefer = true) {
 }
 
 export function LandingPage({ signInUrl, signUpUrl }) {
-  const specialHandle = copy("landing.handle.special");
-  const defaultHandle = copy("landing.handle.default");
-  const loginLabel = copy("landing.nav.login");
-  const signupLabel = copy("landing.nav.signup");
-  const [handle, setHandle] = useState(defaultHandle);
   const reduceMotion = usePrefersReducedMotion();
   const screenshotMode = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -57,6 +52,8 @@ export function LandingPage({ signInUrl, signUpUrl }) {
     prefersReducedMotion: reduceMotion,
     screenshotMode,
   });
+  // Heavy WebGL effects mount one idle-frame after first paint so the hero
+  // copy (LCP) always renders before the canvas initializes.
   const effectsReady = useDeferredMount(250, deferMount);
   const installEntryKey = "tokentracker.dashboard.from_landing.v1";
 
@@ -69,35 +66,37 @@ export function LandingPage({ signInUrl, signUpUrl }) {
     }
   }, [installEntryKey]);
 
-  const handlePlaceholder = useMemo(
-    () => copy("landing.handle.placeholder", { handle: specialHandle }),
-    [specialHandle],
-  );
-
-  const rankLabel = useMemo(() => {
-    const rank =
-      handle === specialHandle ? copy("landing.rank.singularity") : copy("landing.rank.unranked");
-    return copy("landing.rank.expectation", { rank });
-  }, [handle, specialHandle]);
-
   const installCommand = copy("landing.install.command");
   const [installCopied, setInstallCopied] = useState(false);
+  const installCopiedTimerRef = useRef(null);
 
-  const handleChange = (event) => {
-    setHandle(event.target.value.toUpperCase());
-  };
+  useEffect(() => {
+    return () => {
+      if (installCopiedTimerRef.current != null) {
+        window.clearTimeout(installCopiedTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopyInstall = async () => {
     const didCopy = await safeWriteClipboard(installCommand);
     if (!didCopy) return;
+    if (installCopiedTimerRef.current != null) {
+      window.clearTimeout(installCopiedTimerRef.current);
+    }
     setInstallCopied(true);
-    window.setTimeout(() => setInstallCopied(false), 2000);
+    installCopiedTimerRef.current = window.setTimeout(() => {
+      setInstallCopied(false);
+      installCopiedTimerRef.current = null;
+    }, 2000);
   };
 
   return (
     <MarketingLanding
       copy={copy}
       reduceMotion={reduceMotion}
+      screenshotMode={screenshotMode}
+      effectsReady={effectsReady}
       signInUrl={signInUrl}
       signUpUrl={signUpUrl}
       installCommand={installCommand}

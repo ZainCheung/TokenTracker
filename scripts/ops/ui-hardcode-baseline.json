@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-07-04T09:28:02.390Z",
+  "generatedAt": "2026-07-06T06:28:42.437Z",
   "root": "dashboard/src",
   "rules": {
     "colors": "hex/rgb(a) literals",
     "rawText": "JSX text nodes containing letters or digits"
   },
   "totals": {
-    "colors": 276,
-    "rawText": 167
+    "colors": 285,
+    "rawText": 164
   },
   "files": {
     "dashboard/src/components/InsforgeUserHeaderControls.jsx": {
@@ -17,11 +17,6 @@
         ") : avatarSrc && !avatarFailed ? (",
         ") : initialsFromName(displayName) === \"?\" ? ("
       ]
-    },
-    "dashboard/src/components/LeaderboardSummaryCard.jsx": {
-      "colors": 3,
-      "rawText": 0,
-      "rawTextTokens": []
     },
     "dashboard/src/components/LeaderboardSummaryCard.test.jsx": {
       "colors": 1,
@@ -39,6 +34,14 @@
       "colors": 4,
       "rawText": 0,
       "rawTextTokens": []
+    },
+    "dashboard/src/components/leaderboard/CommunityStatsModal.jsx": {
+      "colors": 14,
+      "rawText": 2,
+      "rawTextTokens": [
+        "0 && (",
+        "Math.max(max, Number(m.share) || 0), 0) || 1; return ("
+      ]
     },
     "dashboard/src/components/leaderboard/LeaderboardProfileModal.jsx": {
       "colors": 6,
@@ -379,43 +382,16 @@
       ]
     },
     "dashboard/src/ui/marketing/MarketingLanding.jsx": {
-      "colors": 22,
-      "rawText": 20,
+      "colors": 0,
+      "rawText": 3,
       "rawTextTokens": [
         ") : ( // 未登录：Sign In 展示为主行动实色按钮，点击唤起 Modal",
         ") : signedIn ? ( // 已登录：Open Dashboard 升级为主行动实色按钮",
-        "01",
-        "02",
-        "03",
-        "1,420,850",
-        "42 DAY ACTIVE STREAK",
-        "740,560",
-        "89.5% Eff.",
-        "92.1% Eff.",
-        "924,110",
-        "98.4% Eff.",
-        "ALEX",
-        "CHAMP",
-        "CHARLIE",
-        "Community Rankings (Global)",
-        "Realtime",
-        "SYSTEM: // LEADERBOARD_PREVIEW_FEED",
-        "Token Tracker",
-        "VOLT"
+        "Token Tracker"
       ]
     },
     "dashboard/src/ui/marketing/components/BorderGlow.jsx": {
       "colors": 6,
-      "rawText": 0,
-      "rawTextTokens": []
-    },
-    "dashboard/src/ui/marketing/components/LaserFlow.jsx": {
-      "colors": 1,
-      "rawText": 0,
-      "rawTextTokens": []
-    },
-    "dashboard/src/ui/marketing/components/LightRays.jsx": {
-      "colors": 1,
       "rawText": 0,
       "rawTextTokens": []
     },
@@ -424,8 +400,42 @@
       "rawText": 0,
       "rawTextTokens": []
     },
-    "dashboard/src/ui/marketing/components/TiltedCard.jsx": {
+    "dashboard/src/ui/marketing/v3/CapabilitiesSection.jsx": {
+      "colors": 1,
+      "rawText": 0,
+      "rawTextTokens": []
+    },
+    "dashboard/src/ui/marketing/v3/HeroSection.jsx": {
       "colors": 2,
+      "rawText": 0,
+      "rawTextTokens": []
+    },
+    "dashboard/src/ui/marketing/v3/HowItWorksSection.jsx": {
+      "colors": 0,
+      "rawText": 11,
+      "rawTextTokens": [
+        "103,763",
+        "12,482",
+        "3,067",
+        "6,830,736,916",
+        "88,214",
+        "claude",
+        "total tokens",
+        "⏺ editing src/lib/rollout.js",
+        "⏺ thinking…",
+        "▌ appended locally",
+        "✓ 3 files changed"
+      ]
+    },
+    "dashboard/src/ui/marketing/v3/LeaderboardSection.jsx": {
+      "colors": 0,
+      "rawText": 1,
+      "rawTextTokens": [
+        "0 ? Math.max(6, Math.round((tokens / maxTokens) * 100)) : 0; return ("
+      ]
+    },
+    "dashboard/src/ui/marketing/v3/palette.js": {
+      "colors": 21,
       "rawText": 0,
       "rawTextTokens": []
     },

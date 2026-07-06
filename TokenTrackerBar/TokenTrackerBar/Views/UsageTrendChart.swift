@@ -95,11 +95,11 @@ struct UsageTrendChart: View {
 		}
 	}
 
-	private var trendInterpolation: InterpolationMethod {
+	private func trendInterpolation(for data: [(date: Date, tokens: Int)]) -> InterpolationMethod {
 		if period == .day {
-			return chartData.count > 2 ? .monotone : .linear
+			return data.count > 2 ? .monotone : .linear
 		}
-		return chartData.count > 2 ? .catmullRom : .linear
+		return data.count > 2 ? .catmullRom : .linear
 	}
 
 	private var dayAxisValues: [Date] {
@@ -154,29 +154,85 @@ struct UsageTrendChart: View {
 		}
 	}
 
+	/// The data point under the pointer. Same inline-header pattern as
+	/// ActivityHeatmapView: NSPopover-hosted SwiftUI can't float tooltips, so the
+	/// hovered value swaps into the section header instead.
+	@State private var hovered: TrendHoverPoint?
+
 	var body: some View {
+		let currentData = chartData
+		let currentInterpolation = trendInterpolation(for: currentData)
+
 		VStack(alignment: .leading, spacing: 14) {
 			SectionHeader(title: Strings.trendTitle) {
-				PeriodPickerView(selection: $period, onChange: onPeriodChange)
+				HStack(spacing: 10) {
+					if let hovered {
+						Text("\(hovered.date.formatted(xAxisFormat)) - \(TokenFormatter.formatCompact(hovered.tokens)) \(Strings.tokensUnit)")
+							.font(.caption2)
+							.foregroundStyle(.secondary)
+							.modifier(FontWeightModifier(weight: .medium))
+					}
+					PeriodPickerView(selection: $period, onChange: onPeriodChange)
+				}
 			}
 
-			if chartData.isEmpty {
+			if currentData.isEmpty {
 				PlaceholderBlock(height: 140, hint: Strings.hintTrend)
 			} else {
-				Chart(chartData, id: \.date) { point in
-					AreaMark(
-						x: .value("Date", point.date),
-						y: .value("Tokens", point.tokens)
-					)
-					.foregroundStyle(Color.trendFill)
-					.interpolationMethod(trendInterpolation)
+				Chart {
+					ForEach(currentData, id: \.date) { point in
+						AreaMark(
+							x: .value("Date", point.date),
+							y: .value("Tokens", point.tokens)
+						)
+						// Vertical fade: partially opaque under the line, fully
+						// transparent at the baseline.
+						.foregroundStyle(
+							LinearGradient(
+								colors: [Color.trendLine.opacity(0.32), Color.trendLine.opacity(0.0)],
+								startPoint: .top,
+								endPoint: .bottom
+							)
+						)
+						.interpolationMethod(currentInterpolation)
 
-					LineMark(
-						x: .value("Date", point.date),
-						y: .value("Tokens", point.tokens)
-					)
-					.foregroundStyle(Color.trendLine)
-					.interpolationMethod(trendInterpolation)
+						LineMark(
+							x: .value("Date", point.date),
+							y: .value("Tokens", point.tokens)
+						)
+						.foregroundStyle(Color.trendLine)
+						.interpolationMethod(currentInterpolation)
+					}
+
+					if let hovered {
+						RuleMark(x: .value("Date", hovered.date))
+							.foregroundStyle(Color.secondary.opacity(0.35))
+							.lineStyle(StrokeStyle(lineWidth: 1))
+						PointMark(
+							x: .value("Date", hovered.date),
+							y: .value("Tokens", hovered.tokens)
+						)
+						.foregroundStyle(Color.trendLine)
+						.symbolSize(32)
+					}
+				}
+				.chartOverlay { proxy in
+					GeometryReader { geo in
+						Rectangle()
+							.fill(Color.clear)
+							.contentShape(Rectangle())
+							.onContinuousHover { phase in
+								switch phase {
+								case .active(let location):
+									let plotOrigin = geo[proxy.plotAreaFrame].origin
+									if let date: Date = proxy.value(atX: location.x - plotOrigin.x) {
+										hovered = nearestPoint(to: date, in: currentData)
+									}
+								case .ended:
+									hovered = nil
+								}
+							}
+					}
 				}
 				.chartXAxis {
 					if period == .day, !dayAxisValues.isEmpty {
@@ -205,7 +261,20 @@ struct UsageTrendChart: View {
 				.accessibilityLabel(Strings.trendAccessibilityLabel)
 			}
 		}
+		.onChange(of: period) { _ in hovered = nil }
 	}
+
+	/// Chart point closest in time to the hovered x position.
+	private func nearestPoint(to date: Date, in data: [(date: Date, tokens: Int)]) -> TrendHoverPoint? {
+		data
+			.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+			.map { TrendHoverPoint(date: $0.date, tokens: $0.tokens) }
+	}
+}
+
+private struct TrendHoverPoint: Equatable {
+	let date: Date
+	let tokens: Int
 }
 
 /// Fallback wrapper that shows the chart on macOS 13+ or a placeholder on older systems.
