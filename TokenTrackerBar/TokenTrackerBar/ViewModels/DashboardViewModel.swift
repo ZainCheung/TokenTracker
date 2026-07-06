@@ -58,6 +58,7 @@ class DashboardViewModel: ObservableObject {
     @Published private(set) var topModels: [TopModel] = []
 
     private var refreshTask: Task<Void, Never>?
+    private var resetBoundaryRefreshTask: Task<Void, Never>?
     private var lastBackgroundSyncAt: Date?
     private let resetDetector = WeeklyLimitResetDetector()
 
@@ -209,17 +210,7 @@ class DashboardViewModel: ObservableObject {
             // response from the server). Per-provider errors inside an otherwise-usable
             // response are still respected by the view (those providers are hidden).
             group.addTask { @MainActor in
-                do {
-                    let newLimits = try await APIClient.shared.fetchUsageLimits()
-                    self.usageLimits = UsageLimitsResponse.displayRecord(
-                        current: self.usageLimits,
-                        incoming: newLimits
-                    )
-                    self.detectLimitResets(in: self.usageLimits)
-                } catch {
-                    // Non-fatal: usage limits are best-effort, don't increment errorCount.
-                    // Retain whatever `usageLimits` we had before (the "last record").
-                }
+                await self.refreshUsageLimits()
             }
         }
 
@@ -314,6 +305,53 @@ class DashboardViewModel: ObservableObject {
     }
 
     // MARK: - Limit-reset celebration
+
+    /// Grace after a window's reset boundary before re-fetching, so the provider
+    /// has stamped the new window by the time we ask.
+    private static let resetBoundaryGrace: TimeInterval = 10
+
+    /// Fetch usage limits, update the display record, and run reset detection.
+    /// On failure retain the previous record (non-fatal, best-effort) so the
+    /// popover/widget/menu stats keep showing the last known progress bars.
+    /// On success only overwrite the display record when the response actually
+    /// contains usable data (prevents losing the last good snapshot on an
+    /// all-error response); per-provider errors inside an otherwise-usable
+    /// response are still respected by the view (those providers are hidden).
+    private func refreshUsageLimits() async {
+        do {
+            let newLimits = try await APIClient.shared.fetchUsageLimits()
+            self.usageLimits = UsageLimitsResponse.displayRecord(
+                current: self.usageLimits,
+                incoming: newLimits
+            )
+            self.detectLimitResets(in: self.usageLimits)
+        } catch {
+            // Non-fatal: usage limits are best-effort, don't surface an error.
+        }
+        scheduleResetBoundaryRefresh(for: usageLimits)
+    }
+
+    /// Wake up just after the soonest known window rollover and re-fetch limits,
+    /// so a reset (and its confetti) is detected within seconds of the boundary
+    /// instead of waiting out the regular poll interval. Every limits refresh
+    /// reschedules, so at most one boundary task is pending at a time.
+    private func scheduleResetBoundaryRefresh(for limits: UsageLimitsResponse?) {
+        resetBoundaryRefreshTask?.cancel()
+        resetBoundaryRefreshTask = nil
+        guard let limits else { return }
+        let now = Date().timeIntervalSince1970
+        let upcoming = limits.limitWindowReadings()
+            .compactMap { $0.resetAt }
+            .filter { $0 > now }
+            .min()
+        guard let upcoming else { return }
+        let delay = upcoming - now + Self.resetBoundaryGrace
+        resetBoundaryRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.refreshUsageLimits()
+        }
+    }
 
     /// Feed the latest limits into the reset detector. When a window rolls over
     /// after the user had been meaningfully constrained, post `.weeklyLimitReset`

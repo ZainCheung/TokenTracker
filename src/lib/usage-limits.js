@@ -28,9 +28,15 @@ const { fetchZcodeLimits } = require("./zcode-limits");
 const { fetchOpencodeGoLimits } = require("./opencode-go-limits");
 const { readSqliteJsonRows } = require("./sqlite-reader");
 
-// 2-minute in-memory cache
-let cache = { data: null, fetchedAt: 0 };
+// 2-minute in-memory cache. It also expires early at the earliest upcoming window
+// reset in the cached data (see cacheExpiresAtMs), floored so a provider reporting
+// a reset "right now" can't turn every poll into a full upstream round.
+let cache = { data: null, expiresAtMs: 0 };
 const CACHE_TTL_MS = 2 * 60 * 1000;
+// Must stay below the macOS app's post-reset re-fetch grace (10s in
+// DashboardViewModel.resetBoundaryGrace), or that targeted refresh would be
+// served this cache's pre-reset snapshot and miss the rollover.
+const CACHE_MIN_TTL_MS = 5 * 1000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 15_000;
 const ANTIGRAVITY_LIMITS_CACHE_FILE = "usage-limits-cache.json";
 const ANTIGRAVITY_LIMITS_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1921,24 +1927,48 @@ function normalizeClaudeCachedLimits(
   return hasClaudeWindow(cached) ? cached : null;
 }
 
+function readClaudeLimitsCacheRaw({ home } = {}) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(resolveClaudeLimitsCachePath({ home }), "utf8"));
+    return parsed?.claude ?? null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function readClaudeLimitsCache({
   home,
   nowMs = Date.now(),
   maxAgeMs = CLAUDE_LIMITS_CACHE_MAX_AGE_MS,
   stale = true,
 } = {}) {
-  const cachePath = resolveClaudeLimitsCachePath({ home });
-  try {
-    const parsed = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-    return normalizeClaudeCachedLimits(parsed?.claude, { nowMs, maxAgeMs, stale });
-  } catch (_error) {
-    return null;
-  }
+  return normalizeClaudeCachedLimits(readClaudeLimitsCacheRaw({ home }), { nowMs, maxAgeMs, stale });
+}
+
+// A cached snapshot stops being "fresh" the moment any of its windows crosses the
+// reset boundary it was written with: serving it past that point hides the rollover
+// from reset detection (the menu bar confetti) for up to the fresh TTL. Only resets
+// that were still ahead at write time count — a provider stamping already-past reset
+// times must not force a live call on every poll.
+function claudeCacheCrossedReset(raw, { nowMs } = {}) {
+  const cachedAtMs = parseTimeMs(raw?.cached_at);
+  if (!Number.isFinite(cachedAtMs)) return false;
+  const windows = [
+    raw?.five_hour,
+    raw?.seven_day,
+    raw?.seven_day_opus,
+    ...(Array.isArray(raw?.weekly_scoped) ? raw.weekly_scoped : []),
+  ];
+  return windows.some((window) => {
+    const resetMs = parseTimeMs(window?.resets_at);
+    return resetMs !== null && resetMs > cachedAtMs && resetMs <= nowMs;
+  });
 }
 
 function readFreshClaudeLimitsCache({ home, nowMs = Date.now() } = {}) {
-  return readClaudeLimitsCache({
-    home,
+  const raw = readClaudeLimitsCacheRaw({ home });
+  if (!raw || claudeCacheCrossedReset(raw, { nowMs })) return null;
+  return normalizeClaudeCachedLimits(raw, {
     nowMs,
     maxAgeMs: CLAUDE_LIMITS_CACHE_FRESH_TTL_MS,
     stale: false,
@@ -2564,9 +2594,44 @@ function withPlanLabel(obj, raw, brand) {
 // in-flight fetch and returns its result.
 let inFlightFetch = null;
 
+// Codex stamps reset_at as unix seconds; every other provider (and Claude's
+// resets_at) uses ISO strings. Numbers that look like epoch milliseconds are
+// accepted as-is so a future provider can't silently regress this.
+function resetValueToMs(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  return parseTimeMs(value);
+}
+
+// Walk the aggregated response and collect every window reset timestamp,
+// whatever the provider-specific nesting looks like.
+function collectResetTimesMs(node, out) {
+  if (!node || typeof node !== "object") return;
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "reset_at" || key === "resets_at") {
+      const ms = resetValueToMs(value);
+      if (ms !== null) out.push(ms);
+    } else if (value && typeof value === "object") {
+      collectResetTimesMs(value, out);
+    }
+  }
+}
+
+// The moment any window rolls over, cached data stops being current — reset
+// detection (the menu bar confetti) would otherwise lag by up to the full TTL.
+function cacheExpiresAtMs(data, fetchedAtMs) {
+  const times = [];
+  collectResetTimesMs(data, times);
+  const upcoming = times.filter((t) => t > fetchedAtMs);
+  const ttlExpiry = fetchedAtMs + CACHE_TTL_MS;
+  if (upcoming.length === 0) return ttlExpiry;
+  return Math.min(ttlExpiry, Math.max(Math.min(...upcoming), fetchedAtMs + CACHE_MIN_TTL_MS));
+}
+
 async function getUsageLimits(options = {}) {
   const nowMs = Date.now();
-  if (cache.data && nowMs - cache.fetchedAt < CACHE_TTL_MS) {
+  if (cache.data && nowMs < cache.expiresAtMs) {
     return cache.data;
   }
   if (inFlightFetch) {
@@ -2775,18 +2840,19 @@ async function fetchUsageLimitsUncached({
     opencodeGo: withPlanLabel(opencodeGo, opencodeGo?.plan_label, "OpenCode Go"),
   };
 
-  cache = { data, fetchedAt: nowMs };
+  cache = { data, expiresAtMs: cacheExpiresAtMs(data, nowMs) };
   return data;
 }
 
 function resetUsageLimitsCache() {
-  cache = { data: null, fetchedAt: 0 };
+  cache = { data: null, expiresAtMs: 0 };
 }
 
 module.exports = {
   getUsageLimits,
   normalizePlanLabel,
   resetUsageLimitsCache,
+  cacheExpiresAtMs,
   runCommand,
   extractGeminiOauthClientCredentials,
   loadKimiCredentials,

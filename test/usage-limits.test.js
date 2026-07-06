@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  cacheExpiresAtMs,
   extractGeminiOauthClientCredentials,
   getUsageLimits,
   normalizePlanLabel,
@@ -1590,6 +1591,132 @@ describe("getUsageLimits", () => {
     }
   });
 
+  it("bypasses the fresh cache and fetches live once a cached window crosses its reset boundary", async () => {
+    resetUsageLimitsCache();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-limits-claude-reset-cross-"));
+    try {
+      const claudeDir = path.join(tmp, ".claude");
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(claudeDir, ".credentials.json"),
+        JSON.stringify({ claudeAiOauth: { accessToken: "reset-cross-token" } }),
+      );
+      const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+      fs.mkdirSync(trackerDir, { recursive: true });
+      const futureReset = new Date(Date.now() + 3 * 86400 * 1000).toISOString();
+      // Snapshot written 5 minutes ago (well inside the 10-minute fresh TTL) whose
+      // 5h window was due to reset 1 minute ago — the reset was still ahead at
+      // write time, so it has since crossed the boundary.
+      const crossedReset = new Date(Date.now() - 60 * 1000).toISOString();
+      fs.writeFileSync(
+        path.join(trackerDir, "claude-usage-limits-cache.json"),
+        JSON.stringify({
+          claude: {
+            five_hour: { utilization: 97, resets_at: crossedReset },
+            seven_day: { utilization: 34, resets_at: futureReset },
+            seven_day_opus: null,
+            weekly_scoped: null,
+            extra_usage: null,
+            cached_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+          },
+        }),
+      );
+
+      const freshFiveHourReset = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      let upstreamCalled = false;
+      const result = await getUsageLimits({
+        home: tmp,
+        platform: "linux",
+        providerTimeoutMs: 1000,
+        securityRunner() {
+          return { status: 1, stdout: "" };
+        },
+        commandRunner() {
+          return { status: 1, stdout: "" };
+        },
+        fetchImpl(url) {
+          if (typeof url === "string" && url === "https://api.anthropic.com/api/oauth/usage") {
+            upstreamCalled = true;
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                five_hour: { utilization: 2, resets_at: freshFiveHourReset },
+                seven_day: { utilization: 34, resets_at: futureReset },
+                seven_day_opus: null,
+              }),
+            });
+          }
+          return pendingUnlessCodexReset(url);
+        },
+      });
+
+      assert.equal(upstreamCalled, true, "crossed reset must force a live Claude call");
+      assert.equal(result.claude.error, null);
+      // The live post-rollover window is served, not the stale pre-reset snapshot.
+      assert.deepEqual(result.claude.five_hour, { utilization: 2, resets_at: freshFiveHourReset });
+    } finally {
+      resetUsageLimitsCache();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps serving the fresh cache when a cached reset was already past at write time", async () => {
+    resetUsageLimitsCache();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-limits-claude-stale-stamp-"));
+    try {
+      const claudeDir = path.join(tmp, ".claude");
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(claudeDir, ".credentials.json"),
+        JSON.stringify({ claudeAiOauth: { accessToken: "stale-stamp-token" } }),
+      );
+      const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+      fs.mkdirSync(trackerDir, { recursive: true });
+      const futureReset = new Date(Date.now() + 3 * 86400 * 1000).toISOString();
+      // The reset was already in the past when the snapshot was written — a
+      // provider stamping stale reset times must not defeat the fresh TTL and
+      // force a live call on every poll.
+      fs.writeFileSync(
+        path.join(trackerDir, "claude-usage-limits-cache.json"),
+        JSON.stringify({
+          claude: {
+            five_hour: { utilization: 12, resets_at: new Date(Date.now() - 10 * 60 * 1000).toISOString() },
+            seven_day: { utilization: 34, resets_at: futureReset },
+            seven_day_opus: null,
+            weekly_scoped: null,
+            extra_usage: null,
+            cached_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+          },
+        }),
+      );
+
+      const result = await getUsageLimits({
+        home: tmp,
+        platform: "linux",
+        providerTimeoutMs: 1000,
+        securityRunner() {
+          return { status: 1, stdout: "" };
+        },
+        commandRunner() {
+          return { status: 1, stdout: "" };
+        },
+        fetchImpl(url) {
+          if (typeof url === "string" && url === "https://api.anthropic.com/api/oauth/usage") {
+            throw new Error("already-past reset stamps must not bypass the fresh cache");
+          }
+          return pendingUnlessCodexReset(url);
+        },
+      });
+
+      assert.equal(result.claude.error, null);
+      assert.deepEqual(result.claude.seven_day, { utilization: 34, resets_at: futureReset });
+    } finally {
+      resetUsageLimitsCache();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("reads the Claude OAuth access token from %USERPROFILE%\\.claude\\.credentials.json on Windows", async () => {
     resetUsageLimitsCache();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-limits-claude-win32-"));
@@ -2942,5 +3069,63 @@ describe("getUsageLimits Claude stale fallback", () => {
       resetUsageLimitsCache();
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("cacheExpiresAtMs", () => {
+  const fetchedAt = Date.parse("2026-07-06T12:00:00Z");
+  const TTL_MS = 2 * 60 * 1000;
+  const MIN_TTL_MS = 5 * 1000;
+
+  it("expires at the earliest upcoming reset when it lands inside the TTL", () => {
+    const resetMs = fetchedAt + 60 * 1000;
+    const data = {
+      claude: {
+        five_hour: { utilization: 90, resets_at: new Date(resetMs).toISOString() },
+        seven_day: { utilization: 10, resets_at: new Date(fetchedAt + 86400 * 1000).toISOString() },
+      },
+    };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), resetMs);
+  });
+
+  it("converts Codex unix-second reset stamps", () => {
+    const resetMs = fetchedAt + 90 * 1000;
+    const data = { codex: { primary_window: { used_percent: 80, reset_at: resetMs / 1000 } } };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), resetMs);
+  });
+
+  it("finds resets nested inside weekly_scoped arrays", () => {
+    const resetMs = fetchedAt + 30 * 1000;
+    const data = {
+      claude: {
+        weekly_scoped: [{ label: "Fable", utilization: 8, resets_at: new Date(resetMs).toISOString() }],
+      },
+    };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), resetMs);
+  });
+
+  it("falls back to the full TTL when every reset is beyond it", () => {
+    const data = {
+      claude: { five_hour: { utilization: 5, resets_at: new Date(fetchedAt + 5 * 3600 * 1000).toISOString() } },
+    };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), fetchedAt + TTL_MS);
+  });
+
+  it("falls back to the full TTL when there are no reset stamps", () => {
+    assert.equal(cacheExpiresAtMs({ claude: { configured: false } }, fetchedAt), fetchedAt + TTL_MS);
+  });
+
+  it("ignores resets already in the past", () => {
+    const data = {
+      claude: { five_hour: { utilization: 5, resets_at: new Date(fetchedAt - 1000).toISOString() } },
+    };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), fetchedAt + TTL_MS);
+  });
+
+  it("floors an imminent reset to the minimum TTL so polls cannot hammer upstream", () => {
+    const data = {
+      claude: { five_hour: { utilization: 99, resets_at: new Date(fetchedAt + 1000).toISOString() } },
+    };
+    assert.equal(cacheExpiresAtMs(data, fetchedAt), fetchedAt + MIN_TTL_MS);
   });
 });
