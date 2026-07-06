@@ -142,12 +142,14 @@ enum Strings {
     static var syncingFirstLaunchHint: String { t("First launch may take a moment", "首次启动可能需要一点时间", "首次啟動可能需要一點時間", "初回起動は少し時間がかかる場合があります", "첫 실행은 잠시 시간이 걸릴 수 있습니다") }
     static var limitsDisplayTitle: String { t("Limit Display", "限额显示", "限額顯示", "上限の表示", "한도 표시") }
     static var confettiOnResetLabel: String { t("Confetti on limits reset", "额度重置时撒花", "額度重置時撒花", "リセット時に紙吹雪", "한도 초기화 시 색종이") }
-    /// Toast shown with the celebration firework. `provider` is a display name (e.g. "Claude"); nil = generic.
-    static func limitResetCelebration(provider: String?) -> String {
+    /// Toast shown with the celebration firework. `provider` is a display name (e.g. "Claude");
+    /// `window` names the specific window that rolled over (e.g. "5h", "Gemini 5h"); nil = generic.
+    static func limitResetCelebration(provider: String?, window: String? = nil) -> String {
         guard let provider else {
             return t("Limit reset 🎉", "额度已重置 🎉", "額度已重置 🎉", "上限がリセット 🎉", "한도 초기화 🎉")
         }
-        return t("\(provider) limit reset 🎉", "\(provider) 额度已重置 🎉", "\(provider) 額度已重置 🎉", "\(provider) の上限がリセット 🎉", "\(provider) 한도 초기화 🎉")
+        let subject = window.map { "\(provider) \($0)" } ?? provider
+        return t("\(subject) limit reset 🎉", "\(subject) 额度已重置 🎉", "\(subject) 額度已重置 🎉", "\(subject) の上限がリセット 🎉", "\(subject) 한도 초기화 🎉")
     }
     static var limitDisplayModeLabel: String { t("Usage", "用量", "用量", "使用量", "사용량") }
     static var limitDisplayModeUsed: String { t("Used", "已用", "已用", "使用済み", "사용됨") }

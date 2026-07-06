@@ -11,6 +11,7 @@ extension Notification.Name {
 struct LimitResetEvent: Equatable {
     let provider: String      // "claude", "codex", "cursor", …
     let windowKey: String     // e.g. "codex.primary"
+    let windowLabel: String   // display name matching the popover row, e.g. "5h", "7d", "Gemini 5h"
     let previousPercent: Double
 }
 
@@ -56,7 +57,7 @@ struct WeeklyLimitResetDetector {
     /// celebrate plus the snapshot to persist for next time. The snapshot *is* the
     /// memory of the previous reading, so callers need not track the prior response.
     func evaluate(
-        readings: [(provider: String, windowKey: String, usedPercent: Double, resetAt: Double?)],
+        readings: [(provider: String, windowKey: String, windowLabel: String, usedPercent: Double, resetAt: Double?)],
         snapshot: Snapshot,
         now: Double
     ) -> (events: [LimitResetEvent], snapshot: Snapshot) {
@@ -83,7 +84,12 @@ struct WeeklyLimitResetDetector {
             if let last = snapshot.lastEventAt[key], now - last < cooldown { continue }
 
             updated.lastEventAt[key] = now
-            events.append(LimitResetEvent(provider: reading.provider, windowKey: key, previousPercent: prevPercent))
+            events.append(LimitResetEvent(
+                provider: reading.provider,
+                windowKey: key,
+                windowLabel: reading.windowLabel,
+                previousPercent: prevPercent
+            ))
         }
 
         return (events, updated)
@@ -131,48 +137,53 @@ private func parseResetSeconds(iso: String?) -> Double? {
 }
 
 extension UsageLimitsResponse {
-    /// Flatten every provider's windows into `(provider, windowKey, usedPercent, resetAt)`
+    /// Flatten every provider's windows into `(provider, windowKey, windowLabel, usedPercent, resetAt)`
     /// tuples (percent on a 0–100 scale, resetAt in unix seconds), skipping providers
     /// that errored or are unconfigured.
-    func limitWindowReadings() -> [(provider: String, windowKey: String, usedPercent: Double, resetAt: Double?)] {
-        var out: [(provider: String, windowKey: String, usedPercent: Double, resetAt: Double?)] = []
+    ///
+    /// `windowKey` is the persistence identity (snapshot baselines + cooldowns) and must
+    /// never change; `windowLabel` is the human name shown in the celebration toast and
+    /// mirrors the popover row labels in `UsageLimitsView` (spelled out where the popover
+    /// abbreviates for space, e.g. "Gemini 5h" instead of "Gm 5h").
+    func limitWindowReadings() -> [(provider: String, windowKey: String, windowLabel: String, usedPercent: Double, resetAt: Double?)] {
+        var out: [(provider: String, windowKey: String, windowLabel: String, usedPercent: Double, resetAt: Double?)] = []
 
-        func addGeneric(_ provider: String, _ configured: Bool, _ error: String?, _ windows: [(String, GenericLimitWindow?)]) {
+        func addGeneric(_ provider: String, _ configured: Bool, _ error: String?, _ windows: [(String, String, GenericLimitWindow?)]) {
             guard configured, error == nil else { return }
-            for (name, window) in windows {
+            for (name, label, window) in windows {
                 guard let window else { continue }
-                out.append((provider, "\(provider).\(name)", window.usedPercent, parseResetSeconds(iso: window.resetAt)))
+                out.append((provider, "\(provider).\(name)", label, window.usedPercent, parseResetSeconds(iso: window.resetAt)))
             }
         }
 
         if claude.configured, claude.error == nil {
-            for (name, window) in [("5h", claude.fiveHour), ("7d", claude.sevenDay), ("opus", claude.sevenDayOpus)] {
+            for (name, label, window) in [("5h", "5h", claude.fiveHour), ("7d", "7d", claude.sevenDay), ("opus", "Opus", claude.sevenDayOpus)] {
                 guard let window else { continue }
-                out.append(("claude", "claude.\(name)", window.utilization, parseResetSeconds(iso: window.resetsAt)))
+                out.append(("claude", "claude.\(name)", label, window.utilization, parseResetSeconds(iso: window.resetsAt)))
             }
             for window in claude.weeklyScoped ?? [] {
-                out.append(("claude", "claude.scoped.\(window.label.lowercased())", window.utilization, parseResetSeconds(iso: window.resetsAt)))
+                out.append(("claude", "claude.scoped.\(window.label.lowercased())", window.label, window.utilization, parseResetSeconds(iso: window.resetsAt)))
             }
         }
 
         if codex.configured, codex.error == nil {
-            let windows: [(String, CodexWindow?)] = [
-                ("primary", codex.primaryWindow), ("secondary", codex.secondaryWindow),
-                ("sparkPrimary", codex.sparkPrimaryWindow), ("sparkSecondary", codex.sparkSecondaryWindow),
+            let windows: [(String, String, CodexWindow?)] = [
+                ("primary", "5h", codex.primaryWindow), ("secondary", "7d", codex.secondaryWindow),
+                ("sparkPrimary", "Spark 5h", codex.sparkPrimaryWindow), ("sparkSecondary", "Spark 7d", codex.sparkSecondaryWindow),
             ]
-            for (name, window) in windows {
+            for (name, label, window) in windows {
                 guard let window else { continue }
-                out.append(("codex", "codex.\(name)", Double(window.usedPercent), window.resetAt.map(Double.init)))
+                out.append(("codex", "codex.\(name)", label, Double(window.usedPercent), window.resetAt.map(Double.init)))
             }
         }
 
-        addGeneric("cursor", cursor.configured, cursor.error, [("primary", cursor.primaryWindow), ("secondary", cursor.secondaryWindow), ("tertiary", cursor.tertiaryWindow)])
-        addGeneric("gemini", gemini.configured, gemini.error, [("primary", gemini.primaryWindow), ("secondary", gemini.secondaryWindow), ("tertiary", gemini.tertiaryWindow)])
-        addGeneric("kiro", kiro.configured, kiro.error, [("primary", kiro.primaryWindow), ("secondary", kiro.secondaryWindow)])
-        addGeneric("antigravity", antigravity.configured, antigravity.error, [("primary", antigravity.primaryWindow), ("secondary", antigravity.secondaryWindow), ("tertiary", antigravity.tertiaryWindow), ("quaternary", antigravity.quaternaryWindow)])
-        if let kimi { addGeneric("kimi", kimi.configured, kimi.error, [("primary", kimi.primaryWindow), ("secondary", kimi.secondaryWindow), ("tertiary", kimi.tertiaryWindow)]) }
-        if let grok { addGeneric("grok", grok.configured, grok.error, [("primary", grok.primaryWindow), ("secondary", grok.secondaryWindow)]) }
-        if let copilot { addGeneric("copilot", copilot.configured, copilot.error, [("primary", copilot.primaryWindow), ("secondary", copilot.secondaryWindow)]) }
+        addGeneric("cursor", cursor.configured, cursor.error, [("primary", Strings.cursorPlanLabel, cursor.primaryWindow), ("secondary", Strings.cursorAutoLabel, cursor.secondaryWindow), ("tertiary", "API", cursor.tertiaryWindow)])
+        addGeneric("gemini", gemini.configured, gemini.error, [("primary", "Pro", gemini.primaryWindow), ("secondary", "Flash", gemini.secondaryWindow), ("tertiary", "Lite", gemini.tertiaryWindow)])
+        addGeneric("kiro", kiro.configured, kiro.error, [("primary", Strings.kiroMonthLabel, kiro.primaryWindow), ("secondary", Strings.kiroBonusLabel, kiro.secondaryWindow)])
+        addGeneric("antigravity", antigravity.configured, antigravity.error, [("primary", "Claude 7d", antigravity.primaryWindow), ("secondary", "Claude 5h", antigravity.secondaryWindow), ("tertiary", "Gemini 7d", antigravity.tertiaryWindow), ("quaternary", "Gemini 5h", antigravity.quaternaryWindow)])
+        if let kimi { addGeneric("kimi", kimi.configured, kimi.error, [("primary", Strings.kimiWeeklyLabel, kimi.primaryWindow), ("secondary", Strings.kimiFiveHourLabel, kimi.secondaryWindow), ("tertiary", Strings.kimiTotalLabel, kimi.tertiaryWindow)]) }
+        if let grok { addGeneric("grok", grok.configured, grok.error, [("primary", Strings.grokMonthLabel, grok.primaryWindow), ("secondary", Strings.grokOndemandLabel, grok.secondaryWindow)]) }
+        if let copilot { addGeneric("copilot", copilot.configured, copilot.error, [("primary", "Premium", copilot.primaryWindow), ("secondary", "Chat", copilot.secondaryWindow)]) }
 
         return out
     }

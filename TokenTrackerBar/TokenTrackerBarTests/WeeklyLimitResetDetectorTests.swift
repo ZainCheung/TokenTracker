@@ -4,8 +4,8 @@ final class WeeklyLimitResetDetectorTests: XCTestCase {
 
     private let detector = WeeklyLimitResetDetector()   // defaults: drop 5, tolerance 60, cooldown 3600
 
-    private func reading(_ pct: Double, resetAt: Double?) -> [(provider: String, windowKey: String, usedPercent: Double, resetAt: Double?)] {
-        [("codex", "codex.primary", pct, resetAt)]
+    private func reading(_ pct: Double, resetAt: Double?) -> [(provider: String, windowKey: String, windowLabel: String, usedPercent: Double, resetAt: Double?)] {
+        [("codex", "codex.primary", "5h", pct, resetAt)]
     }
 
     func testFirstObservationRecordsBaselineWithoutEvent() {
@@ -21,6 +21,7 @@ final class WeeklyLimitResetDetectorTests: XCTestCase {
         let (events, _) = detector.evaluate(readings: reading(4, resetAt: 9000), snapshot: baseline, now: 2000)
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.provider, "codex")
+        XCTAssertEqual(events.first?.windowLabel, "5h")
         XCTAssertEqual(events.first?.previousPercent, 90)
     }
 
@@ -106,6 +107,7 @@ final class WeeklyLimitResetDetectorTests: XCTestCase {
         let readings = response.limitWindowReadings()
         XCTAssertEqual(readings.count, 1)
         XCTAssertEqual(readings.first?.windowKey, "codex.primary")
+        XCTAssertEqual(readings.first?.windowLabel, "5h")
         XCTAssertEqual(readings.first?.usedPercent, 80)
         XCTAssertEqual(readings.first?.resetAt, 1000)
     }

@@ -93,7 +93,7 @@ final class StatusBarController: NSObject {
     private func celebrateLimitReset(event: LimitResetEvent?) {
         guard WeeklyLimitResetDetector.confettiEnabled() else { return }
         let name = event.map { LimitsSettingsStore.displayNames[$0.provider] ?? $0.provider.capitalized }
-        confettiController.play(message: Strings.limitResetCelebration(provider: name))
+        confettiController.play(message: Strings.limitResetCelebration(provider: name, window: event?.windowLabel))
     }
 
     private func closePopoverForModalAlert() {
