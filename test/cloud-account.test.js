@@ -102,6 +102,35 @@ test("mintAccessToken caches by refresh token and skips re-fetch until near expi
   assert.equal(fetchCount, 2);
 });
 
+test("mintAccessToken scopes cache by base URL", async () => {
+  __resetCloudAccountCacheForTests();
+  const calls = [];
+  const accessA = makeJwt({ expSeconds: Math.floor(Date.now() / 1000) + 3600 });
+  const accessB = makeJwt({ expSeconds: Math.floor(Date.now() / 1000) + 3600 });
+  const fetchImpl = async (urlStr) => {
+    calls.push(String(urlStr));
+    return jsonResponse({ accessToken: calls.length === 1 ? accessA : accessB });
+  };
+
+  const first = await mintAccessToken({
+    baseUrl: "https://cloud-a.example",
+    refreshToken: "refresh-cache",
+    fetchImpl,
+  });
+  const second = await mintAccessToken({
+    baseUrl: "https://cloud-b.example",
+    refreshToken: "refresh-cache",
+    fetchImpl,
+  });
+
+  assert.equal(first.accessToken, accessA);
+  assert.equal(second.accessToken, accessB);
+  assert.deepEqual(calls, [
+    "https://cloud-a.example/api/auth/refresh?client_type=mobile",
+    "https://cloud-b.example/api/auth/refresh?client_type=mobile",
+  ]);
+});
+
 test("mintAccessToken returns null on non-ok refresh and on network error", async () => {
   __resetCloudAccountCacheForTests();
   assert.equal(

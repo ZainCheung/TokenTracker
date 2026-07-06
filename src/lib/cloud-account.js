@@ -68,12 +68,13 @@ function decodeJwtExpMs(token) {
   return 0;
 }
 
-// Module-level access-token cache, keyed by the refresh token that produced it.
+// Module-level access-token cache, keyed by the cloud base URL and refresh token
+// that produced it.
 // The popover polls frequently, so caching avoids hammering /api/auth/refresh.
-let tokenCache = { refreshToken: null, accessToken: null, expMs: 0 };
+let tokenCache = { cacheKey: null, accessToken: null, expMs: 0 };
 
 function __resetCloudAccountCacheForTests() {
-  tokenCache = { refreshToken: null, accessToken: null, expMs: 0 };
+  tokenCache = { cacheKey: null, accessToken: null, expMs: 0 };
 }
 
 function csrfTokenFromRefreshPayload(data) {
@@ -100,15 +101,16 @@ async function mintAccessToken({
   timeoutMs,
 } = {}) {
   if (!refreshToken) return null;
+  const root = String(baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
+  const cacheKey = `${root}\0${refreshToken}`;
   if (
-    tokenCache.refreshToken === refreshToken &&
+    tokenCache.cacheKey === cacheKey &&
     tokenCache.accessToken &&
     tokenCache.expMs - skewMs > now()
   ) {
     return { accessToken: tokenCache.accessToken, refreshToken: null, csrfToken: null };
   }
 
-  const root = String(baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
   const headers = { "Content-Type": "application/json", Accept: "application/json" };
   if (anonKey) headers.apikey = anonKey;
 
@@ -150,7 +152,7 @@ async function mintAccessToken({
   if (!accessToken) return null;
 
   const expMs = decodeJwtExpMs(accessToken) || now() + 10 * 60_000;
-  tokenCache = { refreshToken, accessToken, expMs };
+  tokenCache = { cacheKey, accessToken, expMs };
 
   const rotated = refreshTokenFromRefreshPayload(data);
   return {
