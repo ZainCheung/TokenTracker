@@ -5,7 +5,7 @@ const readline = require("node:readline");
 
 const crypto = require("node:crypto");
 const { ensureDir } = require("./fs");
-const { readSqliteJsonRows } = require("./sqlite-reader");
+const { readSqliteJsonRows, readSqliteJsonRowsAsync } = require("./sqlite-reader");
 const wsl = require("./wsl-probe");
 const { resolveInstallPaths } = require("./install-resolver");
 
@@ -3049,6 +3049,26 @@ function toNonNegativeInt(v) {
   return Math.floor(n);
 }
 
+function firstPresentNonNegativeInt(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) {
+      return toNonNegativeInt(value);
+    }
+  }
+  return 0;
+}
+
+function firstPositiveOrPresentNonNegativeInt(values) {
+  let firstPresent = null;
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const n = toNonNegativeInt(value);
+    if (firstPresent === null) firstPresent = n;
+    if (n > 0) return n;
+  }
+  return firstPresent === null ? 0 : firstPresent;
+}
+
 function coerceEpochMs(v) {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -5530,28 +5550,129 @@ function resolveCodebuddyDefaultModel(env = process.env) {
 
 function resolveCodebuddyProjectFiles(env = process.env) {
   const codebuddyHome = resolveCodebuddyHome(env);
-  if (!codebuddyHome) return [];
-  const projectsDir = path.join(codebuddyHome, "projects");
-  if (!fssync.existsSync(projectsDir)) return [];
   const files = [];
-  try {
-    for (const cwd of fssync.readdirSync(projectsDir)) {
-      const cwdDir = path.join(projectsDir, cwd);
-      let stat;
-      try { stat = fssync.statSync(cwdDir); } catch { continue; }
-      if (!stat.isDirectory()) continue;
-      let entries;
-      try { entries = fssync.readdirSync(cwdDir); } catch { continue; }
-      for (const entry of entries) {
-        if (!entry.endsWith(".jsonl")) continue;
-        files.push(path.join(cwdDir, entry));
-      }
+
+  // 1. Recursive JSONL scan in codebuddyHome/projects
+  if (codebuddyHome) {
+    const projectsDir = path.join(codebuddyHome, "projects");
+    if (fssync.existsSync(projectsDir)) {
+      const walkJsonl = (dir) => {
+        let entries;
+        try { entries = fssync.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          let isDir = entry.isDirectory();
+          let isFile = entry.isFile();
+          if (!isDir && !isFile) {
+            try {
+              const st = fssync.statSync(full);
+              isDir = st.isDirectory();
+              isFile = st.isFile();
+            } catch { continue; }
+          }
+          if (isDir) walkJsonl(full);
+          else if (isFile && entry.name.endsWith(".jsonl")) files.push(full);
+        }
+      };
+      walkJsonl(projectsDir);
     }
-  } catch {
-    // ignore — return what we have
   }
+
+  // 2. Active IDE extension logs scan
+  const logRoots = [];
+  const home = env.HOME || require("node:os").homedir();
+
+  if (process.platform === "darwin") {
+    const appSupport = path.join(home, "Library", "Application Support");
+    logRoots.push({ dir: path.join(appSupport, "CodeBuddy CN", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(appSupport, "Code", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(appSupport, "CodeBuddyExtension", "Logs", "CodeBuddyIDE"), pattern: "*.log" });
+    logRoots.push({ dir: path.join(appSupport, "CodeBuddyExtension", "Logs", "VSCode"), pattern: "*.log" });
+  } else if (process.platform === "win32") {
+    const appData = env.APPDATA || path.join(home, "AppData", "Roaming");
+    const localAppData = env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+    logRoots.push({ dir: path.join(appData, "CodeBuddy CN", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(appData, "Code", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(localAppData, "CodeBuddyExtension", "Logs", "CodeBuddyIDE"), pattern: "*.log" });
+    logRoots.push({ dir: path.join(localAppData, "CodeBuddyExtension", "Logs", "VSCode"), pattern: "*.log" });
+  } else {
+    const xdgConfig = env.XDG_CONFIG_HOME || path.join(home, ".config");
+    const xdgData = env.XDG_DATA_HOME || path.join(home, ".local", "share");
+    logRoots.push({ dir: path.join(xdgConfig, "CodeBuddy CN", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(xdgConfig, "Code", "logs"), pattern: "codebuddy-extension-log" });
+    logRoots.push({ dir: path.join(xdgData, "CodeBuddyExtension", "Logs", "CodeBuddyIDE"), pattern: "*.log" });
+    logRoots.push({ dir: path.join(xdgData, "CodeBuddyExtension", "Logs", "VSCode"), pattern: "*.log" });
+  }
+
+  for (const root of logRoots) {
+    if (!fssync.existsSync(root.dir)) continue;
+    const walkLogs = (dir) => {
+      let entries;
+      try { entries = fssync.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        let isDir = entry.isDirectory();
+        let isFile = entry.isFile();
+        if (!isDir && !isFile) {
+          try {
+            const st = fssync.statSync(full);
+            isDir = st.isDirectory();
+            isFile = st.isFile();
+          } catch { continue; }
+        }
+        if (isDir) {
+          walkLogs(full);
+        } else if (isFile && entry.name.endsWith(".log")) {
+          if (root.pattern === "*.log") {
+            files.push(full);
+          } else if (root.pattern === "codebuddy-extension-log") {
+            if (full.toLowerCase().includes("tencent-cloud.coding-copilot")) {
+              files.push(full);
+            }
+          }
+        }
+      }
+    };
+    walkLogs(root.dir);
+  }
+
   files.sort((a, b) => a.localeCompare(b));
   return files;
+}
+
+function getBracketValueAfter(line, marker) {
+  const parts = line.split(marker);
+  if (parts.length < 2) return null;
+  const after = parts[1];
+  const start = after.indexOf("[");
+  if (start === -1) return null;
+  const afterOpen = after.slice(start + 1);
+  const end = afterOpen.indexOf("]");
+  if (end === -1) return null;
+  return afterOpen.slice(0, end).trim();
+}
+
+function parseLogTimestampMs(line, fallbackTs) {
+  let raw = "";
+  if (line.startsWith("[")) {
+    const endIdx = line.indexOf("]");
+    if (endIdx !== -1) {
+      raw = line.slice(1, endIdx).trim();
+    }
+  } else {
+    const idx = line.indexOf(" [");
+    if (idx !== -1) {
+      raw = line.slice(0, idx).trim();
+    } else {
+      raw = line.slice(0, 23).trim();
+    }
+  }
+  let ts = Date.parse(raw);
+  if (isNaN(ts)) {
+    const normalized = raw.replace(/\//g, '-');
+    ts = Date.parse(normalized);
+  }
+  return isNaN(ts) ? fallbackTs : ts;
 }
 
 async function parseCodebuddyIncremental({
@@ -5571,6 +5692,10 @@ async function parseCodebuddyIncremental({
   const fileOffsets =
     codebuddyState.fileOffsets && typeof codebuddyState.fileOffsets === "object"
       ? { ...codebuddyState.fileOffsets }
+      : {};
+  const logModelsByAgent =
+    codebuddyState.logModelsByAgent && typeof codebuddyState.logModelsByAgent === "object"
+      ? { ...codebuddyState.logModelsByAgent }
       : {};
 
   const files = Array.isArray(projectFiles)
@@ -5602,8 +5727,6 @@ async function parseCodebuddyIncremental({
     const prevEntry = fileOffsets[filePath] || {};
     const prevSize = Number(prevEntry.size) || 0;
     const prevIno = prevEntry.ino;
-    // Re-read from start if file shrunk (truncate/rewrite) or inode changed
-    // (file deleted + recreated). Otherwise pick up after the last read offset.
     const inodeChanged = typeof prevIno === "number" && prevIno !== stat.ino;
     const startOffset = stat.size < prevSize || inodeChanged ? 0 : prevSize;
     if (stat.size <= startOffset) continue;
@@ -5617,111 +5740,244 @@ async function parseCodebuddyIncremental({
     } catch { continue; }
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
+    const isLogFile = filePath.endsWith(".log");
+    const modelsByAgent = new Map();
+    const agentModelKey = (agentId) => `${filePath}::${agentId}`;
+
     for await (const line of rl) {
       if (!line || !line.trim()) continue;
-      let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
 
-      // Only assistant message events carry token usage.
-      if (!entry || entry.type !== "message" || entry.role !== "assistant") continue;
+      if (isLogFile) {
+        if (line.includes("[CraftInvokableAgent]") && line.includes("Model prepared:")) {
+          const agentId = getBracketValueAfter(line, "[CraftInvokableAgent]");
+          const marker = "Model prepared:";
+          const idx = line.indexOf(marker);
+          if (agentId && idx !== -1) {
+            const afterMarker = line.slice(idx + marker.length).trim();
+            let modelId = afterMarker;
+            const openParen = afterMarker.lastIndexOf("(");
+            if (openParen !== -1) {
+              const tail = afterMarker.slice(openParen + 1);
+              const closeParen = tail.indexOf(")");
+              if (closeParen !== -1) {
+                const inner = tail.slice(0, closeParen).trim();
+                if (inner) modelId = inner;
+              }
+            }
+            modelsByAgent.set(agentId, modelId);
+            logModelsByAgent[agentModelKey(agentId)] = modelId;
+          }
+          continue;
+        }
 
-      const provider = entry.providerData;
-      const rawUsage = provider && typeof provider === "object" ? provider.rawUsage : null;
-      if (!rawUsage || typeof rawUsage !== "object") continue;
+        if (!line.includes("[AgentReporter]") || !line.includes("Agent execution successful with usage:")) {
+          continue;
+        }
 
-      // Dedup per-message — message id (uuid) is most stable, then session +
-      // timestamp as fallback.
-      const sessionId =
-        typeof entry.sessionId === "string" && entry.sessionId
-          ? entry.sessionId
-          : path.basename(filePath, ".jsonl");
-      const tsMs =
-        Number.isFinite(Number(entry.timestamp)) && Number(entry.timestamp) > 0
-          ? Number(entry.timestamp)
-          : null;
-      const messageId =
-        typeof entry.uuid === "string" && entry.uuid
-          ? entry.uuid
-          : typeof entry.id === "string" && entry.id
-            ? entry.id
-            : tsMs != null
-              ? `${sessionId}:${tsMs}`
-              : null;
-      if (!messageId) continue;
-      if (seenIds.has(messageId)) continue;
+        const agentId = getBracketValueAfter(line, "[AgentReporter]");
+        if (!agentId) continue;
 
-      recordsProcessed++;
+        const marker = "Agent execution successful with usage:";
+        const usageParts = line.split(marker);
+        if (usageParts.length < 2) continue;
 
-      const promptTokens = toNonNegativeInt(rawUsage.prompt_tokens);
-      const completionTokens = toNonNegativeInt(rawUsage.completion_tokens);
-      const details =
-        rawUsage.prompt_tokens_details && typeof rawUsage.prompt_tokens_details === "object"
-          ? rawUsage.prompt_tokens_details
-          : {};
-      const cachedTokens = toNonNegativeInt(details.cached_tokens);
-      // Anthropic-style mirror; CodeBuddy emits these too even if usually 0.
-      const cacheReadAlt = toNonNegativeInt(rawUsage.cache_read_input_tokens);
-      const cacheCreation = toNonNegativeInt(rawUsage.cache_creation_input_tokens);
-      const reasoningTokens = toNonNegativeInt(details.reasoning_tokens);
+        const usageJsonRaw = usageParts[1].trim();
+        const endBrace = usageJsonRaw.lastIndexOf("}");
+        if (endBrace === -1) continue;
 
-      // CRITICAL: prompt_tokens is OpenAI-style and INCLUDES cached.
-      // Subtract cached so input_tokens is pure non-cached input — matches
-      // the repo's normalization convention (see CLAUDE.md "Token
-      // Normalization Convention"). cache_read takes the larger of the two
-      // mirrored fields (rawUsage.cache_read_input_tokens vs
-      // prompt_tokens_details.cached_tokens) since CodeBuddy populates one
-      // or the other depending on upstream provider.
-      const cacheRead = Math.max(cachedTokens, cacheReadAlt);
-      const inputTokens = Math.max(0, promptTokens - cacheRead);
+        let usage;
+        try {
+          usage = JSON.parse(usageJsonRaw.slice(0, endBrace + 1));
+        } catch { continue; }
 
-      if (
-        inputTokens === 0 &&
-        completionTokens === 0 &&
-        cacheRead === 0 &&
-        cacheCreation === 0
-      ) {
+        if (!usage || typeof usage !== "object") continue;
+
+        const inputRaw = firstPresentNonNegativeInt([
+          usage.cachedMissTokens,
+          usage.cacheMissTokens,
+          usage.input_tokens,
+          usage.inputTokens,
+          usage.prompt_tokens,
+        ]);
+        const outputRaw = firstPresentNonNegativeInt([
+          usage.output_tokens,
+          usage.outputTokens,
+          usage.completion_tokens,
+        ]);
+        const cacheReadRaw = firstPositiveOrPresentNonNegativeInt([
+          usage.cache_read_input_tokens,
+          usage.cacheReadInputTokens,
+          usage.cacheTokens,
+          usage.prompt_cache_hit_tokens,
+          usage.cached_tokens,
+        ]);
+        const cacheCreationRaw = firstPositiveOrPresentNonNegativeInt([
+          usage.cache_creation_input_tokens,
+          usage.cacheCreationInputTokens,
+          usage.cachedWriteTokens,
+          usage.prompt_cache_write_tokens,
+        ]);
+        const reasoningRaw = firstPresentNonNegativeInt([
+          usage.completion_thinking_tokens,
+          usage.completionThinkingTokens,
+          usage.reasoningTokens,
+        ]);
+
+        const tsMs = parseLogTimestampMs(line, stat.mtimeMs);
+        const dedupSecond = Math.floor(tsMs / 1000);
+        const messageId = `codebuddy:extension-log:${agentId}:${dedupSecond}:${inputRaw}:${outputRaw}:${cacheReadRaw}:${cacheCreationRaw}:${reasoningRaw}`;
+
+        if (seenIds.has(messageId)) continue;
+        recordsProcessed++;
+
+        let inputTokens = toNonNegativeInt(inputRaw);
+        const completionTokens = toNonNegativeInt(outputRaw);
+        const cacheRead = toNonNegativeInt(cacheReadRaw);
+        const cacheCreation = toNonNegativeInt(cacheCreationRaw);
+        const reasoningTokens = toNonNegativeInt(reasoningRaw);
+
+        const isFromTotalField =
+          usage.cachedMissTokens === undefined &&
+          usage.cacheMissTokens === undefined &&
+          usage.prompt_cache_miss_tokens === undefined;
+        if (isFromTotalField && cacheRead > 0) {
+          inputTokens = Math.max(0, inputTokens - cacheRead);
+        }
+
+        if (inputTokens === 0 && completionTokens === 0 && cacheRead === 0 && cacheCreation === 0) {
+          seenIds.add(messageId);
+          continue;
+        }
+
+        const tsIso = new Date(tsMs).toISOString();
+        const bucketStart = toUtcHalfHourStart(tsIso);
+        if (!bucketStart) continue;
+
+        const rawModel =
+          modelsByAgent.get(agentId) ||
+          logModelsByAgent[agentModelKey(agentId)] ||
+          fallbackModel;
+        const model = normalizeModelInput(rawModel);
+
+        const delta = {
+          input_tokens: inputTokens,
+          cached_input_tokens: cacheRead,
+          cache_creation_input_tokens: cacheCreation,
+          output_tokens: completionTokens,
+          reasoning_output_tokens: reasoningTokens,
+          total_tokens: inputTokens + completionTokens + cacheRead + cacheCreation + reasoningTokens,
+          conversation_count: 1,
+        };
+
+        const bucket = getHourlyBucket(hourlyState, "codebuddy", model, bucketStart);
+        addTotals(bucket.totals, delta);
+        touchedBuckets.add(bucketKey("codebuddy", model, bucketStart));
         seenIds.add(messageId);
-        continue;
-      }
+        eventsAggregated++;
 
-      if (tsMs == null) {
+        if (cb) {
+          cb({
+            index: fileIdx + 1,
+            total: files.length,
+            recordsProcessed,
+            eventsAggregated,
+            bucketsQueued: touchedBuckets.size,
+          });
+        }
+      } else {
+        let entry;
+        try { entry = JSON.parse(line); } catch { continue; }
+
+        if (!entry || entry.type !== "message" || entry.role !== "assistant") continue;
+
+        const provider = entry.providerData;
+        const rawUsage = provider && typeof provider === "object" ? provider.rawUsage : null;
+        if (!rawUsage || typeof rawUsage !== "object") continue;
+
+        const sessionId =
+          typeof entry.sessionId === "string" && entry.sessionId
+            ? entry.sessionId
+            : path.basename(filePath, ".jsonl");
+        const tsMs =
+          Number.isFinite(Number(entry.timestamp)) && Number(entry.timestamp) > 0
+            ? Number(entry.timestamp)
+            : null;
+        const messageId =
+          typeof entry.uuid === "string" && entry.uuid
+            ? entry.uuid
+            : typeof entry.id === "string" && entry.id
+              ? entry.id
+              : tsMs != null
+                ? `${sessionId}:${tsMs}`
+                : null;
+        if (!messageId) continue;
+        if (seenIds.has(messageId)) continue;
+
+        recordsProcessed++;
+
+        const promptTokens = toNonNegativeInt(rawUsage.prompt_tokens);
+        const completionTokens = toNonNegativeInt(rawUsage.completion_tokens);
+        const details =
+          rawUsage.prompt_tokens_details && typeof rawUsage.prompt_tokens_details === "object"
+            ? rawUsage.prompt_tokens_details
+            : {};
+        const cachedTokens = toNonNegativeInt(details.cached_tokens);
+        const cacheReadAlt = toNonNegativeInt(rawUsage.cache_read_input_tokens);
+        const cacheCreation = toNonNegativeInt(rawUsage.cache_creation_input_tokens);
+        const reasoningTokens = toNonNegativeInt(details.reasoning_tokens);
+
+        const cacheRead = Math.max(cachedTokens, cacheReadAlt);
+        const inputTokens = Math.max(0, promptTokens - cacheRead);
+
+        if (
+          inputTokens === 0 &&
+          completionTokens === 0 &&
+          cacheRead === 0 &&
+          cacheCreation === 0
+        ) {
+          seenIds.add(messageId);
+          continue;
+        }
+
+        if (tsMs == null) {
+          seenIds.add(messageId);
+          continue;
+        }
+        const tsIso = new Date(tsMs).toISOString();
+        const bucketStart = toUtcHalfHourStart(tsIso);
+        if (!bucketStart) continue;
+
+        const model =
+          normalizeModelInput(provider?.model) ||
+          normalizeModelInput(entry.model) ||
+          fallbackModel;
+
+        const delta = {
+          input_tokens: inputTokens,
+          cached_input_tokens: cacheRead,
+          cache_creation_input_tokens: cacheCreation,
+          output_tokens: completionTokens,
+          reasoning_output_tokens: reasoningTokens,
+          total_tokens:
+            inputTokens + completionTokens + cacheRead + cacheCreation + reasoningTokens,
+          conversation_count: 1,
+        };
+
+        const bucket = getHourlyBucket(hourlyState, "codebuddy", model, bucketStart);
+        addTotals(bucket.totals, delta);
+        touchedBuckets.add(bucketKey("codebuddy", model, bucketStart));
         seenIds.add(messageId);
-        continue;
-      }
-      const tsIso = new Date(tsMs).toISOString();
-      const bucketStart = toUtcHalfHourStart(tsIso);
-      if (!bucketStart) continue;
+        eventsAggregated++;
 
-      const model =
-        normalizeModelInput(provider?.model) ||
-        normalizeModelInput(entry.model) ||
-        fallbackModel;
-
-      const delta = {
-        input_tokens: inputTokens,
-        cached_input_tokens: cacheRead,
-        cache_creation_input_tokens: cacheCreation,
-        output_tokens: completionTokens,
-        reasoning_output_tokens: reasoningTokens,
-        total_tokens:
-          inputTokens + completionTokens + cacheRead + cacheCreation + reasoningTokens,
-        conversation_count: 1,
-      };
-
-      const bucket = getHourlyBucket(hourlyState, "codebuddy", model, bucketStart);
-      addTotals(bucket.totals, delta);
-      touchedBuckets.add(bucketKey("codebuddy", model, bucketStart));
-      seenIds.add(messageId);
-      eventsAggregated++;
-
-      if (cb) {
-        cb({
-          index: fileIdx + 1,
-          total: files.length,
-          recordsProcessed,
-          eventsAggregated,
-          bucketsQueued: touchedBuckets.size,
-        });
+        if (cb) {
+          cb({
+            index: fileIdx + 1,
+            total: files.length,
+            recordsProcessed,
+            eventsAggregated,
+            bucketsQueued: touchedBuckets.size,
+          });
+        }
       }
     }
 
@@ -5739,6 +5995,11 @@ async function parseCodebuddyIncremental({
   const seenArr = Array.from(seenIds);
   const cappedSeen =
     seenArr.length > 10_000 ? seenArr.slice(seenArr.length - 10_000) : seenArr;
+  const logModelEntries = Object.entries(logModelsByAgent);
+  const cappedLogModelsByAgent =
+    logModelEntries.length > 10_000
+      ? Object.fromEntries(logModelEntries.slice(logModelEntries.length - 10_000))
+      : logModelsByAgent;
 
   const bucketsQueued = await enqueueTouchedBuckets({
     queuePath,
@@ -5752,6 +6013,7 @@ async function parseCodebuddyIncremental({
     ...codebuddyState,
     seenIds: cappedSeen,
     fileOffsets,
+    logModelsByAgent: cappedLogModelsByAgent,
     updatedAt,
   };
 
@@ -5885,17 +6147,32 @@ async function parseWorkbuddyIncremental({
     workbuddyState.fileOffsets && typeof workbuddyState.fileOffsets === "object"
       ? { ...workbuddyState.fileOffsets }
       : {};
+  const sqliteSessions =
+    workbuddyState.sqliteSessions && typeof workbuddyState.sqliteSessions === "object"
+      ? { ...workbuddyState.sqliteSessions }
+      : {};
+  const detailedSessions =
+    workbuddyState.detailedSessions && typeof workbuddyState.detailedSessions === "object"
+      ? { ...workbuddyState.detailedSessions }
+      : {};
+  const detailedSessionsWithUsage = new Set();
 
   const files = Array.isArray(projectFiles)
     ? projectFiles
     : resolveWorkbuddyProjectFiles(env || process.env);
   const fallbackModel = defaultModel || resolveWorkbuddyDefaultModel(env || process.env);
 
-  if (files.length === 0) {
+  const workbuddyHome = resolveWorkbuddyHome(env || process.env);
+  const dbPath = workbuddyHome ? path.join(workbuddyHome, "workbuddy.db") : null;
+  const dbExists = Boolean(dbPath && fssync.existsSync(dbPath));
+
+  if (files.length === 0 && !dbExists) {
     cursors.workbuddy = {
       ...workbuddyState,
       seenIds: Array.from(seenIds),
       fileOffsets,
+      sqliteSessions,
+      detailedSessions,
       updatedAt: new Date().toISOString(),
     };
     return { recordsProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
@@ -5946,6 +6223,9 @@ async function parseWorkbuddyIncremental({
         typeof entry.sessionId === "string" && entry.sessionId
           ? entry.sessionId
           : path.basename(filePath, ".jsonl");
+      if (Object.prototype.hasOwnProperty.call(sqliteSessions, sessionId)) {
+        continue;
+      }
       const tsMs =
         Number.isFinite(Number(entry.timestamp)) && Number(entry.timestamp) > 0
           ? Number(entry.timestamp)
@@ -6031,6 +6311,8 @@ async function parseWorkbuddyIncremental({
       addTotals(bucket.totals, delta);
       touchedBuckets.add(bucketKey("workbuddy", model, bucketStart));
       seenIds.add(messageId);
+      detailedSessions[sessionId] = true;
+      detailedSessionsWithUsage.add(sessionId);
       eventsAggregated++;
 
       if (cb) {
@@ -6053,11 +6335,119 @@ async function parseWorkbuddyIncremental({
     };
   }
 
+  if (dbExists) {
+    const query = `
+      SELECT
+        su.session_id,
+        su.used,
+        su.updated_at,
+        s.model,
+        s.cwd
+      FROM session_usage su
+      LEFT JOIN sessions s ON s.id = su.session_id
+      WHERE su.used IS NOT NULL
+        AND su.used > 0
+        AND su.updated_at IS NOT NULL
+        AND su.updated_at > 0
+    `.trim();
+    let rows = [];
+    const snap = snapshotSqliteDb(dbPath);
+    try {
+      rows = await readSqliteJsonRowsAsync(snap.path, query, {
+        label: "WorkBuddy",
+        timeout: 10_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    } finally {
+      snap.cleanup();
+    }
+
+    try {
+      for (const row of rows) {
+        if (!row || typeof row !== "object") continue;
+        const sessionId = typeof row.session_id === "string" ? row.session_id.trim() : "";
+        if (!sessionId) continue;
+        if (detailedSessions[sessionId] || detailedSessionsWithUsage.has(sessionId)) continue;
+
+        const usedNow = toNonNegativeInt(row.used);
+        const updatedAtRaw = toNonNegativeInt(row.updated_at);
+        const rawModel = typeof row.model === "string" ? row.model.trim() : "";
+
+        if (usedNow <= 0 || updatedAtRaw <= 0) continue;
+
+        const prev = sqliteSessions[sessionId] || { used: 0 };
+        const prevUsed = toNonNegativeInt(prev.used);
+        const isReset = usedNow > 0 && prevUsed > 0 && usedNow < prevUsed;
+        const inputDelta = isReset ? usedNow : Math.max(0, usedNow - prevUsed);
+        if (inputDelta === 0) {
+          sqliteSessions[sessionId] = {
+            ...prev,
+            used: usedNow,
+            updatedAt: updatedAtRaw,
+            model: rawModel || prev.model || fallbackModel,
+          };
+          continue;
+        }
+
+        recordsProcessed++;
+
+        const inputTokens = inputDelta;
+        const completionTokens = 0;
+        const cacheRead = 0;
+        const cacheCreation = 0;
+        const reasoningTokens = 0;
+
+        const tsMs = updatedAtRaw > 10000000000 ? updatedAtRaw : updatedAtRaw * 1000;
+        const tsIso = new Date(tsMs).toISOString();
+        const bucketStart = toUtcHalfHourStart(tsIso);
+        if (!bucketStart) continue;
+
+        const model = normalizeModelInput(rawModel) || fallbackModel;
+
+        const delta = {
+          input_tokens: inputTokens,
+          cached_input_tokens: cacheRead,
+          cache_creation_input_tokens: cacheCreation,
+          output_tokens: completionTokens,
+          reasoning_output_tokens: reasoningTokens,
+          total_tokens: inputTokens,
+          conversation_count: prevUsed === 0 || isReset ? 1 : 0,
+        };
+
+        const bucket = getHourlyBucket(hourlyState, "workbuddy", model, bucketStart);
+        addTotals(bucket.totals, delta);
+        touchedBuckets.add(bucketKey("workbuddy", model, bucketStart));
+        sqliteSessions[sessionId] = {
+          used: usedNow,
+          updatedAt: updatedAtRaw,
+          model,
+        };
+        eventsAggregated++;
+      }
+    } catch (err) {
+      // SQLite fallback is best effort; detailed JSONL remains authoritative.
+    }
+  }
+
   // Cap dedup set to last 10k IDs to bound cursor state size — same convention
   // as CodeBuddy/Kimi/Copilot so cursors.json doesn't grow unbounded.
   const seenArr = Array.from(seenIds);
   const cappedSeen =
     seenArr.length > 10_000 ? seenArr.slice(seenArr.length - 10_000) : seenArr;
+  const sqliteSessionEntries = Object.entries(sqliteSessions);
+  const cappedSqliteSessions =
+    sqliteSessionEntries.length > 10_000
+      ? Object.fromEntries(
+          sqliteSessionEntries
+            .sort((a, b) => toNonNegativeInt(b[1]?.used) - toNonNegativeInt(a[1]?.used))
+            .slice(0, 10_000),
+        )
+      : sqliteSessions;
+  const detailedSessionEntries = Object.entries(detailedSessions);
+  const cappedDetailedSessions =
+    detailedSessionEntries.length > 10_000
+      ? Object.fromEntries(detailedSessionEntries.slice(detailedSessionEntries.length - 10_000))
+      : detailedSessions;
 
   const bucketsQueued = await enqueueTouchedBuckets({
     queuePath,
@@ -6071,6 +6461,8 @@ async function parseWorkbuddyIncremental({
     ...workbuddyState,
     seenIds: cappedSeen,
     fileOffsets,
+    sqliteSessions: cappedSqliteSessions,
+    detailedSessions: cappedDetailedSessions,
     updatedAt,
   };
 

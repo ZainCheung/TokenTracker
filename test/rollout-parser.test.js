@@ -6252,6 +6252,106 @@ test("parseCodebuddyIncremental returns zero when no project files exist", async
   }
 });
 
+test("parseCodebuddyIncremental parses extension log cache split like TokScale", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-codebuddy-log-"));
+  try {
+    const logPath = path.join(tmp, "extension.log");
+    await fs.writeFile(
+      logPath,
+      [
+        "[2026/7/1 16:56:01.100] [info] [CraftInvokableAgent] [agent-1] Model prepared: Kimi-K2.7-Code (kimi-k2.7)",
+        '[2026/7/1 16:56:02.200] [info] [AgentReporter] [agent-1] Agent execution successful with usage: {"inputTokens":140732,"outputTokens":635,"totalTokens":141367,"cacheTokens":76032,"cachedWriteTokens":0,"cachedMissTokens":64700,"lastTokens":71051,"credit":10.38}',
+      ].join("\n") + "\n",
+      "utf8",
+    );
+
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+    const result = await parseCodebuddyIncremental({
+      projectFiles: [logPath],
+      cursors,
+      queuePath,
+      defaultModel: "codebuddy-unknown",
+    });
+
+    assert.equal(result.eventsAggregated, 1);
+    const entry = JSON.parse((await fs.readFile(queuePath, "utf8")).trim());
+    assert.equal(entry.source, "codebuddy");
+    assert.equal(entry.model, "kimi-k2.7");
+    assert.equal(entry.input_tokens, 64700);
+    assert.equal(entry.cached_input_tokens, 76032);
+    assert.equal(entry.cache_creation_input_tokens, 0);
+    assert.equal(entry.output_tokens, 635);
+    assert.equal(entry.total_tokens, 141367);
+    // Test case 2: No cachedMissTokens/cacheMissTokens, falling back to inputTokens.
+    // In this case, prompt_tokens/inputTokens contains cacheTokens, so it must be subtracted.
+    const logPath2 = path.join(tmp, "extension2.log");
+    await fs.writeFile(
+      logPath2,
+      [
+        "[2026/7/1 16:56:01.100] [info] [CraftInvokableAgent] [agent-2] Model prepared: Kimi-K2.7-Code (kimi-k2.7)",
+        '[2026/7/1 16:56:02.200] [info] [AgentReporter] [agent-2] Agent execution successful with usage: {"inputTokens":140732,"outputTokens":635,"totalTokens":141367,"cacheTokens":76032,"cachedWriteTokens":0}',
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    const queuePath2 = path.join(tmp, "queue2.jsonl");
+    const cursors2 = { version: 1 };
+    await parseCodebuddyIncremental({
+      projectFiles: [logPath2],
+      cursors: cursors2,
+      queuePath: queuePath2,
+      defaultModel: "codebuddy-unknown",
+    });
+    const entry2 = JSON.parse((await fs.readFile(queuePath2, "utf8")).trim());
+    assert.equal(entry2.input_tokens, 64700); // 140732 - 76032 = 64700
+    assert.equal(entry2.cached_input_tokens, 76032);
+    assert.equal(entry2.total_tokens, 141367);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseCodebuddyIncremental keeps extension log model across incremental tail reads", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-codebuddy-log-tail-"));
+  try {
+    const logPath = path.join(tmp, "extension.log");
+    await fs.writeFile(
+      logPath,
+      "[2026/7/1 16:56:01.100] [info] [CraftInvokableAgent] [agent-1] Model prepared: GLM-5.2 (glm-5.2)\n",
+      "utf8",
+    );
+
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+    await parseCodebuddyIncremental({
+      projectFiles: [logPath],
+      cursors,
+      queuePath,
+      defaultModel: "codebuddy-unknown",
+    });
+
+    await fs.appendFile(
+      logPath,
+      '[2026/7/1 16:56:02.200] [info] [AgentReporter] [agent-1] Agent execution successful with usage: {"inputTokens":10,"outputTokens":2,"totalTokens":12}\n',
+      "utf8",
+    );
+    const result = await parseCodebuddyIncremental({
+      projectFiles: [logPath],
+      cursors,
+      queuePath,
+      defaultModel: "codebuddy-unknown",
+    });
+
+    assert.equal(result.eventsAggregated, 1);
+    const entry = JSON.parse((await fs.readFile(queuePath, "utf8")).trim());
+    assert.equal(entry.model, "glm-5.2");
+    assert.equal(entry.input_tokens, 10);
+    assert.equal(entry.total_tokens, 12);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("resolveCodebuddyProjectFiles walks ~/.codebuddy/projects/<cwd>/*.jsonl and skips others", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-codebuddy-"));
   try {
@@ -6332,6 +6432,7 @@ test("parseWorkbuddyIncremental subtracts BOTH cache reads and writes from promp
       projectFiles: [sessionFile],
       cursors,
       queuePath,
+      env: { WORKBUDDY_HOME: path.join(tmp, "missing-workbuddy-home"), HOME: tmp },
     });
 
     assert.equal(result.eventsAggregated, 1, "function_call usage must be aggregated");
@@ -6385,7 +6486,12 @@ test("parseWorkbuddyIncremental reads DeepSeek-style cache mirror and subtracts 
 
     const queuePath = path.join(tmp, "queue.jsonl");
     const cursors = { version: 1 };
-    await parseWorkbuddyIncremental({ projectFiles: [sessionFile], cursors, queuePath });
+    await parseWorkbuddyIncremental({
+      projectFiles: [sessionFile],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: path.join(tmp, "missing-workbuddy-home"), HOME: tmp },
+    });
 
     const entry = JSON.parse((await fs.readFile(queuePath, "utf8")).trim());
     assert.equal(entry.input_tokens, 30309);
@@ -6454,6 +6560,7 @@ test("parseWorkbuddyIncremental dedupes by response id across runs and buckets b
       projectFiles: [sessionFile],
       cursors,
       queuePath,
+      env: { WORKBUDDY_HOME: path.join(tmp, "missing-workbuddy-home"), HOME: tmp },
     });
     assert.equal(result.eventsAggregated, 2, "duplicate response id dropped");
 
@@ -6473,6 +6580,7 @@ test("parseWorkbuddyIncremental dedupes by response id across runs and buckets b
       projectFiles: [sessionFile],
       cursors,
       queuePath,
+      env: { WORKBUDDY_HOME: path.join(tmp, "missing-workbuddy-home"), HOME: tmp },
     });
     assert.equal(result2.eventsAggregated, 0);
   } finally {
@@ -6517,6 +6625,163 @@ test("parseWorkbuddyIncremental emits provider.model verbatim (auto vs hy3) and 
       .map((l) => JSON.parse(l).model)
       .sort();
     assert.deepEqual(models, ["auto", "hy3-preview-agent"]);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseWorkbuddyIncremental SQLite fallback emits cumulative deltas, not full snapshots", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-"));
+  try {
+    const dbPath = path.join(tmp, "workbuddy.db");
+    cp.execFileSync("sqlite3", [
+      dbPath,
+      [
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
+        "CREATE TABLE session_usage (session_id TEXT PRIMARY KEY, used INTEGER, size INTEGER, updated_at INTEGER, credit_json TEXT);",
+        "INSERT INTO sessions VALUES ('s1','/tmp/project','auto');",
+        "INSERT INTO session_usage VALUES ('s1',100,0,1780000000000,'{}');",
+      ].join(" "),
+    ]);
+
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+    const first = await parseWorkbuddyIncremental({
+      projectFiles: [],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: tmp, HOME: tmp },
+    });
+    assert.equal(first.eventsAggregated, 1);
+
+    cp.execFileSync("sqlite3", [
+      dbPath,
+      "UPDATE session_usage SET used=150, updated_at=1780000010000 WHERE session_id='s1';",
+    ]);
+    const second = await parseWorkbuddyIncremental({
+      projectFiles: [],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: tmp, HOME: tmp },
+    });
+    assert.equal(second.eventsAggregated, 1);
+
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 2);
+    assert.equal(queued[0].input_tokens, 100);
+    assert.equal(queued[1].input_tokens, 150);
+    assert.equal(queued[1].total_tokens, 150);
+    assert.equal(queued[1].conversation_count, 1);
+    assert.equal(cursors.workbuddy.sqliteSessions.s1.used, 150);
+
+    cp.execFileSync("sqlite3", [
+      dbPath,
+      "UPDATE session_usage SET updated_at=1780000020000 WHERE session_id='s1';",
+    ]);
+    const third = await parseWorkbuddyIncremental({
+      projectFiles: [],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: tmp, HOME: tmp },
+    });
+    assert.equal(third.eventsAggregated, 0);
+    assert.equal((await readJsonLines(queuePath)).length, 2);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseWorkbuddyIncremental uses SQLite fallback when JSONL files are empty", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-empty-jsonl-"));
+  try {
+    const dbPath = path.join(tmp, "workbuddy.db");
+    cp.execFileSync("sqlite3", [
+      dbPath,
+      [
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
+        "CREATE TABLE session_usage (session_id TEXT PRIMARY KEY, used INTEGER, size INTEGER, updated_at INTEGER, credit_json TEXT);",
+        "INSERT INTO sessions VALUES ('s-empty','/tmp/project','auto');",
+        "INSERT INTO session_usage VALUES ('s-empty',100,0,1780000000000,'{}');",
+      ].join(" "),
+    ]);
+
+    const projectDir = path.join(tmp, "projects", "encoded-cwd");
+    await fs.mkdir(projectDir, { recursive: true });
+    const emptySessionFile = path.join(projectDir, "s-empty.jsonl");
+    await fs.writeFile(emptySessionFile, "");
+
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+    const result = await parseWorkbuddyIncremental({
+      projectFiles: [emptySessionFile],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: tmp, HOME: tmp },
+    });
+
+    assert.equal(result.eventsAggregated, 1);
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].source, "workbuddy");
+    assert.equal(queued[0].input_tokens, 100);
+    assert.equal(queued[0].total_tokens, 100);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("parseWorkbuddyIncremental keeps detailed JSONL authoritative over SQLite fallback", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-detailed-"));
+  try {
+    const dbPath = path.join(tmp, "workbuddy.db");
+    cp.execFileSync("sqlite3", [
+      dbPath,
+      [
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
+        "CREATE TABLE session_usage (session_id TEXT PRIMARY KEY, used INTEGER, size INTEGER, updated_at INTEGER, credit_json TEXT);",
+        "INSERT INTO sessions VALUES ('wb-sess','/tmp/project','auto');",
+        "INSERT INTO session_usage VALUES ('wb-sess',500,0,1780000000000,'{}');",
+      ].join(" "),
+    ]);
+
+    const projectDir = path.join(tmp, "projects", "encoded-cwd");
+    await fs.mkdir(projectDir, { recursive: true });
+    const sessionFile = path.join(projectDir, "wb-sess.jsonl");
+    await fs.writeFile(
+      sessionFile,
+      buildWorkbuddyLine({
+        id: "wb-detailed",
+        type: "function_call",
+        timestamp: 1780000000000,
+        rawUsage: {
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 120,
+          prompt_tokens_details: { cached_tokens: 0 },
+          completion_tokens_details: { reasoning_tokens: 0 },
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }),
+    );
+
+    const queuePath = path.join(tmp, "queue.jsonl");
+    const cursors = { version: 1 };
+    const result = await parseWorkbuddyIncremental({
+      projectFiles: [sessionFile],
+      cursors,
+      queuePath,
+      env: { WORKBUDDY_HOME: tmp, HOME: tmp },
+    });
+
+    assert.equal(result.eventsAggregated, 1);
+    const queued = await readJsonLines(queuePath);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].input_tokens, 100);
+    assert.equal(queued[0].output_tokens, 20);
+    assert.equal(queued[0].total_tokens, 120);
+    assert.equal(cursors.workbuddy.detailedSessions["wb-sess"], true);
+    assert.equal(cursors.workbuddy.sqliteSessions?.["wb-sess"], undefined);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

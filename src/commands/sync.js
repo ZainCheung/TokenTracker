@@ -1141,7 +1141,7 @@ async function cmdSync(argv) {
     const workbuddyFiles = sourceAllowed("workbuddy")
       ? mergeBothFileSources({ resolveFiles: resolveWorkbuddyProjectFiles, env: process.env })
       : [];
-    if (workbuddyFiles.length > 0) {
+    if (sourceAllowed("workbuddy")) {
       if (progress?.enabled) {
         progress.start(`Parsing WorkBuddy ${renderBar(0)} | buckets 0`);
       }

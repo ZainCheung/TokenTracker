@@ -206,20 +206,23 @@ async function cmdStatus(argv = []) {
   const kiroCliInstalled = fssync.existsSync(kiroCliDbPath);
 
   // CodeBuddy — passive scan only (no hooks). Surface the file count so
-  // operators can confirm jsonl logs are being discovered.
+  // operators can confirm JSONL sessions and extension logs are discovered.
   const codebuddyHome = resolveCodebuddyHome(process.env);
   const codebuddyInstalled = fssync.existsSync(codebuddyHome);
   const codebuddyFiles = codebuddyInstalled
     ? resolveCodebuddyProjectFiles(process.env)
     : [];
 
-  // WorkBuddy — passive scan (sibling Claude-Code fork). Surface the recursive
-  // jsonl file count (main session logs + nested subagents) for operators.
+  // WorkBuddy — passive scan (sibling Claude-Code fork). Surface both the
+  // recursive JSONL count and SQLite fallback so operators can confirm coverage.
   const workbuddyHome = resolveWorkbuddyHome(process.env);
   const workbuddyInstalled = fssync.existsSync(workbuddyHome);
   const workbuddyFiles = workbuddyInstalled
     ? resolveWorkbuddyProjectFiles(process.env)
     : [];
+  const workbuddyDbExists = workbuddyInstalled
+    ? fssync.existsSync(path.join(workbuddyHome, "workbuddy.db"))
+    : false;
 
   // oh-my-pi — passive scan only (no hooks).
   const ompAgentDir = resolveOmpAgentDir(process.env);
@@ -475,10 +478,10 @@ async function cmdStatus(argv = []) {
         ? `- Kiro CLI: SQLite data.sqlite3 found (tokens approximated from char lengths, merged under 'kiro' source)`
         : null,
       codebuddyInstalled
-        ? `- CodeBuddy hooks: ${codebuddyHookConfigured ? "set" : "unset"} (${codebuddyFiles.length} session jsonl file${codebuddyFiles.length !== 1 ? "s" : ""} found)`
+        ? `- CodeBuddy hooks: ${codebuddyHookConfigured ? "set" : "unset"} (${codebuddyFiles.length} usage file${codebuddyFiles.length !== 1 ? "s" : ""} found)`
         : null,
       workbuddyInstalled
-        ? `- WorkBuddy hooks: ${workbuddyHookConfigured ? "set" : "unset"} (${workbuddyFiles.length} session jsonl file${workbuddyFiles.length !== 1 ? "s" : ""} found)`
+        ? `- WorkBuddy hooks: ${workbuddyHookConfigured ? "set" : "unset"} (${workbuddyFiles.length} session jsonl file${workbuddyFiles.length !== 1 ? "s" : ""} found, SQLite DB ${workbuddyDbExists ? "found" : "not found"})`
         : null,
       ompInstalled
         ? `- oh-my-pi: passive reader (${ompFiles.length} session jsonl file${ompFiles.length !== 1 ? "s" : ""} found)`
