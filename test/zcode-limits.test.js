@@ -14,8 +14,11 @@ const {
   loadZcodeApiKey,
   fetchZcodeLimits,
   isZcodeInstalled,
+  normalizeZcodeCodingPlanQuotaResponse,
   resolveZcodeAppVersion,
   resolveZcodeProviderBillingBaseUrl,
+  resolveZcodeProviderQuotaUrl,
+  loadZcodeSelectedPlanProviderKeys,
 } = require("../src/lib/zcode-limits");
 
 // Real billing/balance payload shape captured from ZCode's own logs.
@@ -45,6 +48,34 @@ function balanceBody() {
           remaining_units: 2_000_000,
           period_end: 1782230399,
           expires_at: 1782230399,
+        },
+      ],
+    },
+  };
+}
+
+function codingPlanQuotaBody() {
+  return {
+    code: 200,
+    success: true,
+    data: {
+      level: "PRO",
+      limits: [
+        {
+          type: "TIME_LIMIT",
+          number: 10_000_000,
+          usage: 2_500_000,
+          remaining: 7_500_000,
+          nextResetTime: 1_783_526_399_000,
+          usageDetails: [{ modelCode: "glm-5.2", displayName: "GLM-5.2", usage: 2_500_000 }],
+        },
+        {
+          type: "MONTHLY_TOKEN",
+          number: 100_000_000,
+          currentValue: 25_000_000,
+          remaining: 75_000_000,
+          nextResetTime: 1_784_131_199_000,
+          usageDetails: [{ modelCode: "glm-5-turbo", displayName: "GLM-5-Turbo", usage: 25_000_000 }],
         },
       ],
     },
@@ -170,17 +201,39 @@ describe("resolveZcodeAppVersion", () => {
 
 describe("loadZcodeApiKey", () => {
   it("maps all built-in ZCode plan providers to the zcode-plan billing root", () => {
-    for (const key of [
-      "builtin:bigmodel-start-plan",
-      "builtin:zai-start-plan",
-      "builtin:bigmodel-coding-plan",
-      "builtin:zai-coding-plan",
-    ]) {
+    for (const key of ["builtin:bigmodel-start-plan", "builtin:zai-start-plan"]) {
       assert.equal(
         resolveZcodeProviderBillingBaseUrl(key, { options: { baseURL: "https://api.z.ai/api/anthropic" } }, {}),
         "https://zcode.z.ai/api/v1/zcode-plan",
       );
     }
+    assert.equal(
+      resolveZcodeProviderBillingBaseUrl(
+        "builtin:zai-coding-plan",
+        { options: { baseURL: "https://api.z.ai/api/anthropic" } },
+        {},
+      ),
+      null,
+    );
+  });
+
+  it("maps coding-plan providers to the monitor quota API used by ZCode 3.3.x", () => {
+    assert.equal(
+      resolveZcodeProviderQuotaUrl(
+        "builtin:zai-coding-plan",
+        { options: { baseURL: "https://api.z.ai/api/anthropic" } },
+        {},
+      ),
+      "https://api.z.ai/api/monitor/usage/quota/limit",
+    );
+    assert.equal(
+      resolveZcodeProviderQuotaUrl(
+        "builtin:bigmodel-coding-plan",
+        { options: { baseURL: "https://open.bigmodel.cn/api/anthropic" } },
+        {},
+      ),
+      "https://bigmodel.cn/api/monitor/usage/quota/limit",
+    );
   });
 
   it("prefers the provider ZCode marked available in coding-plan-cache", () => {
@@ -254,6 +307,120 @@ describe("loadZcodeApiKey", () => {
       assert.equal(auths[0].auth_source, "credential:zcodejwttoken");
       assert.equal(auths[1].apiKey, "config-token");
       assert.equal(auths[1].auth_source, "provider:config");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers ZCode's selected coding-plan provider when start and coding plans are both available", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-selected-coding-"));
+    try {
+      const v2 = path.join(tmp, ".zcode", "v2");
+      fs.mkdirSync(v2, { recursive: true });
+      fs.writeFileSync(
+        path.join(v2, "config.json"),
+        JSON.stringify({
+          provider: {
+            "builtin:zai-start-plan": {
+              enabled: true,
+              options: { apiKey: "start-key", baseURL: "https://zcode.z.ai/api/v1/zcode-plan/anthropic" },
+            },
+            "builtin:zai-coding-plan": {
+              enabled: true,
+              options: { apiKey: "coding-key", baseURL: "https://api.z.ai/api/anthropic" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(v2, "coding-plan-cache.json"),
+        JSON.stringify({
+          entryStatus: {
+            items: {
+              "builtin:zai-start-plan": { status: "available" },
+              "builtin:zai-coding-plan": { status: "available" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(v2, "setting.json"),
+        JSON.stringify({
+          providerFamilyDomain: "zai",
+          modelProviderFamilySelectedKeys: {
+            zai: "coding-plan:builtin:zai-coding-plan",
+          },
+        }),
+        "utf8",
+      );
+      assert.deepEqual(loadZcodeSelectedPlanProviderKeys({ home: tmp }), ["builtin:zai-coding-plan"]);
+      const auths = loadZcodeAuthCandidates({ home: tmp });
+      assert.equal(auths[0].providerKey, "builtin:zai-coding-plan");
+      assert.equal(auths[0].planKind, "coding-plan");
+      assert.equal(auths[0].apiKey, "coding-key");
+      assert.equal(auths[1].providerKey, "builtin:zai-start-plan");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("fetches the selected paid coding-plan before an also-available start plan", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-selected-coding-fetch-"));
+    try {
+      const v2 = path.join(tmp, ".zcode", "v2");
+      fs.mkdirSync(v2, { recursive: true });
+      fs.writeFileSync(
+        path.join(v2, "config.json"),
+        JSON.stringify({
+          provider: {
+            "builtin:zai-start-plan": {
+              enabled: true,
+              options: { apiKey: "start-key", baseURL: "https://zcode.z.ai/api/v1/zcode-plan/anthropic" },
+            },
+            "builtin:zai-coding-plan": {
+              enabled: true,
+              options: { apiKey: "coding-key", baseURL: "https://api.z.ai/api/anthropic" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(v2, "coding-plan-cache.json"),
+        JSON.stringify({
+          entryStatus: {
+            items: {
+              "builtin:zai-start-plan": { status: "available" },
+              "builtin:zai-coding-plan": { status: "available" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(v2, "setting.json"),
+        JSON.stringify({
+          providerFamilyDomain: "zai",
+          modelProviderFamilySelectedKeys: {
+            zai: "coding-plan:builtin:zai-coding-plan",
+          },
+        }),
+        "utf8",
+      );
+      const seen = [];
+      const result = await fetchZcodeLimits({
+        home: tmp,
+        fetchImpl: async (url, options) => {
+          seen.push({ url, authorization: options.headers.authorization || options.headers.Authorization });
+          assert.equal(url, "https://api.z.ai/api/monitor/usage/quota/limit");
+          return { ok: true, status: 200, async json() { return codingPlanQuotaBody(); } };
+        },
+      });
+      assert.deepEqual(seen, [{ url: "https://api.z.ai/api/monitor/usage/quota/limit", authorization: "coding-key" }]);
+      assert.equal(result.provider_key, "builtin:zai-coding-plan");
+      assert.equal(result.plan_label, "Pro");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -388,6 +555,53 @@ describe("fetchZcodeLimits", () => {
     }
   });
 
+  it("normalizes ZCode coding-plan quota responses", () => {
+    const result = normalizeZcodeCodingPlanQuotaResponse(codingPlanQuotaBody());
+    assert.equal(result.plan_label, "Pro");
+    assert.equal(result.buckets.length, 2);
+    // The largest limit sorts first.
+    assert.equal(result.buckets[0].show_name, "GLM-5-Turbo");
+    assert.equal(result.primary_window.used_percent, 25);
+    assert.equal(result.primary_window.reset_at, "2026-07-15T15:59:59.000Z");
+  });
+
+  it("fetches coding-plan usage from the monitor quota API instead of billing/balance", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-coding-quota-"));
+    try {
+      const v2 = path.join(tmp, ".zcode", "v2");
+      fs.mkdirSync(v2, { recursive: true });
+      fs.writeFileSync(
+        path.join(v2, "config.json"),
+        JSON.stringify({
+          provider: {
+            "builtin:zai-coding-plan": {
+              enabled: true,
+              options: { apiKey: "coding-key", baseURL: "https://api.z.ai/api/anthropic" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      const result = await fetchZcodeLimits({
+        home: tmp,
+        env: { TOKENTRACKER_ZCODE_APP_VERSION: "3.3.2" },
+        fetchImpl: async (url, options) => {
+          assert.equal(url, "https://api.z.ai/api/monitor/usage/quota/limit");
+          assert.equal(options.headers.authorization, "coding-key");
+          assert.equal(options.headers.Authorization, undefined);
+          return { ok: true, status: 200, async json() { return codingPlanQuotaBody(); } };
+        },
+      });
+      assert.equal(result.configured, true);
+      assert.equal(result.error, null);
+      assert.equal(result.provider_key, "builtin:zai-coding-plan");
+      assert.equal(result.plan_label, "Pro");
+      assert.equal(result.primary_window.used_percent, 25);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("tries the next regional provider when the first one returns 405", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-region-fallback-"));
     try {
@@ -513,6 +727,46 @@ describe("fetchZcodeLimits", () => {
     }
   });
 
+  it("does not use stale start-plan logs for a failing coding-plan provider", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-coding-no-start-log-"));
+    try {
+      const v2 = path.join(tmp, ".zcode", "v2");
+      fs.mkdirSync(v2, { recursive: true });
+      fs.writeFileSync(
+        path.join(v2, "config.json"),
+        JSON.stringify({
+          provider: {
+            "builtin:zai-coding-plan": {
+              enabled: true,
+              options: { apiKey: "coding-key", baseURL: "https://api.z.ai/api/anthropic" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      writeZcodeBalanceLog(v2, "2026-07-08 09:08:30.077", { providerId: "builtin:zai-start-plan" });
+      const result = await fetchZcodeLimits({
+        home: tmp,
+        env: { TOKENTRACKER_ZCODE_APP_VERSION: "3.3.2" },
+        nowMs: new Date(2026, 6, 8, 9, 10, 0).getTime(),
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return { code: 500, success: false, msg: "Not authenticated", data: null };
+          },
+        }),
+      });
+      assert.equal(result.configured, true);
+      assert.match(result.error, /ZCode coding plan API error/);
+      assert.equal(result.source, undefined);
+      assert.equal(result.provider_errors.length, 1);
+      assert.match(result.provider_errors[0], /builtin:zai-coding-plan/);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("ignores stale ZCode billing logs instead of hiding the live API failure forever", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-stale-log-"));
     try {
@@ -550,7 +804,7 @@ describe("fetchZcodeLimits", () => {
     }
   });
 
-  it("uses the zcode-plan billing root for coding-plan providers with generic model base URLs", async () => {
+  it("uses the monitor quota API for coding-plan providers with generic model base URLs", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-coding-provider-"));
     try {
       const v2 = path.join(tmp, ".zcode", "v2");
@@ -569,19 +823,20 @@ describe("fetchZcodeLimits", () => {
       );
       const auth = loadZcodeApiKey({ home: tmp });
       assert.equal(auth.providerKey, "builtin:zai-coding-plan");
-      assert.equal(auth.billingBaseUrl, "https://zcode.z.ai/api/v1/zcode-plan");
+      assert.equal(auth.billingBaseUrl, null);
+      assert.equal(auth.quotaUrl, "https://api.z.ai/api/monitor/usage/quota/limit");
       const result = await fetchZcodeLimits({
         home: tmp,
         env: { TOKENTRACKER_ZCODE_APP_VERSION: "3.2.5" },
         fetchImpl: async (url, options) => {
-          assert.equal(url, "https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.2.5");
-          assert.equal(options.headers.Authorization, "Bearer gateway-key");
-          return { ok: true, status: 200, async json() { return balanceBody(); } };
+          assert.equal(url, "https://api.z.ai/api/monitor/usage/quota/limit");
+          assert.equal(options.headers.authorization, "gateway-key");
+          return { ok: true, status: 200, async json() { return codingPlanQuotaBody(); } };
         },
       });
       assert.equal(result.configured, true);
       assert.equal(result.error, null);
-      assert.equal(result.plan_label, "Start");
+      assert.equal(result.plan_label, "Pro");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

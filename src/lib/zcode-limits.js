@@ -4,6 +4,9 @@ const os = require("node:os");
 const path = require("node:path");
 
 const DEFAULT_BILLING_BASE_URL = "https://zcode.z.ai/api/v1/zcode-plan";
+const DEFAULT_ZAI_MONITOR_BASE_URL = "https://api.z.ai";
+const DEFAULT_BIGMODEL_MONITOR_BASE_URL = "https://bigmodel.cn";
+const ZCODE_MONITOR_QUOTA_PATH = "/api/monitor/usage/quota/limit";
 const DEFAULT_ZCODE_APP_VERSION = "3.2.5";
 const DEFAULT_ZCODE_LOG_FALLBACK_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
@@ -92,6 +95,28 @@ function loadZcodeProviderAvailability({ home, env } = {}) {
   }
 }
 
+function loadZcodeSelectedPlanProviderKeys({ home, env } = {}) {
+  const zcodeHome = resolveZcodeHome({ home, env });
+  const settingPath = path.join(zcodeHome, "v2", "setting.json");
+  if (!fs.existsSync(settingPath)) return [];
+  try {
+    const setting = JSON.parse(fs.readFileSync(settingPath, "utf8"));
+    const selected = setting?.modelProviderFamilySelectedKeys;
+    if (!selected || typeof selected !== "object") return [];
+    const domain = typeof setting?.providerFamilyDomain === "string" ? setting.providerFamilyDomain : "";
+    const domains = [domain, ...Object.keys(selected)].filter(Boolean);
+    const out = [];
+    for (const key of domains) {
+      const raw = typeof selected[key] === "string" ? selected[key].trim() : "";
+      const match = raw.match(/builtin:(?:bigmodel|zai)-(?:start|coding)-plan/);
+      if (match && !out.includes(match[0])) out.push(match[0]);
+    }
+    return out;
+  } catch (_error) {
+    return [];
+  }
+}
+
 function resolveZcodeCredentialsPath({ home, env } = {}) {
   return path.join(resolveZcodeHome({ home, env }), "v2", "credentials.json");
 }
@@ -165,13 +190,60 @@ function isZcodeBuiltinPlanProvider(providerKey) {
   return /^builtin:(bigmodel|zai)-(start|coding)-plan$/.test(providerKey);
 }
 
+function isZcodeCodingPlanProvider(providerKey) {
+  return /^builtin:(bigmodel|zai)-coding-plan$/.test(providerKey);
+}
+
+function isZcodeStartPlanProvider(providerKey) {
+  return /^builtin:(bigmodel|zai)-start-plan$/.test(providerKey);
+}
+
+function readEnvString(env, names) {
+  for (const name of names) {
+    const value = typeof env?.[name] === "string" ? env[name].trim() : "";
+    if (value) return value;
+  }
+  return "";
+}
+
 function resolveZcodeProviderBillingBaseUrl(providerKey, provider, env = process.env) {
   const explicit = resolveZcodeBillingBaseUrl(env);
   if (explicit !== DEFAULT_BILLING_BASE_URL) return explicit;
-  if (isZcodeBuiltinPlanProvider(providerKey)) return DEFAULT_BILLING_BASE_URL;
+  if (isZcodeStartPlanProvider(providerKey)) return DEFAULT_BILLING_BASE_URL;
   const baseUrl = typeof provider?.options?.baseURL === "string" ? provider.options.baseURL.trim() : "";
   if (/\/zcode-plan\/anthropic\/?$/i.test(baseUrl)) return baseUrl.replace(/\/anthropic\/?$/i, "");
   return null;
+}
+
+function normalizeUrlOrigin(value) {
+  try {
+    const url = new URL(value);
+    return url.origin.replace(/\/$/, "");
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveZcodeProviderQuotaUrl(providerKey, provider, env = process.env) {
+  if (!isZcodeCodingPlanProvider(providerKey)) return null;
+  const explicit = readEnvString(env, ["TOKENTRACKER_ZCODE_MONITOR_QUOTA_URL"]);
+  if (explicit) return explicit;
+
+  const baseUrl = typeof provider?.options?.baseURL === "string" ? provider.options.baseURL.trim() : "";
+  const baseOrigin = normalizeUrlOrigin(baseUrl);
+  const isZai = providerKey === "builtin:zai-coding-plan";
+  const origin = isZai
+    ? readEnvString(env, [
+        "TOKENTRACKER_ZCODE_ZAI_MONITOR_BASE_URL",
+        "ZAI_BUSINESS_BASE_URL",
+        "ZAI_PRODUCTION_BUSINESS_BASE_URL",
+      ]) || (baseOrigin && /(^|\.)api\.z\.ai$/i.test(new URL(baseOrigin).hostname) ? baseOrigin : DEFAULT_ZAI_MONITOR_BASE_URL)
+    : readEnvString(env, [
+        "TOKENTRACKER_ZCODE_BIGMODEL_MONITOR_BASE_URL",
+        "BIGMODEL_API_BASE_URL",
+        "BIGMODEL_PRODUCTION_API_BASE_URL",
+      ]) || DEFAULT_BIGMODEL_MONITOR_BASE_URL;
+  return `${origin.replace(/\/$/, "")}${ZCODE_MONITOR_QUOTA_PATH}`;
 }
 
 function loadZcodeAuthCandidates({ home, env } = {}) {
@@ -190,8 +262,14 @@ function loadZcodeAuthCandidates({ home, env } = {}) {
     ];
     const availability = loadZcodeProviderAvailability({ home, env });
     const hasAvailability = Object.keys(availability).length > 0;
+    const selectedCandidates = loadZcodeSelectedPlanProviderKeys({ home, env })
+      .filter((key) => defaultCandidates.includes(key));
     const availableCandidates = defaultCandidates.filter((key) => availability?.[key]?.status === "available");
-    const candidates = [...availableCandidates, ...defaultCandidates.filter((key) => !availableCandidates.includes(key))];
+    const candidates = [
+      ...selectedCandidates,
+      ...availableCandidates,
+      ...defaultCandidates,
+    ].filter((key, index, all) => all.indexOf(key) === index);
     const auths = [];
     for (const key of candidates) {
       const provider = providers[key];
@@ -200,6 +278,7 @@ function loadZcodeAuthCandidates({ home, env } = {}) {
       if (hasAvailability && availability?.[key]?.status && availability[key].status !== "available") continue;
       const apiKey = typeof provider?.options?.apiKey === "string" ? provider.options.apiKey.trim() : "";
       const billingBaseUrl = resolveZcodeProviderBillingBaseUrl(key, provider, env);
+      const quotaUrl = resolveZcodeProviderQuotaUrl(key, provider, env);
       const credentialApiKey = resolveZcodeCredentialAuth(key, { home, env });
       const authEntries = [
         credentialApiKey ? { apiKey: credentialApiKey, authSource: "credential:zcodejwttoken" } : null,
@@ -207,14 +286,16 @@ function loadZcodeAuthCandidates({ home, env } = {}) {
       ].filter(Boolean);
       const seenKeys = new Set();
       for (const entry of authEntries) {
-        if (!billingBaseUrl || seenKeys.has(entry.apiKey)) continue;
+        if ((!billingBaseUrl && !quotaUrl) || seenKeys.has(entry.apiKey)) continue;
         seenKeys.add(entry.apiKey);
         auths.push({
           apiKey: entry.apiKey,
           auth_source: entry.authSource,
           providerKey: key,
+          planKind: isZcodeCodingPlanProvider(key) ? "coding-plan" : "start-plan",
           baseUrl: provider?.options?.baseURL || null,
           billingBaseUrl,
+          quotaUrl,
           availability: availability?.[key]?.status || null,
         });
       }
@@ -380,6 +461,103 @@ async function fetchZcodeBilling(apiKey, { fetchImpl = fetch, baseUrl, env, home
   return res.json();
 }
 
+async function fetchZcodeCodingPlanQuota(apiKey, { fetchImpl = fetch, quotaUrl } = {}) {
+  const res = await fetchImpl(quotaUrl, {
+    method: "GET",
+    headers: {
+      authorization: apiKey,
+      Accept: "application/json",
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("Not authenticated with ZCode coding plan. Run `zcode` in Terminal to log in.");
+  }
+  let body = null;
+  try {
+    body = await res.json();
+  } catch (_error) {
+    body = null;
+  }
+  if (!res.ok) {
+    const code = body?.code != null ? ` code=${body.code}` : "";
+    const msg = body?.msg || body?.message ? ` msg=${body.msg || body.message}` : "";
+    throw new Error(`ZCode coding plan API returned ${res.status}${code}${msg}`);
+  }
+  return body;
+}
+
+function quotaTimestampToIso(value) {
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value.trim());
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  const n = zcodeValNumber(value);
+  if (n == null || n <= 0) return null;
+  return new Date(n > 10_000_000_000 ? n : n * 1000).toISOString();
+}
+
+function normalizeZcodeQuotaLimit(limit) {
+  if (!limit || typeof limit !== "object") return null;
+  const total = zcodeValNumber(limit.number) ?? zcodeValNumber(limit.unit);
+  const used = zcodeValNumber(limit.usage) ?? zcodeValNumber(limit.currentValue);
+  const remaining = zcodeValNumber(limit.remaining);
+  const rawPercentage = zcodeValNumber(limit.percentage);
+  let usedPercent = null;
+  if (total != null && total > 0 && used != null) {
+    usedPercent = (used / total) * 100;
+  } else if (total != null && total > 0 && remaining != null) {
+    usedPercent = ((total - remaining) / total) * 100;
+  } else if (rawPercentage != null) {
+    usedPercent = rawPercentage <= 1 ? rawPercentage * 100 : rawPercentage;
+  }
+
+  const detail = Array.isArray(limit.usageDetails) ? limit.usageDetails.find((item) => item && typeof item === "object") : null;
+  const showName =
+    (typeof detail?.displayName === "string" && detail.displayName.trim())
+    || (typeof detail?.modelCode === "string" && detail.modelCode.trim())
+    || (typeof limit.type === "string" && limit.type.trim())
+    || "Coding plan";
+
+  return {
+    show_name: showName,
+    entitlement_id: typeof limit.type === "string" ? limit.type : "",
+    total_units: total,
+    used_units: used,
+    remaining_units: remaining,
+    window: buildWindow({ usedPercent, resetAt: quotaTimestampToIso(limit.nextResetTime) }),
+  };
+}
+
+function normalizeZcodeCodingPlanQuotaResponse(body) {
+  const code = typeof body?.code === "number" ? body.code : null;
+  if (code !== null && code !== 0 && code !== 200) {
+    throw new Error(`ZCode coding plan API error: code=${code} msg=${body?.msg || body?.message || "unknown"}`);
+  }
+  if (body?.success === false) {
+    throw new Error(`ZCode coding plan API error: msg=${body?.msg || body?.message || "unknown"}`);
+  }
+  const data = body?.data;
+  if (!data || typeof data !== "object") {
+    throw new Error("Could not parse ZCode coding plan quota: missing data");
+  }
+  const limits = Array.isArray(data.limits) ? data.limits : [];
+  const buckets = limits.map(normalizeZcodeQuotaLimit).filter((bucket) => bucket?.window);
+  const sorted = buckets.slice().sort((a, b) => {
+    const aTotal = a.total_units || 0;
+    const bTotal = b.total_units || 0;
+    return bTotal - aTotal;
+  });
+  const level = typeof data.level === "string" && data.level.trim() ? data.level.trim() : null;
+  return {
+    server_time: null,
+    plan_id: level,
+    plan_label: level ? deriveZcodePlanLabel(level) || level : "Coding",
+    buckets: sorted,
+    primary_window: sorted[0]?.window || null,
+    secondary_window: sorted[1]?.window || null,
+  };
+}
+
 function parseZcodeLogTimestamp(line) {
   const match = line.match(/^\[(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})\]/);
   if (!match) return null;
@@ -433,7 +611,13 @@ function extractZcodeBalanceLogRecord(line) {
   }
 }
 
-function loadLatestZcodeBalanceFromLogs({ home, env = process.env, providerKeys = [], nowMs = Date.now() } = {}) {
+function loadLatestZcodeBalanceFromLogs({
+  home,
+  env = process.env,
+  providerKeys = [],
+  nowMs = Date.now(),
+  requireProviderMatch = false,
+} = {}) {
   if (env.TOKENTRACKER_ZCODE_DISABLE_LOG_FALLBACK === "1") return null;
   const maxAgeMs = parsePositiveInteger(env.TOKENTRACKER_ZCODE_LOG_MAX_AGE_MS, DEFAULT_ZCODE_LOG_FALLBACK_MAX_AGE_MS);
   const preferredProviders = new Set(providerKeys.filter(Boolean));
@@ -459,7 +643,8 @@ function loadLatestZcodeBalanceFromLogs({ home, env = process.env, providerKeys 
       }
     }
   }
-  return preferred || fallback;
+  if (preferred) return preferred;
+  return requireProviderMatch && preferredProviders.size > 0 ? null : fallback;
 }
 
 function zcodeLogFallbackResult(logRecord, errors = []) {
@@ -489,17 +674,26 @@ async function fetchZcodeLimits({ home, env, fetchImpl = fetch, nowMs = Date.now
   let emptySuccess = null;
   for (const auth of authCandidates) {
     try {
-      const body = await fetchZcodeBilling(auth.apiKey, {
-        fetchImpl,
-        baseUrl: auth.billingBaseUrl,
-        env,
-        home,
-      });
-      const apiCode = typeof body?.code === "number" ? body.code : null;
-      if (apiCode !== null && apiCode !== 0) {
-        throw new Error(`ZCode billing API error: code=${apiCode} msg=${body?.msg || "unknown"}`);
+      const body = auth.planKind === "coding-plan"
+        ? await fetchZcodeCodingPlanQuota(auth.apiKey, {
+            fetchImpl,
+            quotaUrl: auth.quotaUrl,
+          })
+        : await fetchZcodeBilling(auth.apiKey, {
+            fetchImpl,
+            baseUrl: auth.billingBaseUrl,
+            env,
+            home,
+          });
+      const normalized = auth.planKind === "coding-plan"
+        ? normalizeZcodeCodingPlanQuotaResponse(body)
+        : normalizeZcodeBalanceResponse(body);
+      if (auth.planKind !== "coding-plan") {
+        const apiCode = typeof body?.code === "number" ? body.code : null;
+        if (apiCode !== null && apiCode !== 0) {
+          throw new Error(`ZCode billing API error: code=${apiCode} msg=${body?.msg || "unknown"}`);
+        }
       }
-      const normalized = normalizeZcodeBalanceResponse(body);
       const result = {
         configured: true,
         error: null,
@@ -521,6 +715,7 @@ async function fetchZcodeLimits({ home, env, fetchImpl = fetch, nowMs = Date.now
     env,
     providerKeys: authCandidates.map((auth) => auth.providerKey),
     nowMs,
+    requireProviderMatch: authCandidates.some((auth) => auth.planKind === "coding-plan"),
   });
   if (logFallback) return zcodeLogFallbackResult(logFallback, errors);
   return {
@@ -536,13 +731,17 @@ module.exports = {
   resolveZcodeAppVersion,
   isZcodeInstalled,
   loadZcodeProviderAvailability,
+  loadZcodeSelectedPlanProviderKeys,
   loadZcodeCredential,
   loadLatestZcodeBalanceFromLogs,
   resolveZcodeProviderBillingBaseUrl,
+  resolveZcodeProviderQuotaUrl,
   loadZcodeAuthCandidates,
   loadZcodeApiKey,
   deriveZcodePlanLabel,
   normalizeZcodeBalanceResponse,
+  normalizeZcodeCodingPlanQuotaResponse,
   fetchZcodeBilling,
+  fetchZcodeCodingPlanQuota,
   fetchZcodeLimits,
 };
