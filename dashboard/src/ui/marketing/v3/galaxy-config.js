@@ -229,21 +229,6 @@ export const GALAXY_VERTEX = /* glsl */ `
       alpha = 0.22 * tw * uIntro;
     }
 
-    // --- GRAVITATIONAL LENSING WARP (3D BLACK HOLE) ---
-    float r_local = length(p.xy);
-    if (r_local > 0.01) {
-      float R_horizon = 0.7;
-      // Fade out particles that fall below the event horizon
-      float horizonFade = smoothstep(0.4, R_horizon, r_local);
-      alpha *= horizonFade;
-      
-      // Deflect particles around the event horizon
-      if (r_local < R_horizon * 4.0) {
-        float deflection = 0.38 * R_horizon * R_horizon / (r_local - R_horizon * 0.7);
-        p.xy += normalize(p.xy) * deflection;
-      }
-    }
-
     // --- COSMIC BIG BANG EXPLOSION ---
     // Calculate 3D explosion direction based on the local position p
     // Adding some random spread on Z direction so it expands as a 3D dome/ellipsoid.
@@ -265,33 +250,8 @@ export const GALAXY_VERTEX = /* glsl */ `
     // Scale particle sizes up moderately during the flash phase to intensify the explosion
     float sizeMultiplier = 1.0 + flash * 0.8;
 
-    // --- Gravitational Lensing & Horizon Void (The 3D Black Hole) ---
-    float R_horizon = 0.5; // Event horizon (the dark core)
-    float R_photon = 1.0;  // Accretion ring (where light gets trapped and glows)
-    float r2d = max(0.001, length(p.xz));
-    
-    if (r2d < 5.0) {
-      // 1. Relativistic Frame Dragging (The violent swirl near the core)
-      float swirlFactor = smoothstep(5.0, 0.0, r2d);
-      float frameDrag = pow(swirlFactor, 2.0) * 12.0; // Fast spin
-      float sDrag = sin(frameDrag);
-      float cDrag = cos(frameDrag);
-      p.xz = vec2(p.x * cDrag - p.z * sDrag, p.x * sDrag + p.z * cDrag);
-      
-      // 2. Accretion Disk Compression
-      // Particles bunch up into a bright, dense ring right at R_photon
-      float ringPull = exp(-pow(r2d - R_photon, 2.0) * 5.0); 
-      
-      // Push particles slightly outward to form a sharp ring edge
-      p.xz += (p.xz / r2d) * ringPull * 0.5;
-      
-      // 3. Superheating (Accretion Glow)
-      glow += ringPull * 2.0; 
-    }
-    
-    // Completely fade out particles that cross the horizon
-    float finalR = length(p.xz);
-    float burnOut = 1.0 - smoothstep(R_horizon - 0.2, R_horizon + 0.3, finalR);
+    // Individual particle burnout based on uProgress and aSeed (burn out completely by progress = 0.80)
+    float burnOut = smoothstep(0.08 + 0.52 * fract(aSeed * 23.45), 0.80, uProgress);
     alpha *= (1.0 - burnOut);
     // ---------------------------------
 
@@ -300,6 +260,24 @@ export const GALAXY_VERTEX = /* glsl */ `
     float s = sin(uTilt);
     p = vec3(p.x, p.y * c - p.z * s, p.y * s + p.z * c);
     p.y += uYOffset;
+
+    // --- GRAVITATIONAL LENSING WARP (3D BLACK HOLE) ---
+    vec3 center = vec3(0.0, uYOffset, 0.0);
+    vec3 toParticle = p - center;
+    float r_tilted = length(toParticle.xy);
+    if (r_tilted > 0.01) {
+      float R_horizon = 0.65;
+      // Fade out particles that fall below the event horizon
+      float horizonFade = smoothstep(0.3, R_horizon, r_tilted);
+      alpha *= horizonFade;
+      
+      // Deflect particles around the event horizon (isotropic screen deflection)
+      if (r_tilted < R_horizon * 4.5) {
+        float deflection = 0.38 * R_horizon * R_horizon / (r_tilted - R_horizon * 0.7);
+        p.xy += normalize(toParticle.xy) * deflection;
+        p.z += deflection * 0.5; // push lensed rays forward
+      }
+    }
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
