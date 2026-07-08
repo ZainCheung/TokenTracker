@@ -102,6 +102,15 @@ export const PROVIDER_LIMIT_SPECS = {
   },
   zcode: {
     windows(data) {
+      // Coding plans expose 5h / weekly / tools windows (ZCode 3.3.x).
+      // Start plans keep the per-model GLM-5.2 / GLM-5-Turbo balances.
+      if (data.plan_kind === "coding-plan") {
+        return [
+          { key: "5h", labelKey: "limits.label.zcode_5h", window: data.primary_window },
+          { key: "weekly", labelKey: "limits.label.zcode_weekly", window: data.secondary_window },
+          { key: "tools", labelKey: "limits.label.zcode_tools", window: data.tertiary_window },
+        ];
+      }
       return [
         { key: "glm52", labelKey: "limits.label.zcode_glm52", window: data.primary_window },
         { key: "glm5t", labelKey: "limits.label.zcode_glm5t", window: data.secondary_window },
@@ -157,6 +166,9 @@ export function usageLimitsLabelCopyAnchor() {
     copy("limits.label.copilot_chat"),
     copy("limits.label.zcode_glm52"),
     copy("limits.label.zcode_glm5t"),
+    copy("limits.label.zcode_5h"),
+    copy("limits.label.zcode_weekly"),
+    copy("limits.label.zcode_tools"),
     copy("limits.label.opencode_go_5h"),
     copy("limits.label.opencode_go_weekly"),
     copy("limits.label.opencode_go_monthly"),

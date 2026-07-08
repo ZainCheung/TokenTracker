@@ -378,11 +378,13 @@ function normalizeZcodeBalanceResponse(body) {
   if (!balances.length) {
     return {
       server_time: zcodeValNumber(data.server_time),
+      plan_kind: "start-plan",
       plan_id: null,
       plan_label: null,
       buckets: [],
       primary_window: null,
       secondary_window: null,
+      tertiary_window: null,
     };
   }
 
@@ -417,11 +419,13 @@ function normalizeZcodeBalanceResponse(body) {
   const planId = typeof balances[0]?.plan_id === "string" ? balances[0].plan_id : null;
   return {
     server_time: serverTime,
+    plan_kind: "start-plan",
     plan_id: planId,
     plan_label: deriveZcodePlanLabel(planId),
     buckets: sorted,
     primary_window: sorted[0]?.window || null,
     secondary_window: sorted[1]?.window || null,
+    tertiary_window: sorted[2]?.window || null,
   };
 }
 
@@ -496,34 +500,52 @@ function quotaTimestampToIso(value) {
   return new Date(n > 10_000_000_000 ? n : n * 1000).toISOString();
 }
 
-function normalizeZcodeQuotaLimit(limit) {
+function findZcodeQuotaLimit(limits, type, unit, number = null) {
+  if (!Array.isArray(limits)) return null;
+  return (
+    limits.find((limit) => {
+      if (!limit || typeof limit !== "object") return false;
+      if (limit.type !== type) return false;
+      if (zcodeValNumber(limit.unit) !== unit) return false;
+      if (number == null) return true;
+      return zcodeValNumber(limit.number) === number;
+    }) || null
+  );
+}
+
+// ZCode 3.3.x coding-plan quota rows expose `percentage` as already-used %
+// (0–100). `unit`/`number` identify the window (5h / weekly / tools), not a
+// token total — deriving used% from usage/number turns an unused TIME_LIMIT
+// (usage=100, number=1, percentage=0) into a false 100% bar.
+function normalizeZcodeQuotaLimit(limit, { showName } = {}) {
   if (!limit || typeof limit !== "object") return null;
-  const total = zcodeValNumber(limit.number) ?? zcodeValNumber(limit.unit);
+  const total = zcodeValNumber(limit.number);
   const used = zcodeValNumber(limit.usage) ?? zcodeValNumber(limit.currentValue);
   const remaining = zcodeValNumber(limit.remaining);
   const rawPercentage = zcodeValNumber(limit.percentage);
   let usedPercent = null;
-  if (total != null && total > 0 && used != null) {
+  if (rawPercentage != null) {
+    usedPercent = rawPercentage;
+  } else if (total != null && total > 0 && used != null) {
     usedPercent = (used / total) * 100;
-  } else if (total != null && total > 0 && remaining != null) {
+  } else if (total != null && total > 0 && remaining != null && remaining <= total) {
     usedPercent = ((total - remaining) / total) * 100;
-  } else if (rawPercentage != null) {
-    usedPercent = rawPercentage <= 1 ? rawPercentage * 100 : rawPercentage;
   }
 
   const detail = Array.isArray(limit.usageDetails) ? limit.usageDetails.find((item) => item && typeof item === "object") : null;
-  const showName =
-    (typeof detail?.displayName === "string" && detail.displayName.trim())
+  const resolvedShowName =
+    (typeof showName === "string" && showName.trim())
+    || (typeof detail?.displayName === "string" && detail.displayName.trim())
     || (typeof detail?.modelCode === "string" && detail.modelCode.trim())
     || (typeof limit.type === "string" && limit.type.trim())
     || "Coding plan";
 
   return {
-    show_name: showName,
+    show_name: resolvedShowName,
     entitlement_id: typeof limit.type === "string" ? limit.type : "",
-    total_units: total,
-    used_units: used,
-    remaining_units: remaining,
+    total_units: rawPercentage != null ? null : total,
+    used_units: rawPercentage != null ? null : used,
+    remaining_units: rawPercentage != null ? null : remaining,
     window: buildWindow({ usedPercent, resetAt: quotaTimestampToIso(limit.nextResetTime) }),
   };
 }
@@ -541,20 +563,35 @@ function normalizeZcodeCodingPlanQuotaResponse(body) {
     throw new Error("Could not parse ZCode coding plan quota: missing data");
   }
   const limits = Array.isArray(data.limits) ? data.limits : [];
-  const buckets = limits.map(normalizeZcodeQuotaLimit).filter((bucket) => bucket?.window);
-  const sorted = buckets.slice().sort((a, b) => {
-    const aTotal = a.total_units || 0;
-    const bTotal = b.total_units || 0;
-    return bTotal - aTotal;
-  });
+  // Match ZCode's own sidebar: TOKENS_LIMIT(unit=3,number=5)=5h,
+  // TOKENS_LIMIT(unit=6)=weekly, TIME_LIMIT(unit=5,number=1)=tool calls.
+  const fiveHourLimit = findZcodeQuotaLimit(limits, "TOKENS_LIMIT", 3, 5);
+  const weeklyLimit = findZcodeQuotaLimit(limits, "TOKENS_LIMIT", 6);
+  const toolsLimit = findZcodeQuotaLimit(limits, "TIME_LIMIT", 5, 1);
+  const hasNamedWindows = Boolean(fiveHourLimit || weeklyLimit || toolsLimit);
+
+  let buckets;
+  if (hasNamedWindows) {
+    buckets = [
+      fiveHourLimit ? normalizeZcodeQuotaLimit(fiveHourLimit, { showName: "5h" }) : null,
+      weeklyLimit ? normalizeZcodeQuotaLimit(weeklyLimit, { showName: "Weekly" }) : null,
+      toolsLimit ? normalizeZcodeQuotaLimit(toolsLimit, { showName: "Tools" }) : null,
+    ].filter((bucket) => bucket?.window);
+  } else {
+    buckets = limits.map((limit) => normalizeZcodeQuotaLimit(limit)).filter((bucket) => bucket?.window);
+    buckets.sort((a, b) => (b.total_units || 0) - (a.total_units || 0));
+  }
+
   const level = typeof data.level === "string" && data.level.trim() ? data.level.trim() : null;
   return {
     server_time: null,
+    plan_kind: "coding-plan",
     plan_id: level,
     plan_label: level ? deriveZcodePlanLabel(level) || level : "Coding",
-    buckets: sorted,
-    primary_window: sorted[0]?.window || null,
-    secondary_window: sorted[1]?.window || null,
+    buckets,
+    primary_window: buckets[0]?.window || null,
+    secondary_window: buckets[1]?.window || null,
+    tertiary_window: buckets[2]?.window || null,
   };
 }
 

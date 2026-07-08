@@ -317,14 +317,18 @@ struct ZcodeLimits: Codable, Equatable {
     let configured: Bool
     let error: String?
     let planLabel: String?
+    let planKind: String?
     let primaryWindow: GenericLimitWindow?
     let secondaryWindow: GenericLimitWindow?
+    let tertiaryWindow: GenericLimitWindow?
 
     enum CodingKeys: String, CodingKey {
         case configured, error
         case planLabel = "plan_label"
+        case planKind = "plan_kind"
         case primaryWindow = "primary_window"
         case secondaryWindow = "secondary_window"
+        case tertiaryWindow = "tertiary_window"
     }
 }
 

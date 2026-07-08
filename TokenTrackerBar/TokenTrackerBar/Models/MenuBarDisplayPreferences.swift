@@ -68,8 +68,8 @@ enum MenuBarDisplayMetric: String, CaseIterable {
         case .antigravityClaude5h: return "Ag Cl 5h"
         case .antigravityGeminiWeekly: return "Ag Gm 7d"
         case .antigravityGemini5h: return "Ag Gm 5h"
-        case .zcodeGlm52: return "ZC 5.2"
-        case .zcodeGlm5Turbo: return "ZC Turbo"
+        case .zcodeGlm52: return "ZC Pri"
+        case .zcodeGlm5Turbo: return "ZC Sec"
         }
     }
 
@@ -106,8 +106,8 @@ enum MenuBarDisplayMetric: String, CaseIterable {
         case .antigravityClaude5h: return "Antigravity Claude 5h Limit"
         case .antigravityGeminiWeekly: return "Antigravity Gemini 7d Limit"
         case .antigravityGemini5h: return "Antigravity Gemini 5h Limit"
-        case .zcodeGlm52: return "ZCode GLM-5.2 Limit"
-        case .zcodeGlm5Turbo: return "ZCode GLM-5-Turbo Limit"
+        case .zcodeGlm52: return "ZCode Primary Limit"
+        case .zcodeGlm5Turbo: return "ZCode Secondary Limit"
         }
     }
 

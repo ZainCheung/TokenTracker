@@ -621,6 +621,9 @@ limits.provider.antigravity,ui,LimitsPage,UsageLimitsPanel,provider_antigravity,
 limits.provider.zcode,ui,LimitsPage,UsageLimitsPanel,provider_zcode,"ZCode",,active
 limits.label.zcode_glm52,ui,LimitsPage,UsageLimitsPanel,zcode_glm52,"GLM-5.2",,active
 limits.label.zcode_glm5t,ui,LimitsPage,UsageLimitsPanel,zcode_glm5t,"GLM-5-Turbo",,active
+limits.label.zcode_5h,ui,LimitsPage,UsageLimitsPanel,zcode_5h,"5h",,active
+limits.label.zcode_weekly,ui,LimitsPage,UsageLimitsPanel,zcode_weekly,"Weekly",,active
+limits.label.zcode_tools,ui,LimitsPage,UsageLimitsPanel,zcode_tools,"Tools",,active
 limits.label.claude_5h,ui,LimitsPage,UsageLimitsPanel,claude_5h,"5h",,active
 limits.label.claude_7d,ui,LimitsPage,UsageLimitsPanel,claude_7d,"7d",,active
 limits.label.claude_opus,ui,LimitsPage,UsageLimitsPanel,claude_opus,"Opus",,active

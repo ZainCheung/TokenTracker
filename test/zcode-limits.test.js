@@ -82,6 +82,50 @@ function codingPlanQuotaBody() {
   };
 }
 
+// Real lite coding-plan payload from issue #279 (before/after model use).
+// percentage is already-used %; unit/number identify the window, not a token total.
+function realLiteCodingPlanQuotaBody({ fiveHourPercent = 14 } = {}) {
+  return {
+    code: 200,
+    msg: "Operation successful",
+    success: true,
+    data: {
+      level: "lite",
+      limits: [
+        {
+          type: "TIME_LIMIT",
+          unit: 5,
+          number: 1,
+          usage: 100,
+          currentValue: 0,
+          remaining: 100,
+          percentage: 0,
+          nextResetTime: 1_786_091_571_974,
+          usageDetails: [
+            { modelCode: "search-prime", usage: 0 },
+            { modelCode: "web-reader", usage: 0 },
+            { modelCode: "zread", usage: 0 },
+          ],
+        },
+        {
+          type: "TOKENS_LIMIT",
+          unit: 3,
+          number: 5,
+          percentage: fiveHourPercent,
+          nextResetTime: 1_783_540_151_760,
+        },
+        {
+          type: "TOKENS_LIMIT",
+          unit: 6,
+          number: 1,
+          percentage: 43,
+          nextResetTime: 1_784_017_971_993,
+        },
+      ],
+    },
+  };
+}
+
 function zcodeCredentialSecret(home) {
   return `zcode-credential-fallback:${process.platform}:${home}:${os.userInfo().username || ""}`;
 }
@@ -558,11 +602,94 @@ describe("fetchZcodeLimits", () => {
   it("normalizes ZCode coding-plan quota responses", () => {
     const result = normalizeZcodeCodingPlanQuotaResponse(codingPlanQuotaBody());
     assert.equal(result.plan_label, "Pro");
+    assert.equal(result.plan_kind, "coding-plan");
     assert.equal(result.buckets.length, 2);
-    // The largest limit sorts first.
+    // Legacy token-total shape (no unit/number window ids) sorts by total.
     assert.equal(result.buckets[0].show_name, "GLM-5-Turbo");
     assert.equal(result.primary_window.used_percent, 25);
     assert.equal(result.primary_window.reset_at, "2026-07-15T15:59:59.000Z");
+  });
+
+  it("uses percentage from the real Z.ai lite coding-plan payload (issue #279)", () => {
+    const before = normalizeZcodeCodingPlanQuotaResponse(realLiteCodingPlanQuotaBody({ fiveHourPercent: 14 }));
+    assert.equal(before.plan_kind, "coding-plan");
+    assert.equal(before.plan_label, "Lite");
+    assert.deepEqual(
+      before.buckets.map((b) => b.show_name),
+      ["5h", "Weekly", "Tools"],
+    );
+    // Unused TIME_LIMIT has usage=100/number=1 but percentage=0 — must not become 100%.
+    assert.deepEqual(before.primary_window, {
+      used_percent: 14,
+      reset_at: "2026-07-08T19:49:11.760Z",
+    });
+    assert.deepEqual(before.secondary_window, {
+      used_percent: 43,
+      reset_at: "2026-07-14T08:32:51.993Z",
+    });
+    assert.deepEqual(before.tertiary_window, {
+      used_percent: 0,
+      reset_at: "2026-08-07T08:32:51.974Z",
+    });
+
+    const after = normalizeZcodeCodingPlanQuotaResponse(realLiteCodingPlanQuotaBody({ fiveHourPercent: 18 }));
+    assert.equal(after.primary_window.used_percent, 18);
+    assert.equal(after.secondary_window.used_percent, 43);
+    assert.equal(after.tertiary_window.used_percent, 0);
+  });
+
+  it("fetches and normalizes the issue #279 lite coding-plan shape end-to-end", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-zcode-lite-coding-e2e-"));
+    try {
+      const v2 = path.join(tmp, ".zcode", "v2");
+      fs.mkdirSync(v2, { recursive: true });
+      fs.writeFileSync(
+        path.join(v2, "config.json"),
+        JSON.stringify({
+          provider: {
+            "builtin:zai-coding-plan": {
+              enabled: true,
+              options: { apiKey: "coding-key", baseURL: "https://api.z.ai/api/anthropic" },
+            },
+          },
+        }),
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(v2, "setting.json"),
+        JSON.stringify({
+          providerFamilyDomain: "zai",
+          modelProviderFamilySelectedKeys: {
+            zai: "coding-plan:builtin:zai-coding-plan",
+          },
+        }),
+        "utf8",
+      );
+      const result = await fetchZcodeLimits({
+        home: tmp,
+        fetchImpl: async (url, options) => {
+          assert.equal(url, "https://api.z.ai/api/monitor/usage/quota/limit");
+          assert.equal(options.headers.authorization, "coding-key");
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return realLiteCodingPlanQuotaBody({ fiveHourPercent: 14 });
+            },
+          };
+        },
+      });
+      assert.equal(result.configured, true);
+      assert.equal(result.error, null);
+      assert.equal(result.provider_key, "builtin:zai-coding-plan");
+      assert.equal(result.plan_kind, "coding-plan");
+      assert.equal(result.plan_label, "Lite");
+      assert.equal(result.primary_window.used_percent, 14);
+      assert.equal(result.secondary_window.used_percent, 43);
+      assert.equal(result.tertiary_window.used_percent, 0);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it("fetches coding-plan usage from the monitor quota API instead of billing/balance", async () => {
