@@ -701,9 +701,14 @@ private struct ProviderClickableStyle: ViewModifier {
                     Image(systemName: "clock.arrow.circlepath")
                         .foregroundStyle(.orange)
                         .opacity(isStale && !(hovering || isActive) ? 1 : 0)
+                        .accessibilityLabel(Strings.limitsStaleAccessibility)
+                        .accessibilityHidden(!isStale)
+                    // Decorative click affordance — the whole block carries the tap
+                    // gesture, so keep VoiceOver from announcing the raw symbol name.
                     Image(systemName: "info.circle")
                         .foregroundStyle(.tertiary)
                         .opacity(hovering || isActive ? 1 : 0)
+                        .accessibilityHidden(true)
                 }
                 .font(.system(size: 10, weight: .medium))
                 .padding(.top, 6)
@@ -770,8 +775,10 @@ private struct LimitsExplainContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         if isStale {
+                            // Decorative — `updatedLabel` already conveys staleness in text.
                             Image(systemName: "clock.arrow.circlepath")
                                 .font(.system(size: 9, weight: .medium))
+                                .accessibilityHidden(true)
                         }
                         Text(updatedLabel)
                             .fixedSize(horizontal: false, vertical: true)

@@ -116,7 +116,7 @@ enum Strings {
         }
         let hours = Int(seconds) / 3600
         let rel: String
-        if hours > 24 {
+        if hours >= 24 {
             rel = "\(hours / 24)d"
         } else if hours > 0 {
             rel = "\(hours)h"
@@ -124,6 +124,11 @@ enum Strings {
             rel = "\(Int(seconds) / 60)m"
         }
         return t("Updated \(rel) ago", "\(rel)前更新", "\(rel)前更新", "\(rel)前に更新", "\(rel) 전 업데이트됨")
+    }
+    /// VoiceOver label for the amber stale-data badge on a provider row (the glyph
+    /// alone would be read as its raw SF Symbol name).
+    static var limitsStaleAccessibility: String {
+        t("Data is stale", "数据已过期", "資料已過期", "データが古くなっています", "데이터가 오래되었습니다")
     }
     /// When a rate-limited panel will next attempt a refresh, e.g. "Retrying 7/7 11:11".
     /// Shown beneath the updated line while a 429 cool-down is pending.
