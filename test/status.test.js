@@ -24,7 +24,7 @@ test("status prints last upload timestamps from upload.throttle.json", async () 
 
     await fs.writeFile(
       path.join(process.env.CODEX_HOME, "config.toml"),
-      'notify = [\"/usr/bin/env\", \"node\", \"~/.tokentracker/bin/notify.cjs\"]\n',
+      `notify = ["/usr/bin/env", "node", ${JSON.stringify(path.join(tmp, ".tokentracker", "bin", "notify.cjs"))}]\n`,
       "utf8",
     );
 
@@ -79,6 +79,50 @@ test("status prints last upload timestamps from upload.throttle.json", async () 
     assert.match(out, /- Last upload: 2025-12-18T10:19:05\.522Z/);
     assert.match(out, /- Last OpenClaw-triggered sync: 2026-02-12T00:00:00.000Z/);
     assert.match(out, /- Next upload after: 2025-12-18T10:19:06\.522Z/);
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("status reports Codex notify unset when config points to another command", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-status-notify-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.writeFile(
+      path.join(process.env.CODEX_HOME, "config.toml"),
+      'notify = ["/Applications/SkyComputerUseClient", "turn-ended"]\n',
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(trackerDir, "config.json"),
+      JSON.stringify({ baseUrl: "https://example.invalid", deviceToken: "t" }) + "\n",
+      "utf8",
+    );
+
+    let out = "";
+    process.stdout.write = (chunk, enc, cb) => {
+      out += typeof chunk === "string" ? chunk : chunk.toString(enc || "utf8");
+      if (typeof cb === "function") cb();
+      return true;
+    };
+
+    await cmdStatus();
+
+    assert.match(out, /- Codex notify: unset/);
   } finally {
     process.stdout.write = prevWrite;
     if (prevHome === undefined) delete process.env.HOME;

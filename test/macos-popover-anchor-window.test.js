@@ -67,4 +67,29 @@ test("menu-bar popover is anchored to an app-owned positioning window", () => {
     /Task\s*\{\s*@MainActor/,
     "The did-close cleanup must not be deferred through an unstructured MainActor task.",
   );
+  assert.match(
+    source,
+    /Task\s*\{\s*await\s+viewModel\.refreshForPopoverOpen\(\)\s*\}/,
+    "Opening the popover should run the throttled lightweight sync path before reloading dashboard data.",
+  );
+  assert.doesNotMatch(
+    source,
+    /Task\s*\{\s*await\s+viewModel\.loadAll\(\)\s*\}/,
+    "Opening the popover should not only reload cached dashboard data.",
+  );
+
+  const viewModelPath = path.join(
+    __dirname,
+    "..",
+    "TokenTrackerBar",
+    "TokenTrackerBar",
+    "ViewModels",
+    "DashboardViewModel.swift",
+  );
+  const viewModel = fs.readFileSync(viewModelPath, "utf8");
+  assert.match(
+    viewModel,
+    /shouldRunPopoverOpenLoad\([\s\S]*lastRefreshed/,
+    "When popover sync is throttled, dashboard reload should also be debounced by lastRefreshed.",
+  );
 });

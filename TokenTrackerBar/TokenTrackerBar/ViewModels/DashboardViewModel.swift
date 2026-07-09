@@ -60,6 +60,7 @@ class DashboardViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var resetBoundaryRefreshTask: Task<Void, Never>?
     private var lastBackgroundSyncAt: Date?
+    private var lastPopoverOpenSyncAttemptAt: Date?
     private let resetDetector = WeeklyLimitResetDetector()
 
     // MARK: - Computed Properties
@@ -257,6 +258,30 @@ class DashboardViewModel: ObservableObject {
         if shouldSync {
             await syncThenLoad()
         } else {
+            await loadAll()
+        }
+    }
+
+    func refreshForPopoverOpen(
+        now: Date = Date(),
+        syncInterval: TimeInterval = BackgroundRefreshPolicy.defaultPopoverOpenSyncInterval,
+        loadInterval: TimeInterval = BackgroundRefreshPolicy.defaultPopoverOpenLoadInterval
+    ) async {
+        guard !isLoading, !isSyncing else { return }
+        let shouldSync = BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+            now: now,
+            lastAttemptAt: lastPopoverOpenSyncAttemptAt,
+            lastSyncAt: lastBackgroundSyncAt,
+            syncInterval: syncInterval
+        )
+        if shouldSync {
+            lastPopoverOpenSyncAttemptAt = now
+            await syncThenLoad()
+        } else if BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+            now: now,
+            lastRefreshedAt: lastRefreshed,
+            loadInterval: loadInterval
+        ) {
             await loadAll()
         }
     }

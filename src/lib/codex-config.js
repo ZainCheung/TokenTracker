@@ -3,7 +3,14 @@ const path = require("node:path");
 
 const { ensureDir, readJson, writeJson } = require("./fs");
 
-async function upsertNotify({ configPath, notifyCmd, notifyOriginalPath, configLabel }) {
+async function upsertNotify({
+  configPath,
+  notifyCmd,
+  notifyOriginalPath,
+  configLabel,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   const originalText = await fs.readFile(configPath, "utf8").catch(() => null);
   if (originalText == null) {
     const label =
@@ -16,10 +23,10 @@ async function upsertNotify({ configPath, notifyCmd, notifyOriginalPath, configL
 
   if (!already) {
     // Persist original notify once (for uninstall + chaining).
-    if (existingNotify && existingNotify.length > 0) {
+    if (captureOriginal && existingNotify && existingNotify.length > 0) {
       await ensureDir(path.dirname(notifyOriginalPath));
       const existing = await readJson(notifyOriginalPath);
-      if (!existing) {
+      if (replaceOriginal || !existing) {
         await writeJson(notifyOriginalPath, {
           notify: existingNotify,
           capturedAt: new Date().toISOString(),
@@ -69,12 +76,20 @@ async function readNotify(configPath) {
   return extractNotify(text);
 }
 
-async function upsertCodexNotify({ codexConfigPath, notifyCmd, notifyOriginalPath }) {
+async function upsertCodexNotify({
+  codexConfigPath,
+  notifyCmd,
+  notifyOriginalPath,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   return upsertNotify({
     configPath: codexConfigPath,
     notifyCmd,
     notifyOriginalPath,
     configLabel: "Codex config",
+    captureOriginal,
+    replaceOriginal,
   });
 }
 
@@ -94,12 +109,20 @@ async function readCodexNotify(codexConfigPath) {
   return readNotify(codexConfigPath);
 }
 
-async function upsertEveryCodeNotify({ codeConfigPath, notifyCmd, notifyOriginalPath }) {
+async function upsertEveryCodeNotify({
+  codeConfigPath,
+  notifyCmd,
+  notifyOriginalPath,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   return upsertNotify({
     configPath: codeConfigPath,
     notifyCmd,
     notifyOriginalPath,
     configLabel: "Every Code config",
+    captureOriginal,
+    replaceOriginal,
   });
 }
 
