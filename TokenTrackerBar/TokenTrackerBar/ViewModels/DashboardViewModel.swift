@@ -60,6 +60,8 @@ class DashboardViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var resetBoundaryRefreshTask: Task<Void, Never>?
     private var lastBackgroundSyncAt: Date?
+    private var lastPopoverOpenSyncAttemptAt: Date?
+    private var shouldReloadAfterCurrentLoad = false
     private let resetDetector = WeeklyLimitResetDetector()
 
     // MARK: - Computed Properties
@@ -91,13 +93,17 @@ class DashboardViewModel: ObservableObject {
     // MARK: - Data Loading
 
     func loadAll() async {
-        guard !isLoading else { return }
+        guard !isLoading else {
+            shouldReloadAfterCurrentLoad = true
+            return
+        }
         isLoading = true
         error = nil
 
         serverOnline = await APIClient.shared.checkServerHealth()
         guard serverOnline else {
             isLoading = false
+            await runQueuedReloadIfNeeded()
             return
         }
 
@@ -227,6 +233,13 @@ class DashboardViewModel: ObservableObject {
         // Push the latest data to the widget snapshot file so the desktop
         // widgets pick it up on their next timeline reload.
         await WidgetSnapshotWriter.update(from: self)
+        await runQueuedReloadIfNeeded()
+    }
+
+    private func runQueuedReloadIfNeeded() async {
+        guard shouldReloadAfterCurrentLoad else { return }
+        shouldReloadAfterCurrentLoad = false
+        await loadAll()
     }
 
     // MARK: - Sync
@@ -257,6 +270,30 @@ class DashboardViewModel: ObservableObject {
         if shouldSync {
             await syncThenLoad()
         } else {
+            await loadAll()
+        }
+    }
+
+    func refreshForPopoverOpen(
+        now: Date = Date(),
+        syncInterval: TimeInterval = BackgroundRefreshPolicy.defaultPopoverOpenSyncInterval,
+        loadInterval: TimeInterval = BackgroundRefreshPolicy.defaultPopoverOpenLoadInterval
+    ) async {
+        guard !isLoading, !isSyncing else { return }
+        let shouldSync = BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+            now: now,
+            lastAttemptAt: lastPopoverOpenSyncAttemptAt,
+            lastSyncAt: lastBackgroundSyncAt,
+            syncInterval: syncInterval
+        )
+        if shouldSync {
+            lastPopoverOpenSyncAttemptAt = now
+            await syncThenLoad()
+        } else if BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+            now: now,
+            lastRefreshedAt: lastRefreshed,
+            loadInterval: loadInterval
+        ) {
             await loadAll()
         }
     }

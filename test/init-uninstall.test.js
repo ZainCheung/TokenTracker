@@ -4,7 +4,11 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { test } = require("node:test");
 
-const { cmdInit, buildNotifyHandler } = require("../src/commands/init");
+const {
+  cmdInit,
+  buildNotifyHandler,
+  repairCodexNotifyIntegration,
+} = require("../src/commands/init");
 const { cmdUninstall } = require("../src/commands/uninstall");
 const { buildClaudeHookCommand } = require("../src/lib/claude-config");
 const { buildGeminiHookCommand } = require("../src/lib/gemini-config");
@@ -33,7 +37,7 @@ function flattenHookEntries(entries) {
   return entries.flatMap((entry) => (Array.isArray(entry?.hooks) ? entry.hooks : [entry]));
 }
 
-async function runGeneratedNotifyHandler({ trackerDir, notify }) {
+async function runGeneratedNotifyHandler({ trackerDir, notify, args = ["--source=codex", "turn-ended"] }) {
   await fs.mkdir(trackerDir, { recursive: true });
   const notifyPath = path.join(trackerDir, "notify.cjs");
   await fs.writeFile(
@@ -52,7 +56,7 @@ async function runGeneratedNotifyHandler({ trackerDir, notify }) {
     delete env.TOKENTRACKER_DEVICE_TOKEN;
     const child = require("node:child_process").execFile(
       process.execPath,
-      [notifyPath, "--source=codex", "turn-ended"],
+      [notifyPath, ...args],
       { env },
       (err) => (err ? reject(err) : resolve()),
     );
@@ -60,7 +64,7 @@ async function runGeneratedNotifyHandler({ trackerDir, notify }) {
   });
 }
 
-test("notify handler skips SkyComputerUseClient and stale explicit original notify paths", async () => {
+test("notify handler chains executable original notify commands and skips stale explicit paths", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-chain-"));
   try {
     const markerPath = path.join(tmp, "unsafe-marker");
@@ -92,13 +96,267 @@ test("notify handler skips SkyComputerUseClient and stale explicit original noti
       trackerDir: path.join(tmp, "tracker-sky"),
       notify: [skyPath, "turn-ended"],
     });
-    assert.equal(await waitForFile(markerPath, { timeoutMs: 500 }), null);
+    assert.equal(await waitForFile(markerPath, { timeoutMs: 5000 }), "ran");
 
     await runGeneratedNotifyHandler({
       trackerDir: path.join(tmp, "tracker-missing"),
       notify: [path.join(tmp, "missing-notify"), "turn-ended"],
     });
   } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("notify handler avoids duplicating existing payload args when chaining", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-chain-"));
+  try {
+    const markerPath = path.join(tmp, "dedupe-marker");
+    const shimPath = path.join(tmp, "dedupe-notify.js");
+    await fs.writeFile(
+      shimPath,
+      `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join('|'));\n`,
+      "utf8",
+    );
+
+    await runGeneratedNotifyHandler({
+      trackerDir: path.join(tmp, "tracker-dedupe"),
+      notify: [process.execPath, shimPath, "turn-ended"],
+    });
+
+    const marker = await waitForFile(markerPath, { timeoutMs: 5000 });
+    assert.equal(marker, "turn-ended");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("notify handler preserves legitimate repeated payload args when chaining", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-chain-"));
+  try {
+    const markerPath = path.join(tmp, "repeat-marker");
+    const shimPath = path.join(tmp, "repeat-notify.js");
+    await fs.writeFile(
+      shimPath,
+      `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, process.argv.slice(2).join('|'));\n`,
+      "utf8",
+    );
+
+    await runGeneratedNotifyHandler({
+      trackerDir: path.join(tmp, "tracker-repeat"),
+      notify: [process.execPath, shimPath, "turn-ended"],
+      args: ["--source=codex", "--include", "a", "--include", "b"],
+    });
+
+    const marker = await waitForFile(markerPath, { timeoutMs: 5000 });
+    assert.equal(marker, "turn-ended|--include|a|--include|b");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("serve-time Codex notify repair installs TokenTracker and preserves Sky original", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-repair-"));
+  const prevCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    const binDir = path.join(tmp, ".tokentracker", "bin");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+
+    const skyNotify = [
+      path.join(tmp, "SkyComputerUseClient.app", "Contents", "MacOS", "SkyComputerUseClient"),
+      "turn-ended",
+    ];
+    await fs.writeFile(
+      path.join(process.env.CODEX_HOME, "config.toml"),
+      `notify = ${JSON.stringify(skyNotify)}\n`,
+      "utf8",
+    );
+
+    const result = await repairCodexNotifyIntegration({
+      home: tmp,
+      trackerDir,
+      binDir,
+      safeMode: true,
+    });
+
+    assert.equal(result.changed, true);
+    await fs.stat(path.join(binDir, "notify.cjs"));
+    const config = await fs.readFile(path.join(process.env.CODEX_HOME, "config.toml"), "utf8");
+    assert.match(config, /notify\.cjs/);
+    const original = JSON.parse(
+      await fs.readFile(path.join(trackerDir, "codex_notify_original.json"), "utf8"),
+    );
+    assert.deepEqual(original.notify, skyNotify);
+  } finally {
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("serve-time Codex notify repair refreshes stale backup when active notify is Sky", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-repair-"));
+  const prevCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    const binDir = path.join(tmp, ".tokentracker", "bin");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.mkdir(trackerDir, { recursive: true });
+
+    const staleNotify = ["old-notify", "arg"];
+    await fs.writeFile(
+      path.join(trackerDir, "codex_notify_original.json"),
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const skyNotify = [
+      path.join(tmp, "SkyComputerUseClient.app", "Contents", "MacOS", "SkyComputerUseClient"),
+      "turn-ended",
+    ];
+    await fs.writeFile(
+      path.join(process.env.CODEX_HOME, "config.toml"),
+      `notify = ${JSON.stringify(skyNotify)}\n`,
+      "utf8",
+    );
+
+    const result = await repairCodexNotifyIntegration({
+      home: tmp,
+      trackerDir,
+      binDir,
+      safeMode: true,
+    });
+
+    assert.equal(result.changed, true);
+    const original = JSON.parse(
+      await fs.readFile(path.join(trackerDir, "codex_notify_original.json"), "utf8"),
+    );
+    assert.deepEqual(original.notify, skyNotify);
+  } finally {
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("serve-time Codex notify repair clears stale backup when active notify is absent", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-repair-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevWrite = process.stdout.write;
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    const binDir = path.join(tmp, ".tokentracker", "bin");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.mkdir(trackerDir, { recursive: true });
+
+    const staleNotify = ["old-notify", "arg"];
+    const notifyOriginalPath = path.join(trackerDir, "codex_notify_original.json");
+    await fs.writeFile(
+      notifyOriginalPath,
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, "model = \"gpt-5\"\n", "utf8");
+
+    const result = await repairCodexNotifyIntegration({
+      home: tmp,
+      trackerDir,
+      binDir,
+      safeMode: true,
+    });
+
+    assert.equal(result.changed, true);
+    const original = JSON.parse(await fs.readFile(notifyOriginalPath, "utf8"));
+    assert.equal(original.notify, null);
+
+    process.stdout.write = () => true;
+    await cmdUninstall([]);
+    const restored = await fs.readFile(codexConfigPath, "utf8");
+    assert.match(restored, /model = "gpt-5"/);
+    assert.doesNotMatch(restored, /^notify\s*=/m);
+    assert.doesNotMatch(restored, /old-notify/);
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("serve-time Codex notify repair skips unknown third-party notify", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-repair-"));
+  const prevCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    const binDir = path.join(tmp, ".tokentracker", "bin");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.writeFile(
+      path.join(process.env.CODEX_HOME, "config.toml"),
+      'notify = ["third-party-notify", "arg"]\n',
+      "utf8",
+    );
+
+    const result = await repairCodexNotifyIntegration({
+      home: tmp,
+      trackerDir,
+      binDir,
+      safeMode: true,
+    });
+
+    assert.equal(result.changed, false);
+    assert.equal(result.skippedReason, "external-notify");
+    const config = await fs.readFile(path.join(process.env.CODEX_HOME, "config.toml"), "utf8");
+    assert.match(config, /third-party-notify/);
+    assert.doesNotMatch(config, /notify\.cjs/);
+  } finally {
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("serve-time Codex notify repair skips unknown notify.cjs command", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-notify-repair-"));
+  const prevCodexHome = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    const binDir = path.join(tmp, ".tokentracker", "bin");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    const externalNotify = ["/usr/bin/env", "node", path.join(tmp, "custom", "notify.cjs")];
+    await fs.writeFile(
+      path.join(process.env.CODEX_HOME, "config.toml"),
+      `notify = ${JSON.stringify(externalNotify)}\n`,
+      "utf8",
+    );
+
+    const result = await repairCodexNotifyIntegration({
+      home: tmp,
+      trackerDir,
+      binDir,
+      safeMode: true,
+    });
+
+    assert.equal(result.changed, false);
+    assert.equal(result.skippedReason, "external-notify");
+    const config = await fs.readFile(path.join(process.env.CODEX_HOME, "config.toml"), "utf8");
+    assert.match(config, /custom/);
+    assert.doesNotMatch(config, /\.tokentracker/);
+    await assert.rejects(
+      fs.stat(path.join(trackerDir, "codex_notify_original.json")),
+      /ENOENT/,
+    );
+  } finally {
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
     await fs.rm(tmp, { recursive: true, force: true });
   }
 });
@@ -240,6 +498,111 @@ test("init then uninstall restores original Codex notify (when pre-existing noti
   }
 });
 
+test("init refreshes stale Codex backup when current notify is external", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-init-refresh-backup-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevToken = process.env.TOKENTRACKER_DEVICE_TOKEN;
+  const prevOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    const staleNotify = ["old-notify", "arg"];
+    await fs.writeFile(
+      path.join(trackerDir, "codex_notify_original.json"),
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const externalNotify = ["third-party-notify", "new"];
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, `notify = ${JSON.stringify(externalNotify)}\n`, "utf8");
+
+    process.stdout.write = () => true;
+    await cmdInit(["--yes", "--no-auth", "--no-open", "--base-url", "https://example.invalid"]);
+
+    const original = JSON.parse(
+      await fs.readFile(path.join(trackerDir, "codex_notify_original.json"), "utf8"),
+    );
+    assert.deepEqual(original.notify, externalNotify);
+
+    await cmdUninstall([]);
+    const restored = await fs.readFile(codexConfigPath, "utf8");
+    assert.match(restored, /third-party-notify/);
+    assert.doesNotMatch(restored, /old-notify/);
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    if (prevToken === undefined) delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
+    if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("init clears stale Codex backup when current notify is absent", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-init-clear-backup-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevToken = process.env.TOKENTRACKER_DEVICE_TOKEN;
+  const prevOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    const staleNotify = ["old-notify", "arg"];
+    const notifyOriginalPath = path.join(trackerDir, "codex_notify_original.json");
+    await fs.writeFile(
+      notifyOriginalPath,
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, "model = \"gpt-5\"\n", "utf8");
+
+    process.stdout.write = () => true;
+    await cmdInit(["--yes", "--no-auth", "--no-open", "--base-url", "https://example.invalid"]);
+
+    const original = JSON.parse(await fs.readFile(notifyOriginalPath, "utf8"));
+    assert.equal(original.notify, null);
+
+    await cmdUninstall([]);
+    const restored = await fs.readFile(codexConfigPath, "utf8");
+    assert.match(restored, /model = "gpt-5"/);
+    assert.doesNotMatch(restored, /^notify\s*=/m);
+    assert.doesNotMatch(restored, /old-notify/);
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    if (prevToken === undefined) delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
+    if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("opencode plugin uses session.updated event", () => {
   const plugin = buildOpencodePlugin({ notifyPath: "/tmp/notify.cjs" });
   assert.match(plugin, /session\.updated/);
@@ -283,6 +646,50 @@ test("init then uninstall removes notify when none existed", async () => {
       !/^notify\s*=.*$/m.test(restored),
       "expected uninstall to remove notify when none existed",
     );
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    if (prevToken === undefined) delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
+    if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("uninstall does not restore stale backup over active third-party Codex notify", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-init-uninstall-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevToken = process.env.TOKENTRACKER_DEVICE_TOKEN;
+  const prevOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, 'notify = ["third-party-notify", "new"]\n', "utf8");
+    await fs.writeFile(
+      path.join(trackerDir, "codex_notify_original.json"),
+      JSON.stringify({ notify: ["old-notify"], capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+
+    process.stdout.write = () => true;
+    await cmdUninstall([]);
+
+    const restored = await fs.readFile(codexConfigPath, "utf8");
+    assert.equal(restored, 'notify = ["third-party-notify", "new"]\n');
   } finally {
     process.stdout.write = prevWrite;
     if (prevHome === undefined) delete process.env.HOME;
@@ -376,6 +783,126 @@ test("init then uninstall restores original Every Code notify (when config exist
       restored.includes('notify = ["echo", "hello-code"]'),
       "expected uninstall to restore Every Code notify",
     );
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    if (prevCodeHome === undefined) delete process.env.CODE_HOME;
+    else process.env.CODE_HOME = prevCodeHome;
+    if (prevToken === undefined) delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
+    if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("init clears stale Every Code backup when current notify is absent", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-init-uninstall-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevCodeHome = process.env.CODE_HOME;
+  const prevToken = process.env.TOKENTRACKER_DEVICE_TOKEN;
+  const prevOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    process.env.CODE_HOME = path.join(tmp, ".code");
+    delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.mkdir(process.env.CODE_HOME, { recursive: true });
+
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, "# empty\n", "utf8");
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    const staleNotify = ["old-code-notify", "arg"];
+    const notifyOriginalPath = path.join(trackerDir, "code_notify_original.json");
+    await fs.writeFile(
+      notifyOriginalPath,
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const codeConfigPath = path.join(process.env.CODE_HOME, "config.toml");
+    await fs.writeFile(codeConfigPath, "model = \"gpt-5\"\n", "utf8");
+
+    process.stdout.write = () => true;
+    await cmdInit(["--yes", "--no-auth", "--no-open", "--base-url", "https://example.invalid"]);
+
+    const original = JSON.parse(await fs.readFile(notifyOriginalPath, "utf8"));
+    assert.equal(original.notify, null);
+
+    await cmdUninstall([]);
+    const restored = await fs.readFile(codeConfigPath, "utf8");
+    assert.match(restored, /model = "gpt-5"/);
+    assert.doesNotMatch(restored, /^notify\s*=/m);
+    assert.doesNotMatch(restored, /old-code-notify/);
+  } finally {
+    process.stdout.write = prevWrite;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = prevCodexHome;
+    if (prevCodeHome === undefined) delete process.env.CODE_HOME;
+    else process.env.CODE_HOME = prevCodeHome;
+    if (prevToken === undefined) delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
+    if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("init refreshes stale Every Code backup when current notify is external", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tokentracker-init-uninstall-"));
+  const prevHome = process.env.HOME;
+  const prevCodexHome = process.env.CODEX_HOME;
+  const prevCodeHome = process.env.CODE_HOME;
+  const prevToken = process.env.TOKENTRACKER_DEVICE_TOKEN;
+  const prevOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  const prevWrite = process.stdout.write;
+
+  try {
+    process.env.HOME = tmp;
+    process.env.CODEX_HOME = path.join(tmp, ".codex");
+    process.env.CODE_HOME = path.join(tmp, ".code");
+    delete process.env.TOKENTRACKER_DEVICE_TOKEN;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
+    await fs.mkdir(process.env.CODEX_HOME, { recursive: true });
+    await fs.mkdir(process.env.CODE_HOME, { recursive: true });
+
+    const codexConfigPath = path.join(process.env.CODEX_HOME, "config.toml");
+    await fs.writeFile(codexConfigPath, "# empty\n", "utf8");
+
+    const trackerDir = path.join(tmp, ".tokentracker", "tracker");
+    await fs.mkdir(trackerDir, { recursive: true });
+    const staleNotify = ["old-code-notify", "arg"];
+    const notifyOriginalPath = path.join(trackerDir, "code_notify_original.json");
+    await fs.writeFile(
+      notifyOriginalPath,
+      JSON.stringify({ notify: staleNotify, capturedAt: "2026-01-01T00:00:00.000Z" }) + "\n",
+      "utf8",
+    );
+    const externalNotify = ["third-party-code-notify", "new"];
+    const codeConfigPath = path.join(process.env.CODE_HOME, "config.toml");
+    await fs.writeFile(codeConfigPath, `notify = ${JSON.stringify(externalNotify)}\n`, "utf8");
+
+    process.stdout.write = () => true;
+    await cmdInit(["--yes", "--no-auth", "--no-open", "--base-url", "https://example.invalid"]);
+
+    const original = JSON.parse(await fs.readFile(notifyOriginalPath, "utf8"));
+    assert.deepEqual(original.notify, externalNotify);
+
+    await cmdUninstall([]);
+    const restored = await fs.readFile(codeConfigPath, "utf8");
+    assert.match(restored, /third-party-code-notify/);
+    assert.doesNotMatch(restored, /old-code-notify/);
   } finally {
     process.stdout.write = prevWrite;
     if (prevHome === undefined) delete process.env.HOME;

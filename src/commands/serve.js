@@ -58,7 +58,7 @@ async function cmdServe(argv) {
   const opts = parseArgs(argv);
 
   // 0. First-time setup: if tracker dir doesn't exist, run init first
-  const { trackerDir } = await resolveTrackerPaths();
+  const { trackerDir, binDir } = await resolveTrackerPaths();
   if (!fssync.existsSync(path.join(trackerDir, "cursors.json"))) {
     process.stdout.write("First time? Setting up Token Tracker...\n\n");
     try {
@@ -70,8 +70,12 @@ async function cmdServe(argv) {
   }
 
   try {
-    const { installLocalTrackerApp } = require("./init");
+    const { installLocalTrackerApp, repairCodexNotifyIntegration } = require("./init");
     await installLocalTrackerApp({ appDir: path.join(trackerDir, "app") });
+    const repairResult = await repairCodexNotifyIntegration({ trackerDir, binDir, safeMode: true });
+    if (repairResult?.skippedReason && repairResult.skippedReason !== "config-missing") {
+      process.stdout.write(`Codex notify repair skipped: ${repairResult.skippedReason}\n`);
+    }
   } catch (e) {
     process.stdout.write(`Runtime refresh warning: ${e?.message || e}\n`);
   }

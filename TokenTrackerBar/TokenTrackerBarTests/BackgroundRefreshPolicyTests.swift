@@ -85,4 +85,108 @@ final class BackgroundRefreshPolicyTests: XCTestCase {
             false
         )
     }
+
+    func testRunsPopoverOpenSyncWhenNoPreviousAttemptOrSyncExists() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastAttemptAt: nil,
+                lastSyncAt: nil,
+                syncInterval: 60
+            ),
+            true
+        )
+    }
+
+    func testSkipsPopoverOpenSyncAfterRecentAttempt() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastAttemptAt: Date(timeIntervalSince1970: 950),
+                lastSyncAt: nil,
+                syncInterval: 60
+            ),
+            false
+        )
+    }
+
+    func testSkipsPopoverOpenSyncAfterRecentSuccessfulSync() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastAttemptAt: nil,
+                lastSyncAt: Date(timeIntervalSince1970: 950),
+                syncInterval: 60
+            ),
+            false
+        )
+    }
+
+    func testRunsPopoverOpenSyncAfterInterval() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastAttemptAt: Date(timeIntervalSince1970: 939),
+                lastSyncAt: Date(timeIntervalSince1970: 939),
+                syncInterval: 60
+            ),
+            true
+        )
+    }
+
+    func testSkipsPopoverOpenSyncForNonPositiveInterval() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenSync(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastAttemptAt: nil,
+                lastSyncAt: nil,
+                syncInterval: 0
+            ),
+            false
+        )
+    }
+
+    func testRunsPopoverOpenLoadWhenNoPreviousRefreshExists() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastRefreshedAt: nil,
+                loadInterval: 30
+            ),
+            true
+        )
+    }
+
+    func testSkipsPopoverOpenLoadWhenRecentlyRefreshed() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastRefreshedAt: Date(timeIntervalSince1970: 980),
+                loadInterval: 30
+            ),
+            false
+        )
+    }
+
+    func testRunsPopoverOpenLoadAfterInterval() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastRefreshedAt: Date(timeIntervalSince1970: 970),
+                loadInterval: 30
+            ),
+            true
+        )
+    }
+
+    func testSkipsPopoverOpenLoadForNonPositiveInterval() {
+        XCTAssertEqual(
+            BackgroundRefreshPolicy.shouldRunPopoverOpenLoad(
+                now: Date(timeIntervalSince1970: 1_000),
+                lastRefreshedAt: nil,
+                loadInterval: 0
+            ),
+            false
+        )
+    }
 }

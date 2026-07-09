@@ -108,6 +108,7 @@ async function cmdStatus(argv = []) {
     env: process.env,
   });
   const notifyPath = path.join(binDir, "notify.cjs");
+  const codexNotifyCmd = ["/usr/bin/env", "node", notifyPath];
   const claudeHookCommand = buildClaudeHookCommand(notifyPath);
   const codebuddyHookCommand = buildHookCommand(notifyPath, "codebuddy");
   const workbuddyHookCommand = buildHookCommand(notifyPath, "workbuddy");
@@ -132,7 +133,7 @@ async function cmdStatus(argv = []) {
   );
 
   const codexNotify = await readCodexNotify(codexConfigPath);
-  const notifyConfigured = Array.isArray(codexNotify) && codexNotify.length > 0;
+  const notifyConfigured = arraysEqual(codexNotify, codexNotifyCmd);
   const everyCodeNotify = await readEveryCodeNotify(codeConfigPath);
   const everyCodeConfigured =
     Array.isArray(everyCodeNotify) && everyCodeNotify.length > 0;
@@ -656,6 +657,13 @@ function parseArgs(argv) {
   }
 
   return out;
+}
+
+function arraysEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // Pure renderer: turn the structured summary into a fixed-width ASCII table.

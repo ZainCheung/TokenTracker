@@ -344,11 +344,7 @@ async function runSetup({
   await writeJson(configPath, config);
   await chmod600IfPossible(configPath);
 
-  await writeFileAtomic(
-    notifyPath,
-    buildNotifyHandler({ trackerDir, trackerBinPath, packageName: "tokentracker-cli" }),
-  );
-  await fs.chmod(notifyPath, 0o755).catch(() => {});
+  await writeNotifyHandler({ trackerDir, notifyPath });
 
   const summary = await applyIntegrationSetup({
     home,
@@ -364,6 +360,62 @@ async function runSetup({
     deviceId,
     installedAt,
   };
+}
+
+async function writeNotifyHandler({ trackerDir, binDir, notifyPath, packageName = "tokentracker-cli" }) {
+  const resolvedNotifyPath =
+    notifyPath || path.join(binDir || path.join(path.dirname(trackerDir), "bin"), "notify.cjs");
+  await ensureDir(path.dirname(resolvedNotifyPath));
+  await writeFileAtomic(
+    resolvedNotifyPath,
+    buildNotifyHandler({ trackerDir, packageName }),
+  );
+  await fs.chmod(resolvedNotifyPath, 0o755).catch(() => {});
+  return resolvedNotifyPath;
+}
+
+async function repairCodexNotifyIntegration({ home = os.homedir(), trackerDir, binDir, safeMode = true } = {}) {
+  const paths = trackerDir && binDir ? { trackerDir, binDir } : await resolveTrackerPaths({ home });
+  const resolvedTrackerDir = trackerDir || paths.trackerDir;
+  const resolvedBinDir = binDir || paths.binDir;
+  const notifyPath = await writeNotifyHandler({
+    trackerDir: resolvedTrackerDir,
+    binDir: resolvedBinDir,
+  });
+  const context = buildIntegrationTargets({
+    home,
+    trackerDir: resolvedTrackerDir,
+    notifyPath,
+  });
+  const codexProbe = await probeFile(context.codexConfigPath);
+  if (!codexProbe.exists) {
+    return { changed: false, skippedReason: "config-missing", notifyPath };
+  }
+
+  const currentNotify = await readCodexNotify(context.codexConfigPath);
+  if (arraysEqual(currentNotify, context.notifyCmd)) {
+    return { changed: false, skippedReason: null, notifyPath };
+  }
+
+  const repairDecision = safeMode
+    ? await shouldRepairCodexNotify({
+        currentNotify,
+        expectedNotify: context.notifyCmd,
+        notifyOriginalPath: context.notifyOriginalPath,
+      })
+    : { repair: true, captureOriginal: true, replaceOriginal: false };
+  if (!repairDecision.repair) {
+    return { changed: false, skippedReason: repairDecision.reason || "external-notify", notifyPath };
+  }
+
+  const result = await upsertCodexNotify({
+    codexConfigPath: context.codexConfigPath,
+    notifyCmd: context.notifyCmd,
+    notifyOriginalPath: context.notifyOriginalPath,
+    captureOriginal: repairDecision.captureOriginal,
+    replaceOriginal: repairDecision.replaceOriginal,
+  });
+  return { ...result, skippedReason: null, notifyPath };
 }
 
 function buildIntegrationTargets({ home, trackerDir, notifyPath }) {
@@ -425,10 +477,12 @@ async function applyIntegrationSetup({ home, trackerDir, notifyPath, notifyOrigi
 
   const codexProbe = await probeFile(context.codexConfigPath);
   if (codexProbe.exists) {
+    const currentNotify = await readCodexNotify(context.codexConfigPath);
     const result = await upsertCodexNotify({
       codexConfigPath: context.codexConfigPath,
       notifyCmd: context.notifyCmd,
       notifyOriginalPath: context.notifyOriginalPath,
+      replaceOriginal: shouldReplaceStoredOriginalNotify(currentNotify, context.notifyCmd),
     });
     summary.push({
       label: "Codex CLI",
@@ -678,10 +732,12 @@ async function applyIntegrationSetup({ home, trackerDir, notifyPath, notifyOrigi
 
   const codeProbe = await probeFile(context.codeConfigPath);
   if (codeProbe.exists) {
+    const currentNotify = await readEveryCodeNotify(context.codeConfigPath);
     const result = await upsertEveryCodeNotify({
       codeConfigPath: context.codeConfigPath,
       notifyCmd: context.codeNotifyCmd,
       notifyOriginalPath: context.codeNotifyOriginalPath,
+      replaceOriginal: shouldReplaceStoredOriginalNotify(currentNotify, context.codeNotifyCmd),
     });
     summary.push({
       label: "Every Code",
@@ -857,6 +913,48 @@ function arraysEqual(a, b) {
   return true;
 }
 
+async function shouldRepairCodexNotify({ currentNotify, expectedNotify, notifyOriginalPath }) {
+  if (!Array.isArray(currentNotify) || currentNotify.length === 0) {
+    return { repair: true, captureOriginal: true, replaceOriginal: true };
+  }
+  if (arraysEqual(currentNotify, expectedNotify)) {
+    return { repair: false, reason: "already-set" };
+  }
+  if (isTokenTrackerNotify(currentNotify, expectedNotify)) {
+    return { repair: true, captureOriginal: false };
+  }
+  if (isSkyComputerUseNotify(currentNotify)) {
+    return { repair: true, captureOriginal: true, replaceOriginal: true };
+  }
+
+  const original = await readJson(notifyOriginalPath);
+  const originalNotify = Array.isArray(original?.notify) ? original.notify : null;
+  if (arraysEqual(currentNotify, originalNotify)) {
+    return { repair: true, captureOriginal: true, replaceOriginal: false };
+  }
+
+  return { repair: false, reason: "external-notify" };
+}
+
+function shouldReplaceStoredOriginalNotify(currentNotify, expectedNotify) {
+  if (isTokenTrackerNotify(currentNotify, expectedNotify)) return false;
+  return currentNotify === null || Array.isArray(currentNotify);
+}
+
+function isTokenTrackerNotify(cmd, expectedNotify) {
+  if (!Array.isArray(cmd)) return false;
+  if (arraysEqual(cmd, expectedNotify)) return true;
+  const notifyPath = cmd.find((part) => typeof part === "string" && part.endsWith("notify.cjs"));
+  if (!notifyPath) return false;
+  const normalized = notifyPath.replace(/\\/g, "/");
+  return normalized.includes("/.tokentracker/");
+}
+
+function isSkyComputerUseNotify(cmd) {
+  if (!Array.isArray(cmd)) return false;
+  return cmd.some((part) => typeof part === "string" && part.includes("SkyComputerUseClient"));
+}
+
 function parseArgs(argv) {
   const out = {
     baseUrl: null,
@@ -1014,7 +1112,9 @@ try {
     const cmd = Array.isArray(original?.notify) ? original.notify : null;
     if (cmd && cmd.length > 0 && !isSelfNotify(cmd) && shouldChainNotify(cmd)) {
       const args = cmd.slice(1);
-      if (payloadArgs.length > 0) args.push(...payloadArgs);
+      if (payloadArgs.length > 0 && !containsSequence(args, payloadArgs)) {
+        args.push(...payloadArgs);
+      }
       spawnDetached([cmd[0], ...args]);
     }
   }
@@ -1051,12 +1151,7 @@ function isSelfNotify(cmd) {
 
 function shouldChainNotify(cmd) {
   if (!Array.isArray(cmd) || cmd.length === 0) return false;
-  if (containsSkyComputerUseClient(cmd)) return false;
   return isRunnableCommand(cmd[0]);
-}
-
-function containsSkyComputerUseClient(cmd) {
-  return cmd.some((part) => typeof part === 'string' && part.includes('SkyComputerUseClient'));
 }
 
 function isRunnableCommand(command) {
@@ -1072,10 +1167,31 @@ function isRunnableCommand(command) {
     return false;
   }
 }
+
+function containsSequence(haystack, needle) {
+  if (!Array.isArray(haystack) || !Array.isArray(needle) || needle.length === 0) return false;
+  if (needle.length > haystack.length) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    let matched = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (haystack[i + j] !== needle[j]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return true;
+  }
+  return false;
+}
 `;
 }
 
-module.exports = { cmdInit, buildNotifyHandler, installLocalTrackerApp };
+module.exports = {
+  cmdInit,
+  buildNotifyHandler,
+  installLocalTrackerApp,
+  repairCodexNotifyIntegration,
+};
 
 async function probeFile(p) {
   try {

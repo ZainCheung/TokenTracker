@@ -575,8 +575,8 @@ final class StatusBarController: NSObject {
             window.makeKey()
         }
 
-        // Refresh data when popover opens
-        Task { await viewModel.loadAll() }
+        // Opportunistically sync stale local data before refreshing the popover.
+        Task { await viewModel.refreshForPopoverOpen() }
     }
 
     private func makePopoverAnchorWindow() -> NSWindow {

@@ -67,4 +67,39 @@ test("menu-bar popover is anchored to an app-owned positioning window", () => {
     /Task\s*\{\s*@MainActor/,
     "The did-close cleanup must not be deferred through an unstructured MainActor task.",
   );
+  assert.match(
+    source,
+    /Task\s*\{\s*await\s+viewModel\.refreshForPopoverOpen\(\)\s*\}/,
+    "Opening the popover should run the throttled lightweight sync path before reloading dashboard data.",
+  );
+  assert.doesNotMatch(
+    source,
+    /Task\s*\{\s*await\s+viewModel\.loadAll\(\)\s*\}/,
+    "Opening the popover should not only reload cached dashboard data.",
+  );
+
+  const viewModelPath = path.join(
+    __dirname,
+    "..",
+    "TokenTrackerBar",
+    "TokenTrackerBar",
+    "ViewModels",
+    "DashboardViewModel.swift",
+  );
+  const viewModel = fs.readFileSync(viewModelPath, "utf8");
+  assert.match(
+    viewModel,
+    /shouldRunPopoverOpenLoad\([\s\S]*lastRefreshed/,
+    "When popover sync is throttled, dashboard reload should also be debounced by lastRefreshed.",
+  );
+  assert.match(
+    viewModel,
+    /guard\s+!isLoading\s+else\s*\{\s*shouldReloadAfterCurrentLoad\s*=\s*true\s*return\s*\}/,
+    "Concurrent dashboard reload requests should queue one follow-up load instead of being dropped.",
+  );
+  assert.match(
+    viewModel,
+    /private\s+func\s+runQueuedReloadIfNeeded\(\)\s+async[\s\S]*shouldReloadAfterCurrentLoad\s*=\s*false[\s\S]*await\s+loadAll\(\)/,
+    "A queued reload should run after the current load finishes so sync-now can refresh stale data.",
+  );
 });

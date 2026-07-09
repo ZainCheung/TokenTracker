@@ -3,7 +3,14 @@ const path = require("node:path");
 
 const { ensureDir, readJson, writeJson } = require("./fs");
 
-async function upsertNotify({ configPath, notifyCmd, notifyOriginalPath, configLabel }) {
+async function upsertNotify({
+  configPath,
+  notifyCmd,
+  notifyOriginalPath,
+  configLabel,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   const originalText = await fs.readFile(configPath, "utf8").catch(() => null);
   if (originalText == null) {
     const label =
@@ -15,13 +22,16 @@ async function upsertNotify({ configPath, notifyCmd, notifyOriginalPath, configL
   const already = arraysEqual(existingNotify, notifyCmd);
 
   if (!already) {
-    // Persist original notify once (for uninstall + chaining).
-    if (existingNotify && existingNotify.length > 0) {
+    // Persist original notify once (for uninstall + chaining). When a caller
+    // asks to replace the stored original and the config has no notify, record
+    // that absence so uninstall does not resurrect a stale backup.
+    const hasExistingNotify = Array.isArray(existingNotify);
+    if (captureOriginal && (hasExistingNotify || replaceOriginal)) {
       await ensureDir(path.dirname(notifyOriginalPath));
       const existing = await readJson(notifyOriginalPath);
-      if (!existing) {
+      if (replaceOriginal || !existing) {
         await writeJson(notifyOriginalPath, {
-          notify: existingNotify,
+          notify: hasExistingNotify ? existingNotify : null,
           capturedAt: new Date().toISOString(),
         });
       }
@@ -44,6 +54,10 @@ async function restoreNotify({ configPath, notifyOriginalPath, expectedNotify })
   const original = await readJson(notifyOriginalPath);
   const originalNotify = Array.isArray(original?.notify) ? original.notify : null;
   const currentNotify = extractNotify(text);
+
+  if (expectedNotify && !arraysEqual(currentNotify, expectedNotify)) {
+    return { restored: false, skippedReason: "current-not-managed" };
+  }
 
   if (!originalNotify && expectedNotify && !arraysEqual(currentNotify, expectedNotify)) {
     return { restored: false, skippedReason: "no-backup-not-installed" };
@@ -69,12 +83,20 @@ async function readNotify(configPath) {
   return extractNotify(text);
 }
 
-async function upsertCodexNotify({ codexConfigPath, notifyCmd, notifyOriginalPath }) {
+async function upsertCodexNotify({
+  codexConfigPath,
+  notifyCmd,
+  notifyOriginalPath,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   return upsertNotify({
     configPath: codexConfigPath,
     notifyCmd,
     notifyOriginalPath,
     configLabel: "Codex config",
+    captureOriginal,
+    replaceOriginal,
   });
 }
 
@@ -94,12 +116,20 @@ async function readCodexNotify(codexConfigPath) {
   return readNotify(codexConfigPath);
 }
 
-async function upsertEveryCodeNotify({ codeConfigPath, notifyCmd, notifyOriginalPath }) {
+async function upsertEveryCodeNotify({
+  codeConfigPath,
+  notifyCmd,
+  notifyOriginalPath,
+  captureOriginal = true,
+  replaceOriginal = false,
+}) {
   return upsertNotify({
     configPath: codeConfigPath,
     notifyCmd,
     notifyOriginalPath,
     configLabel: "Every Code config",
+    captureOriginal,
+    replaceOriginal,
   });
 }
 
@@ -193,8 +223,7 @@ function removeNotify(text) {
 }
 
 function parseTomlStringArray(rhs) {
-  // Minimal parser for ["a", "b"] string arrays.
-  // Assumes there are no escapes in strings (good enough for our usage).
+  // Minimal parser for TOML basic/literal string arrays.
   if (!rhs.startsWith("[") || !rhs.endsWith("]")) return null;
   const inner = rhs.slice(1, -1).trim();
   if (!inner) return [];
@@ -217,6 +246,18 @@ function parseTomlStringArray(rhs) {
       parts.push(current);
       inString = false;
       quote = null;
+      continue;
+    }
+    if (quote === '"' && ch === "\\") {
+      if (i + 1 >= inner.length) return null;
+      const next = inner[++i];
+      if (next === "b") current += "\b";
+      else if (next === "t") current += "\t";
+      else if (next === "n") current += "\n";
+      else if (next === "f") current += "\f";
+      else if (next === "r") current += "\r";
+      else if (next === '"' || next === "\\" || next === "/") current += next;
+      else return null;
       continue;
     }
     current += ch;
@@ -261,6 +302,10 @@ function readTomlArrayLiteral(lines, startIndex, rhs) {
       if (ch === quote) {
         inString = false;
         quote = null;
+        continue;
+      }
+      if (quote === '"' && ch === "\\") {
+        i += 1;
       }
     }
     return -1;
@@ -315,6 +360,10 @@ function findTomlArrayBlockEnd(lines, startIndex, rhs) {
       if (ch === quote) {
         inString = false;
         quote = null;
+        continue;
+      }
+      if (quote === '"' && ch === "\\") {
+        i += 1;
       }
     }
     return false;
