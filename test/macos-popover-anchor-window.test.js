@@ -16,6 +16,35 @@ function readStatusBarController() {
   return fs.readFileSync(statusBarControllerPath, "utf8");
 }
 
+function readDashboardView() {
+  return fs.readFileSync(
+    path.join(
+      __dirname,
+      "..",
+      "TokenTrackerBar",
+      "TokenTrackerBar",
+      "Views",
+      "DashboardView.swift",
+    ),
+    "utf8",
+  );
+}
+
+test("menu-bar popover keeps cached dashboard content visible during background sync", () => {
+  const source = readDashboardView();
+
+  assert.match(
+    source,
+    /if\s+viewModel\.isSyncing\s*&&\s*viewModel\.summary\s*==\s*nil\s*\{/,
+    "Background sync should only replace the dashboard with a blocking progress view before the first summary exists.",
+  );
+  assert.doesNotMatch(
+    source,
+    /if\s+viewModel\.isSyncing\s*\{/,
+    "An unconditional isSyncing branch hides cached content every time the popover triggers a background refresh.",
+  );
+});
+
 test("menu-bar popover is anchored to an app-owned positioning window", () => {
   const source = readStatusBarController();
   const didCloseStart = source.indexOf("forName: NSPopover.didCloseNotification");

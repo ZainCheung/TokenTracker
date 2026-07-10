@@ -14,7 +14,7 @@ struct DashboardView: View {
             case .idle, .starting:
                 ServerStartingView()
             case .running:
-                if viewModel.isSyncing {
+                if viewModel.isSyncing && viewModel.summary == nil {
                     syncingView
                 } else if viewModel.isLoading && viewModel.summary == nil {
                     loadingView

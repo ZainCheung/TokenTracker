@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import os
 
 // MARK: - Supporting Types
 
@@ -31,6 +32,10 @@ struct TopModel: Identifiable {
 
 @MainActor
 class DashboardViewModel: ObservableObject {
+    private static let logger = Logger(
+        subsystem: "com.tokentracker.bar",
+        category: "DashboardViewModel"
+    )
 
     // MARK: - Published State
 
@@ -45,7 +50,7 @@ class DashboardViewModel: ObservableObject {
     @Published var heatmap: HeatmapResponse?
     @Published var modelBreakdown: ModelBreakdownResponse?
     @Published var projectUsage: ProjectUsageResponse?
-    @Published var usageLimits: UsageLimitsResponse?
+    @Published var usageLimits: UsageLimitsResponse? = UsageLimitsCache.load()
 
     @Published var isLoading = false
     @Published var isSyncing = false
@@ -361,9 +366,11 @@ class DashboardViewModel: ObservableObject {
                 current: self.usageLimits,
                 incoming: newLimits
             )
+            UsageLimitsCache.save(newLimits)
             self.detectLimitResets(in: self.usageLimits)
         } catch {
-            // Non-fatal: usage limits are best-effort, don't surface an error.
+            // Non-fatal: usage limits are best-effort, don't replace the last good record.
+            Self.logger.error("Usage limits refresh failed: \(error.localizedDescription, privacy: .public)")
         }
         scheduleResetBoundaryRefresh(for: usageLimits)
     }

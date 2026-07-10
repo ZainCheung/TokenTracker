@@ -21,6 +21,24 @@ struct UsageLimitsResponse: Codable, Equatable {
     }
 }
 
+enum UsageLimitsCache {
+    static let defaultsKey = "UsageLimitsLastGoodResponse"
+
+    static func load(defaults: UserDefaults = .standard) -> UsageLimitsResponse? {
+        guard let data = defaults.data(forKey: defaultsKey) else { return nil }
+        return try? JSONDecoder().decode(UsageLimitsResponse.self, from: data)
+    }
+
+    static func save(
+        _ limits: UsageLimitsResponse,
+        defaults: UserDefaults = .standard
+    ) {
+        guard limits.hasAnyProviderWithoutError,
+              let data = try? JSONEncoder().encode(limits) else { return }
+        defaults.set(data, forKey: defaultsKey)
+    }
+}
+
 struct ClaudeLimits: Codable, Equatable {
     let configured: Bool
     let error: String?

@@ -4,6 +4,31 @@ import XCTest
 /// `hasAnyProviderWithoutError` predicate and the `displayRecord` retention
 /// rule used by DashboardViewModel after a successful limits fetch.
 final class UsageLimitsRetentionTests: XCTestCase {
+    func testLastGoodCacheRoundTripsAcrossAppRestarts() throws {
+        let suiteName = "UsageLimitsRetentionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let response = try decodeResponse(overrides: [
+            "claude": [
+                "configured": true,
+                "five_hour": ["utilization": 42.0],
+            ],
+        ])
+
+        UsageLimitsCache.save(response, defaults: defaults)
+
+        XCTAssertEqual(UsageLimitsCache.load(defaults: defaults), response)
+    }
+
+    func testCorruptLastGoodCacheIsIgnored() throws {
+        let suiteName = "UsageLimitsRetentionTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(Data("not-json".utf8), forKey: UsageLimitsCache.defaultsKey)
+
+        XCTAssertNil(UsageLimitsCache.load(defaults: defaults))
+    }
+
 
     // MARK: - hasAnyProviderWithoutError
 

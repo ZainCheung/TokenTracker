@@ -2,6 +2,7 @@ import Foundation
 
 actor APIClient {
     static let shared = APIClient()
+    private static let usageLimitsRequestTimeout: TimeInterval = 25
     private struct LocalAuthResponse: Decodable {
         let token: String
     }
@@ -79,7 +80,10 @@ actor APIClient {
 	}
 
     func fetchUsageLimits() async throws -> UsageLimitsResponse {
-        try await fetch("/functions/tokentracker-usage-limits")
+        try await fetch(
+            "/functions/tokentracker-usage-limits",
+            requestTimeout: Self.usageLimitsRequestTimeout
+        )
     }
 
     func triggerSync(drain: Bool = false, auto: Bool = false) async throws -> SyncResponse {
@@ -112,7 +116,11 @@ actor APIClient {
 
     // MARK: - Private Helpers
 
-    private func fetch<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
+    private func fetch<T: Decodable>(
+        _ path: String,
+        queryItems: [URLQueryItem] = [],
+        requestTimeout: TimeInterval? = nil
+    ) async throws -> T {
         guard var components = URLComponents(string: baseURL + path) else {
             throw APIError.invalidURL
         }
@@ -122,7 +130,15 @@ actor APIClient {
         guard let url = components.url else {
             throw APIError.invalidURL
         }
-        let (data, response) = try await session.data(from: url)
+        let data: Data
+        let response: URLResponse
+        if let requestTimeout {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = requestTimeout
+            (data, response) = try await session.data(for: request)
+        } else {
+            (data, response) = try await session.data(from: url)
+        }
         try validateResponse(response)
         // Account-eligible endpoints tag whether the server served cross-device
         // (account) data or fell back to local single-machine data. Other
