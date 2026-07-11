@@ -302,3 +302,36 @@ test("resolveAllWin32Paths returns single path in non-both mode", (t) => {
   assert.equal(r.native, "\\\\wsl$\\path");
   assert.equal(r.wsl, null);
 });
+
+// ── Every Code path resolution (PR #261) ──────────────────────────────────────
+
+test("every-code native path defaults to HOME on Linux, APPDATA on Windows", (t) => {
+  mockPlatform(t, "linux");
+  const home = "/home/user";
+  const r = resolveInstallPaths(
+    { nativeValue: path.join(home, ".code") },
+    {},
+    {},
+  );
+  assert.equal(r.native, path.join(home, ".code"));
+  assert.equal(r.wsl, null);
+});
+
+test("every-code WSL path resolves on Windows both mode", (t) => {
+  mockPlatform(t, "win32");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-everycode-wsl-"));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const nativeDir = path.join(tmpDir, "native");
+  const wslDir = path.join(tmpDir, "wsl");
+  fs.mkdirSync(nativeDir, { recursive: true });
+  fs.mkdirSync(wslDir, { recursive: true });
+
+  const r = resolveInstallPaths(
+    { nativeValue: nativeDir, wslValue: wslDir },
+    { TOKENTRACKER_WSL_MODE: "both" },
+    { runWsl: () => "Ubuntu\n", existsSync: () => true },
+  );
+  assert.equal(r.native, nativeDir);
+  assert.equal(r.wsl, wslDir);
+});
+

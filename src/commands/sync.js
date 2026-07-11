@@ -262,7 +262,6 @@ async function cmdSync(argv) {
     let grokHookSignalConsumed = false;
 
     const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
-    const codeHome = process.env.CODE_HOME || path.join(home, ".code");
     const claudeProjectsDir = path.join(home, ".claude", "projects");
     const geminiHome = process.env.GEMINI_HOME || path.join(home, ".gemini");
     const geminiTmpDir = path.join(geminiHome, "tmp");
@@ -310,7 +309,19 @@ async function cmdSync(argv) {
       }
     }
     if (sourceAllowed("every-code")) {
-      sources.push({ source: "every-code", sessionsDir: path.join(codeHome, "sessions") });
+      const codeNativeValue = process.env.CODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
+        ? path.join(process.env.APPDATA.trim(), ".code")
+        : path.join(home, ".code"));
+      const wslCodeDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".code")
+        : null;
+      const codePaths = resolveInstallPaths({ nativeValue: codeNativeValue, wslValue: wslCodeDir });
+      if (codePaths.native) {
+        sources.push({ source: "every-code", sessionsDir: path.join(codePaths.native, "sessions") });
+      }
+      if (codePaths.wsl) {
+        sources.push({ source: "every-code", sessionsDir: path.join(codePaths.wsl, "sessions") });
+      }
     }
 
     const rolloutFiles = [];
