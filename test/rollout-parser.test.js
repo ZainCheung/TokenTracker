@@ -46,6 +46,7 @@ const {
   listAntigravitySessionFiles,
   estimateAntigravityTokens,
   parseKimiCodeIncremental,
+  resolveKimiHome,
   resolveKimiCodeHome,
   resolveKimiCodeWireFiles,
   resolveKimiCodeDefaultModel,
@@ -4821,6 +4822,40 @@ test("Kimi Code wsl-first prefers WSL home when both sides exist", (t) => {
   });
 
   assert.equal(home, "\\\\wsl$\\Ubuntu\\home\\dev\\.kimi-code");
+});
+
+test("Kimi (legacy) native-first prefers native home when WSL also exists", (t) => {
+  resetWslProbeCache();
+  mockPlatform(t, "win32");
+  mockWsl(t);
+  mockMethod(t, fssync, "existsSync", (candidate) => (
+    candidate === "\\\\wsl$\\Ubuntu\\home\\dev\\.kimi" ||
+    candidate === path.join(os.homedir(), ".kimi")
+  ));
+
+  const home = resolveKimiHome({
+    HOME: "C:\\Users\\me",
+    TOKENTRACKER_WSL_MODE: "native-first",
+  });
+
+  assert.equal(home, path.join(os.homedir(), ".kimi"));
+});
+
+test("Kimi (legacy) wsl-first prefers WSL home when both sides exist", (t) => {
+  resetWslProbeCache();
+  mockPlatform(t, "win32");
+  mockWsl(t);
+  mockMethod(t, fssync, "existsSync", (candidate) => (
+    candidate === "\\\\wsl$\\Ubuntu\\home\\dev\\.kimi" ||
+    candidate === path.join("C:\\Users\\me", ".kimi")
+  ));
+
+  const home = resolveKimiHome({
+    HOME: "C:\\Users\\me",
+    TOKENTRACKER_WSL_MODE: "wsl-first",
+  });
+
+  assert.equal(home, "\\\\wsl$\\Ubuntu\\home\\dev\\.kimi");
 });
 
 test("Kilocode roots pass resolver env to WSL discovery", (t) => {

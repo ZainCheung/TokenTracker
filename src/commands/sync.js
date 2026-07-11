@@ -1056,7 +1056,9 @@ async function cmdSync(argv) {
 
     // ── Kimi (passive wire.jsonl reader) ──
     let kimiResult = { recordsProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
-    const kimiWireFiles = sourceAllowed("kimi") ? resolveKimiWireFiles(process.env) : [];
+    const kimiWireFiles = sourceAllowed("kimi")
+      ? mergeBothFileSources({ resolveFiles: resolveKimiWireFiles, env: process.env })
+      : [];
     if (kimiWireFiles.length > 0) {
       if (progress?.enabled) {
         progress.start(`Parsing Kimi Code ${renderBar(0)} | buckets 0`);
