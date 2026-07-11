@@ -461,6 +461,67 @@ test("session store re-adopts a recreated database without replaying IDs", async
   }
 });
 
+test("session store detects same-id reset even when the inode is reused", async () => {
+  const { dir, dbPath } = makeStoreDb([
+    {
+      id: 1,
+      session_id: "old-same-id-session",
+      model: "gpt-5.6-luna",
+      input_tokens: 10,
+      output_tokens: 1,
+      token_details_json: tokenDetails({ input: 10, output: 1 }),
+      created_at: "2026-07-10T12:00:00Z",
+    },
+  ]);
+  try {
+    const queuePath = path.join(dir, "queue.jsonl");
+    const cursors = {};
+    await parseCopilotSessionStoreIncremental({ dbPath, cursors, queuePath });
+
+    fs.rmSync(dbPath, { force: true });
+    runSql(dbPath, `
+      CREATE TABLE schema_version (version INTEGER NOT NULL);
+      INSERT INTO schema_version (version) VALUES (6);
+      CREATE TABLE assistant_usage_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        cache_read_tokens INTEGER,
+        cache_write_tokens INTEGER,
+        reasoning_tokens INTEGER,
+        token_details_json TEXT,
+        created_at TEXT
+      );
+    `);
+    insertUsage(dbPath, {
+      id: 1,
+      session_id: "new-same-id-session",
+      model: "gpt-5.6-terra",
+      input_tokens: 20,
+      output_tokens: 2,
+      token_details_json: tokenDetails({ input: 20, output: 2 }),
+      created_at: "2026-07-10T12:30:00Z",
+    });
+
+    // Linux may immediately reuse the deleted file's inode. Force that exact
+    // state so reset detection must use the last immutable event signature.
+    cursors.copilotStore.dbs[dbPath].dbIno = fs.statSync(dbPath).ino;
+    const reset = await parseCopilotSessionStoreIncremental({
+      dbPath,
+      cursors,
+      queuePath,
+    });
+    assert.equal(reset.adoptedThisRun, true);
+    assert.equal(reset.eventsAggregated, 0);
+    assert.equal(cursors.copilotStore.pendingLegacyCatchup, true);
+    assert.equal(cursors.copilotStore.dbs[dbPath].pendingCatchupMaxId, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("session store does not activate canonical ownership when one discovered DB fails", async () => {
   const { dir, dbPath } = makeStoreDb([
     {

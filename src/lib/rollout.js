@@ -9743,7 +9743,21 @@ function readCopilotSessionStoreMetadata(dbPath, sqliteOptions = {}) {
   }
   const maxRows = readSqliteJsonRows(
     dbPath,
-    "SELECT COALESCE(MAX(id), 0) AS max_id FROM assistant_usage_events",
+    `
+      SELECT
+        id AS max_id,
+        session_id,
+        model,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_write_tokens,
+        reasoning_tokens,
+        created_at
+      FROM assistant_usage_events
+      ORDER BY id DESC
+      LIMIT 1
+    `.trim(),
     {
       label: "GitHub Copilot session store",
       maxBuffer: 4 * 1024 * 1024,
@@ -9773,6 +9787,24 @@ function readCopilotSessionStoreMetadata(dbPath, sqliteOptions = {}) {
     active: true,
     schemaVersion,
     maxId: toNonNegativeInt(maxRows[0]?.max_id),
+    lastRowKey: maxRows[0]
+      ? crypto
+          .createHash("sha256")
+          .update(
+            JSON.stringify([
+              maxRows[0].max_id,
+              maxRows[0].session_id,
+              maxRows[0].model,
+              maxRows[0].input_tokens,
+              maxRows[0].output_tokens,
+              maxRows[0].cache_read_tokens,
+              maxRows[0].cache_write_tokens,
+              maxRows[0].reasoning_tokens,
+              maxRows[0].created_at,
+            ]),
+          )
+          .digest("hex")
+      : null,
   };
 }
 
@@ -10028,11 +10060,18 @@ async function parseCopilotSessionStoreIncremental({
         typeof dbState.dbIno === "number" &&
         typeof currentIno === "number" &&
         dbState.dbIno !== currentIno;
+      const lastRowChangedAtSameId =
+        priorLastId > 0 &&
+        metadata.maxId === priorLastId &&
+        typeof dbState.lastRowKey === "string" &&
+        typeof metadata.lastRowKey === "string" &&
+        dbState.lastRowKey !== metadata.lastRowKey;
       const needsAdoption =
         globalAdoptionPending ||
         !dbState.adoptedAt ||
         inodeChanged ||
-        metadata.maxId < priorLastId;
+        metadata.maxId < priorLastId ||
+        lastRowChangedAtSameId;
       const firstId = needsAdoption && !backfillOnFirstRun ? metadata.maxId : priorLastId;
 
       if (needsAdoption) {
@@ -10123,6 +10162,7 @@ async function parseCopilotSessionStoreIncremental({
         adoptedAt: dbState.adoptedAt || updatedAt,
         resetAt: needsAdoption && dbState.adoptedAt ? updatedAt : dbState.resetAt || null,
         schemaVersion: metadata.schemaVersion,
+        lastRowKey: metadata.lastRowKey,
         lastId: waitForLegacyCatchup
           ? priorLastId
           : Math.max(lastId, metadata.maxId),
@@ -10232,6 +10272,7 @@ function finalizeCopilotStoreLegacyCatchup({
         dbIno: typeof after?.db?.ino === "number" ? after.db.ino : null,
         fingerprint: after,
         schemaVersion: metadata.schemaVersion,
+        lastRowKey: metadata.lastRowKey,
       });
     } catch (_e) {
       return false;
@@ -10246,6 +10287,7 @@ function finalizeCopilotStoreLegacyCatchup({
     update.dbState.dbIno = update.dbIno;
     update.dbState.lastDbFingerprint = update.fingerprint;
     update.dbState.schemaVersion = update.schemaVersion;
+    update.dbState.lastRowKey = update.lastRowKey;
     update.dbState.updatedAt = updatedAt;
   }
   state.pendingLegacyCatchup = false;
