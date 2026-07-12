@@ -65,9 +65,8 @@ const {
   probeWslDistros,
 } = require("../lib/rollout");
 const wsl = require("../lib/wsl-probe");
-const { getWslMode, isInvalidWslMode, shouldProbeWsl } = wsl;
+const { getWslMode, isInvalidWslMode, shouldProbeWsl, discoverWslHome } = wsl;
 const { resolveInstallPaths } = require("../lib/install-resolver");
-
 const { probeGrokHookState, resolveGrokHome } = require("../lib/grok-hook");
 
 function formatResolvedPaths(paths, filename) {
@@ -304,8 +303,8 @@ async function cmdStatus(argv = []) {
   const opencodeStorageNativeValue = process.env.OPENCODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
     ? path.join(process.env.APPDATA.trim(), "opencode")
     : path.join(xdgDataHome, "opencode"));
-  const wslOpencodeStorageDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
-    ? wsl.discoverWslHome(".local/share/opencode")
+  const wslOpencodeStorageDir = process.platform === "win32" && shouldProbeWsl(process.env)
+    ? discoverWslHome(".local/share/opencode")
     : null;
   const opencodeStoragePaths = resolveInstallPaths({
     nativeValue: opencodeStorageNativeValue,
@@ -316,8 +315,8 @@ async function cmdStatus(argv = []) {
   const opencodeDbNativeValue = process.env.OPENCODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
     ? path.join(process.env.APPDATA.trim(), "opencode")
     : path.join(xdgDataHome, "opencode"));
-  const wslOpencodeDbDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
-    ? wsl.discoverWslHome(".local/share/opencode")
+  const wslOpencodeDbDir = process.platform === "win32" && shouldProbeWsl(process.env)
+    ? discoverWslHome(".local/share/opencode")
     : null;
   const opencodeDbPaths = resolveInstallPaths({
     nativeValue: opencodeDbNativeValue,
