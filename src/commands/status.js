@@ -325,6 +325,41 @@ async function cmdStatus(argv = []) {
   const opencodeDbActive = formatResolvedPaths(opencodeDbPaths, "opencode.db");
   const opencodeInstalled = opencodeStorageActive.length > 0 || opencodeDbActive.length > 0;
 
+  // Every Code (passive sessions scan)
+  const codePaths = resolveInstallPaths({
+    nativeValue: process.env.CODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
+      ? path.join(process.env.APPDATA.trim(), ".code")
+      : path.join(home, ".code")),
+    wslDir: ".code",
+  });
+  const codeActive = formatResolvedPaths(codePaths, "sessions");
+  const codeInstalled = codeActive.length > 0;
+
+  // Gemini CLI & Antigravity (shared home)
+  const geminiPaths = resolveInstallPaths({
+    nativeValue: process.env.GEMINI_HOME || (process.platform === "win32" && typeof process.env.LOCALAPPDATA === "string"
+      ? path.join(process.env.LOCALAPPDATA.trim(), "Gemini")
+      : path.join(home, ".gemini")),
+    wslDir: ".gemini",
+  });
+  const geminiActive = formatResolvedPaths(geminiPaths);
+  const geminiInstalledStatus = geminiActive.length > 0;
+
+  // Codex CLI (passive sessions scan)
+  const codexPaths = resolveInstallPaths({
+    nativeValue: process.env.CODEX_HOME || path.join(home, ".codex"),
+    wslDir: ".codex",
+  });
+  const codexActive = formatResolvedPaths(codexPaths, "sessions");
+  const codexInstalledStatus = codexActive.length > 0;
+
+  // Kimi (passive sessions scan)
+  const kimiPaths = resolveInstallPaths({
+    nativeValue: path.join(home, ".kimi"),
+    wslDir: ".kimi",
+  });
+  const kimiActive = formatResolvedPaths(kimiPaths, "sessions");
+
   // Kilo Code VS Code extension — passive scan of all VS Code-family
   // globalStorage/kilocode.kilo-code/tasks/ ui_messages.json files.
   const kilocodeTaskFiles = resolveKilocodeTaskFiles(process.env);
@@ -552,7 +587,7 @@ async function cmdStatus(argv = []) {
       `- OpenClaw session plugin conversation access: ${openclawSessionPluginState?.conversationAccess ? "set" : "unset"}`,
       `- OpenClaw hook (legacy): ${openclawHookState?.configured ? "set" : "unset"}`,
       kimiInstalled || kimiCodeInstalled
-        ? `- Kimi Code: passive reader (${kimiWireFiles.length + kimiCodeWireFiles.length} wire.jsonl file${(kimiWireFiles.length + kimiCodeWireFiles.length) !== 1 ? "s" : ""} found)`
+        ? `- Kimi Code: passive reader (${kimiWireFiles.length + kimiCodeWireFiles.length} wire.jsonl file${(kimiWireFiles.length + kimiCodeWireFiles.length) !== 1 ? "s" : ""} found, directories: ${kimiActive.join(" | ") || "none"})`
         : null,
       kiroCliInstalled
         ? `- Kiro CLI: SQLite data.sqlite3 found (tokens approximated from char lengths, merged under 'kiro' source)`
@@ -583,6 +618,15 @@ async function cmdStatus(argv = []) {
         : null,
       opencodeInstalled
         ? `- OpenCode: passive reader (storage: ${opencodeStorageActive.join(" | ") || "not found"}, DB: ${opencodeDbActive.join(" | ") || "not found"})`
+        : null,
+      codeInstalled
+        ? `- Every Code: sessions found (${codeActive.join(" | ")})`
+        : null,
+      geminiInstalledStatus
+        ? `- Gemini CLI / Antigravity: home found (${geminiActive.join(" | ")})`
+        : null,
+      codexInstalledStatus
+        ? `- Codex CLI: sessions found (${codexActive.join(" | ")})`
         : null,
       kilocodeInstalled
         ? `- Kilo Code (VS Code extension): passive reader (${kilocodeTaskFiles.length} task${kilocodeTaskFiles.length !== 1 ? "s" : ""} across ${new Set(kilocodeTaskFiles.map((t) => t.ide)).size} IDE${new Set(kilocodeTaskFiles.map((t) => t.ide)).size !== 1 ? "s" : ""})`
