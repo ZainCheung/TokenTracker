@@ -2,7 +2,7 @@ export const PET_CHARACTER_IDS = ["clawd", "sprout", "byte", "ember"];
 
 export function normalizePetCharacter(value) {
   const id = String(value || "").trim().toLowerCase();
-  return PET_CHARACTER_IDS.includes(id) ? id : "clawd";
+  return /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(id) ? id : "clawd";
 }
 
 /**

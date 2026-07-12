@@ -354,5 +354,16 @@
   "pet.state.rest": "휴식",
   "pet.size.small": "작게",
   "pet.size.medium": "보통",
-  "pet.size.large": "크게"
+  "pet.size.large": "크게",
+  "pet.import.title": "Codex 펫 가져오기",
+  "pet.import.subtitle": "codex-pets.net 링크를 붙여넣거나 .zip을 선택하세요.",
+  "pet.import.add": "추가",
+  "pet.import.zip": "패키지 선택",
+  "pet.import.remove": "가져온 펫 삭제",
+  "pet.import.success": "펫을 가져와 선택했습니다.",
+  "pet.import.failed": "이 펫을 가져올 수 없습니다.",
+  "pet.import.busy": "가져오는 중…",
+  "pet.format.v2": "V2",
+  "pet.import.removed": "가져온 펫을 삭제했습니다.",
+  "pet.import.url_label": "Codex Pets URL 또는 펫 ID"
 }

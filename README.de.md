@@ -145,6 +145,15 @@ Aktualisieren mit `brew upgrade --cask mm7894215/tokentracker/tokentracker`. Der
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+**Desktop-Pet** — ein Pixel-Begleiter, der auf dem Desktop schwebt und auf den echten Token-Verbrauch reagiert: Er codet mit, feiert Streaks und schläft in Pausen. Community-Pets per [codex-pets.net](https://codex-pets.net)-Link oder `.codex-pet.zip` importieren — V2-Pets folgen dem Cursor mit dem Blick in 16 Richtungen. macOS, Windows und Web.
+
+<img src="https://raw.githubusercontent.com/mm7894215/tokentracker/main/docs/screenshots/pet.png" alt="Desktop Pet" />
+
+</td>
+</tr>
 </table>
 
 ---

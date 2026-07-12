@@ -146,6 +146,15 @@ brew install mm7894215/tokentracker/tokentracker
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+**데스크톱 펫** — 데스크톱 위에 떠 있는 픽셀 컴패니언. 실제 토큰 사용량에 반응해 코딩할 때 함께 일하고, 연속 기록을 축하하고, 쉴 때는 잠듭니다. [codex-pets.net](https://codex-pets.net) 링크나 `.codex-pet.zip`으로 커뮤니티 펫을 가져올 수 있고, V2 펫은 커서를 16방향으로 따라봅니다. macOS / Windows / 웹 지원.
+
+<img src="https://raw.githubusercontent.com/mm7894215/tokentracker/main/docs/screenshots/pet.png" alt="Desktop Pet" />
+
+</td>
+</tr>
 </table>
 
 ---

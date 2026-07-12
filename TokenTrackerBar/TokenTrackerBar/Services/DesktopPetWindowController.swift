@@ -53,6 +53,7 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
     private var isRevealed = false
     private var didDrag = false
     private var sleepTimer: Timer? = nil
+    private var lookTimer: Timer? = nil
     /// Drives whether the floating bubble may show (enough of the pet is on-screen).
     let uiState = PetWindowState()
 
@@ -77,12 +78,16 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
         self.panel = panel
         uiState.isWindowVisible = true
         panel.orderFrontRegardless()
+        startLookTracking()
         UserDefaults.standard.set(true, forKey: Self.showDefaultsKey)
         keepActive()
         NativeBridge.shared.pushPetSettings()
     }
 
     func hide() {
+        lookTimer?.invalidate()
+        lookTimer = nil
+        uiState.lookDirectionIndex = nil
         panel?.orderOut(nil)
         uiState.isWindowVisible = false
         UserDefaults.standard.set(false, forKey: Self.showDefaultsKey)
@@ -412,6 +417,8 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
     /// `PetCharacterStore` is the single source of truth — every view observes it
     /// directly, so no per-window mirror to keep in sync.
     func setCharacter(_ character: PetCharacter) {
+        PetCatalog.shared.refresh()
+        guard PetCatalog.shared.contains(character) else { return }
         guard character != PetCharacterStore.shared.character else { return }
         PetCharacterStore.shared.setCharacter(character)
         keepActive()
@@ -419,8 +426,41 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
     }
 
     deinit {
+        lookTimer?.invalidate()
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let upMonitor { NSEvent.removeMonitor(upMonitor) }
+    }
+
+    /// V2 packages add sixteen fixed look cells. Track the global cursor relative to
+    /// the floating sprite so the pet can watch across the whole desktop, matching the
+    /// Codex Pets cursor preview instead of only reacting while directly hovered.
+    private func startLookTracking() {
+        lookTimer?.invalidate()
+        lookTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let panel = self.panel, panel.isVisible,
+                      PetCharacterStore.shared.character.spriteVersionNumber == 2 else {
+                    // Assign only on change: setting a @Published property fires
+                    // objectWillChange even when the value is identical, which would
+                    // re-render the sprite view 15×/s for every V1 pet.
+                    if let self, self.uiState.lookDirectionIndex != nil {
+                        self.uiState.lookDirectionIndex = nil
+                    }
+                    return
+                }
+                let mouse = NSEvent.mouseLocation
+                let center = NSPoint(
+                    x: panel.frame.midX,
+                    y: panel.frame.minY + (64 * self.sizePreset.scale) / 2
+                )
+                let dx = mouse.x - center.x
+                let dy = mouse.y - center.y
+                let degrees = (atan2(dx, dy) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+                let next = Int((degrees / 22.5).rounded()) % 16
+                if self.uiState.lookDirectionIndex != next { self.uiState.lookDirectionIndex = next }
+            }
+        }
+        RunLoop.main.add(lookTimer!, forMode: .common)
     }
 }
 
@@ -474,26 +514,112 @@ enum PetSizePreset: String, CaseIterable {
     }
 }
 
-/// Distinct companion identities share the same state machine. Clawd is drawn by
-/// SwiftUI while the other companions use their own fully illustrated sprite atlases.
-enum PetCharacter: String, CaseIterable {
-    case clawd, sprout, byte, ember
+/// A Codex-compatible companion identity. Built-ins and packages installed under
+/// ~/.codex/pets share the same value type so selecting a community pet never requires
+/// adding a new enum case or rebuilding the app.
+struct PetCharacter: RawRepresentable, Hashable, Identifiable, CaseIterable {
+    let rawValue: String
+    var id: String { rawValue }
+
+    static let clawd = PetCharacter(rawValue: "clawd")!
+    static let sprout = PetCharacter(rawValue: "sprout")!
+    static let byte = PetCharacter(rawValue: "byte")!
+    static let ember = PetCharacter(rawValue: "ember")!
+    static var allCases: [PetCharacter] { PetCatalog.shared.characters }
+
+    init?(rawValue: String) {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
+        guard !value.isEmpty, value.count <= 64,
+              value.unicodeScalars.allSatisfy({ allowed.contains($0) }),
+              value.first?.isLetter == true || value.first?.isNumber == true,
+              value.last?.isLetter == true || value.last?.isNumber == true else { return nil }
+        self.rawValue = value
+    }
 
     /// SVG Clawd is tightly cropped; atlas pets carry transparent breathing room.
     /// Normalize painted size without changing the selected window-size preset.
     var visualScale: CGFloat {
-        self == .clawd ? 0.84 : 1.0
+        self == Self.clawd ? 0.84 : 1.0
     }
 
     var menuLabel: String {
-        switch self {
-        case .clawd: return Strings.petCharacterClawd
-        case .sprout: return Strings.petCharacterSprout
-        case .byte: return Strings.petCharacterByte
-        case .ember: return Strings.petCharacterEmber
-        }
+        if self == Self.clawd { return Strings.petCharacterClawd }
+        if self == Self.sprout { return Strings.petCharacterSprout }
+        if self == Self.byte { return Strings.petCharacterByte }
+        if self == Self.ember { return Strings.petCharacterEmber }
+        return PetCatalog.shared.displayName(for: self) ?? rawValue
     }
 
+    var spriteVersionNumber: Int { PetCatalog.shared.spriteVersion(for: self) }
+    var atlasURL: URL? { PetCatalog.shared.atlasURL(for: self) }
+    var atlasCacheKey: String { PetCatalog.shared.atlasCacheKey(for: self) }
+}
+
+final class PetCatalog: ObservableObject {
+    static let shared = PetCatalog()
+    private static let builtins: [PetCharacter] = [.clawd, .sprout, .byte, .ember]
+    private struct Metadata { let displayName: String; let spriteVersionNumber: Int; let atlasURL: URL }
+
+    @Published private(set) var characters: [PetCharacter] = builtins
+    private var metadata: [String: Metadata] = [:]
+
+    private init() { refresh() }
+
+    func refresh() {
+        let root = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/pets", isDirectory: true)
+        var discovered: [(PetCharacter, Metadata)] = []
+        let directories = (try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        for directory in directories {
+            let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values?.isDirectory == true, values?.isSymbolicLink != true,
+                  let character = PetCharacter(rawValue: directory.lastPathComponent),
+                  !Self.builtins.contains(character) else { continue }
+            let manifestURL = directory.appendingPathComponent("pet.json")
+            let atlasURL = directory.appendingPathComponent("spritesheet.webp")
+            guard FileManager.default.fileExists(atPath: atlasURL.path),
+                  let data = try? Data(contentsOf: manifestURL),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (object["id"] as? String)?.lowercased() == character.rawValue,
+                  object["spritesheetPath"] as? String == "spritesheet.webp",
+                  let displayName = object["displayName"] as? String,
+                  !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let version = (object["spriteVersionNumber"] as? NSNumber)?.intValue == 2 ? 2 : 1
+            discovered.append((character, Metadata(
+                displayName: displayName,
+                spriteVersionNumber: version,
+                atlasURL: atlasURL
+            )))
+        }
+        discovered.sort { $0.1.displayName.localizedCaseInsensitiveCompare($1.1.displayName) == .orderedAscending }
+        metadata = Dictionary(uniqueKeysWithValues: discovered.map { ($0.0.rawValue, $0.1) })
+        characters = Self.builtins + discovered.map(\.0)
+    }
+
+    func contains(_ character: PetCharacter) -> Bool { characters.contains(character) }
+    func displayName(for character: PetCharacter) -> String? { metadata[character.rawValue]?.displayName }
+    func spriteVersion(for character: PetCharacter) -> Int { metadata[character.rawValue]?.spriteVersionNumber ?? 1 }
+    func atlasURL(for character: PetCharacter) -> URL? {
+        if let custom = metadata[character.rawValue]?.atlasURL { return custom }
+        guard character != .clawd else { return nil }
+        let name = "pet-\(character.rawValue)"
+        return Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "PetSprites")
+            ?? Bundle.main.url(forResource: name, withExtension: "png")
+    }
+    func atlasCacheKey(for character: PetCharacter) -> String {
+        guard let url = metadata[character.rawValue]?.atlasURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return character.rawValue
+        }
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        return "\(character.rawValue)-\(modified)-\(size)"
+    }
 }
 
 /// One persisted appearance source shared by the menu-bar popover, floating pet,
@@ -508,10 +634,19 @@ final class PetCharacterStore: ObservableObject {
 
     private init() {
         let raw = UserDefaults.standard.string(forKey: Self.defaultsKey)
-        character = raw.flatMap(PetCharacter.init(rawValue:)) ?? .clawd
+        PetCatalog.shared.refresh()
+        if let candidate = raw.flatMap(PetCharacter.init(rawValue:)),
+           PetCatalog.shared.contains(candidate) {
+            character = candidate
+        } else {
+            character = .clawd
+            if raw != nil { UserDefaults.standard.removeObject(forKey: Self.defaultsKey) }
+        }
     }
 
     func setCharacter(_ character: PetCharacter) {
+        PetCatalog.shared.refresh()
+        guard PetCatalog.shared.contains(character) else { return }
         guard self.character != character else { return }
         self.character = character
         UserDefaults.standard.set(character.rawValue, forKey: Self.defaultsKey)
@@ -544,6 +679,7 @@ final class PetWindowState: ObservableObject {
     @Published var isRightEdge = true
     @Published var isSnapped = false
     @Published var sleepState: ClawdCompanionView.ClawdState? = nil
+    @Published var lookDirectionIndex: Int? = nil
     /// Sprite scale for the floating pet — driven by the chosen PetSizePreset.
     @Published var floatingScale: CGFloat = 1.4
 }

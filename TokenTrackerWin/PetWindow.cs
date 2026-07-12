@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
@@ -39,6 +40,7 @@ internal sealed class PetWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _hoverTimer;
     private readonly System.Windows.Threading.DispatcherTimer _clickThroughTimer;
     private bool _lastHover;
+    private int _lastLookDirection = -1;
     private bool _clickThrough;
     private bool _typing;
     private long _lastKeyTick;
@@ -385,6 +387,27 @@ internal sealed class PetWindow : Window
         }
         catch { return; }   // not laid out yet
 
+        // V2 atlases expose sixteen cursor-facing cells at 22.5° increments. Push the
+        // global cursor direction even when it is outside the transparent pet window,
+        // matching the Codex Pets cursor preview and the macOS native companion.
+        try
+        {
+            var center = PointToScreen(new System.Windows.Point(ActualWidth / 2, (BubbleBand + ActualHeight) / 2));
+            double dx = p.X - center.X;
+            double dy = p.Y - center.Y; // screen coordinates grow downward
+            double degrees = (Math.Atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+            int direction = ((int)Math.Round(degrees / 22.5)) % 16;
+            if (direction != _lastLookDirection)
+            {
+                _lastLookDirection = direction;
+                _ = _webView.CoreWebView2.ExecuteScriptAsync(
+                    $"window.__ttPetLookDirectionIndex={direction};" +
+                    "window.dispatchEvent(new Event('pet:look'));"
+                );
+            }
+        }
+        catch { /* window transform unavailable during resize/navigation */ }
+
         if (_miniMode)
         {
             if (inside && !_isRevealed)
@@ -581,12 +604,14 @@ internal sealed class PetWindow : Window
                 .Select(m => new { name = m.Name, percent = m.Percent, source = m.Source }),
         });
         var mini = _miniMode ? "true" : "false";
+        var lookDirection = _lastLookDirection >= 0 ? _lastLookDirection.ToString() : "null";
         try
         {
             _ = _webView.CoreWebView2.ExecuteScriptAsync(
                 $"window.__ttPetCurrency={{symbol:{sym},rate:{rate}}};" +
                 $"window.__ttPetLocale={loc};" +
                 $"window.__ttPetCharacter={character};" +
+                $"window.__ttPetLookDirectionIndex={lookDirection};" +
                 $"window.__ttPetSyncing={syncing};" +
                 $"window.__ttPetTokens={_stats.TodayTokens};" +
                 $"window.__ttPetCostUsd={cost};" +
@@ -596,6 +621,7 @@ internal sealed class PetWindow : Window
                 "window.dispatchEvent(new Event('pet:currency'));" +
                 "window.dispatchEvent(new Event('pet:locale'));" +
                 "window.dispatchEvent(new Event('pet:character'));" +
+                "window.dispatchEvent(new Event('pet:look'));" +
                 "window.dispatchEvent(new Event('pet:syncing'));" +
                 "window.dispatchEvent(new Event('pet:usage'));" +
                 "window.dispatchEvent(new Event('pet:connected'));" +
@@ -716,11 +742,15 @@ internal sealed class PetWindow : Window
 
     public static string NormalizeCharacter(string? value)
     {
-        return (value ?? "").Trim().ToLowerInvariant() switch
+        var normalized = (value ?? "").Trim().ToLowerInvariant();
+        return normalized switch
         {
             CharacterSprout => CharacterSprout,
             CharacterByte => CharacterByte,
             CharacterEmber => CharacterEmber,
+            CharacterClawd => CharacterClawd,
+            _ when Regex.IsMatch(normalized, "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+                => normalized,
             _ => CharacterClawd,
         };
     }

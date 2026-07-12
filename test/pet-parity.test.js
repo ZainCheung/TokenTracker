@@ -26,6 +26,14 @@ const atlasSwiftSource = fs.readFileSync(
   path.join(repoRoot, "TokenTrackerBar/TokenTrackerBar/Views/PetAtlasSpriteView.swift"),
   "utf8",
 );
+const windowsPetSource = fs.readFileSync(
+  path.join(repoRoot, "TokenTrackerWin/PetWindow.cs"),
+  "utf8",
+);
+const macControllerSource = fs.readFileSync(
+  path.join(repoRoot, "TokenTrackerBar/TokenTrackerBar/Services/DesktopPetWindowController.swift"),
+  "utf8",
+);
 
 // "workingThinking" → "working-thinking", so the two sides compare directly.
 function kebab(swiftCase) {
@@ -133,4 +141,16 @@ test("atlas row timings match between PetAtlasAnimated.jsx and PetAtlasSpriteVie
       `row ${row} durations diverge between Swift and JS`,
     );
   }
+});
+
+test("V2 look directions use the same 16-cell row mapping on web, macOS, and Windows", () => {
+  assert.match(atlasJsSource, /9 \+ Math\.floor\(lookIndex \/ 8\)/);
+  assert.match(atlasJsSource, /lookIndex % 8/);
+  assert.match(atlasJsSource, /atlasRows = spriteVersionNumber === 2 \? 11 : 9/);
+  assert.match(atlasSwiftSource, /return \(9 \+ normalized \/ 8, normalized % 8\)/);
+  assert.match(macControllerSource, /degrees \/ 22\.5/);
+  assert.match(macControllerSource, /% 16/);
+  assert.match(windowsPetSource, /degrees \/ 22\.5/);
+  assert.match(windowsPetSource, /% 16/);
+  assert.match(windowsPetSource, /pet:look/);
 });

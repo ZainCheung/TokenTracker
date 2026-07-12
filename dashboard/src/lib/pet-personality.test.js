@@ -6,9 +6,10 @@ import {
 } from "./pet-personality";
 
 describe("pet personality", () => {
-  it("normalizes unknown characters to Clawd", () => {
+  it("accepts package slugs and rejects unsafe character ids", () => {
     expect(normalizePetCharacter("BYTE")).toBe("byte");
-    expect(normalizePetCharacter("unknown")).toBe("clawd");
+    expect(normalizePetCharacter("community-pet")).toBe("community-pet");
+    expect(normalizePetCharacter("../unsafe")).toBe("clawd");
   });
 
   it("resolves live states in a stable priority order", () => {

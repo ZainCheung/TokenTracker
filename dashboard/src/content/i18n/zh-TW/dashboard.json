@@ -354,5 +354,16 @@
   "pet.state.rest": "休息",
   "pet.size.small": "小",
   "pet.size.medium": "中",
-  "pet.size.large": "大"
+  "pet.size.large": "大",
+  "pet.import.title": "匯入 Codex 寵物",
+  "pet.import.subtitle": "貼上 codex-pets.net 連結，或選擇 .zip 寵物包。",
+  "pet.import.add": "新增",
+  "pet.import.zip": "選擇寵物套件",
+  "pet.import.remove": "移除已匯入寵物",
+  "pet.import.success": "寵物已匯入並選取。",
+  "pet.import.failed": "無法匯入這個寵物。",
+  "pet.import.busy": "正在匯入…",
+  "pet.format.v2": "V2",
+  "pet.import.removed": "已移除匯入的寵物。",
+  "pet.import.url_label": "Codex Pets 連結或寵物 ID"
 }

@@ -1160,13 +1160,35 @@ async function proxyToLocalCli(req, res) {
 }
 
 function localDataApiPlugin() {
+  // Pet packages are implemented in the current checkout's local API. Do not
+  // proxy these routes to :7680: a developer may have an older packaged app
+  // running there, which would make the import UI silently disappear even
+  // though the source tree already supports the feature.
+  const esmRequire = createRequire(import.meta.url);
+  const { createLocalApiHandler, resolveQueuePath } = esmRequire("../src/lib/local-api");
+  const handleRepoLocalApi = createLocalApiHandler({ queuePath: resolveQueuePath() });
+
   return {
     name: "tokentracker-local-data-api",
     configureServer(server) {
       // 添加中间件到最前面，拦截所有请求
       server.middlewares.use((req, res, next) => {
-        if (typeof req.url === "string" && req.url.startsWith("/functions/")) {
-          const url = new URL(req.url, `http://${req.headers.host}`);
+        if (typeof req.url !== "string") {
+          next();
+          return;
+        }
+        const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+        const isRepoPetApi = url.pathname === "/api/local-auth"
+          || url.pathname === "/functions/tokentracker-pets"
+          || url.pathname === "/api/pets/import"
+          || url.pathname.startsWith("/api/pets/local/");
+        if (isRepoPetApi) {
+          Promise.resolve(handleRepoLocalApi(req, res, url))
+            .then((handled) => { if (!handled) next(); })
+            .catch(next);
+          return;
+        }
+        if (req.url.startsWith("/functions/")) {
           Promise.resolve(handleLocalApi(req, res, url))
             .then((handled) => {
               if (handled) return;

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Text.Json.Nodes;
 using Microsoft.Win32;
 
 namespace TokenTrackerWin;
@@ -143,7 +144,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         StyleSubmenu(_petCtxCharacterItem.DropDown);
         _petMenu.Opened += (_, _) => TrayMenuRenderer.ApplyRoundedRegion(_petMenu);
         _petMenu.SizeChanged += (_, _) => TrayMenuRenderer.ApplyRoundedRegion(_petMenu);
-        _petMenu.Opening += (_, _) => { UpdatePetSizeChecks(); UpdatePetCharacterChecks(); UpdatePetDashboardItem(); };
+        _petMenu.Opening += (_, _) => { RebuildCustomPetMenus(); UpdatePetSizeChecks(); UpdatePetCharacterChecks(); UpdatePetDashboardItem(); };
 
         _startupItem = CreateMenuItem("", OnToggleStartup);
         _startupItem.Checked = LaunchAtStartup.IsEnabled;
@@ -188,6 +189,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             RefreshLocaleFromDashboard();
             RefreshSummary();
             UpdatePetMenuText();
+            RebuildCustomPetMenus();
             UpdatePetSizeChecks();
             UpdatePetCharacterChecks();
         };
@@ -478,6 +480,61 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _petCtxCharacterSprout.Checked = selected == PetWindow.CharacterSprout;
         _petCtxCharacterByte.Checked = selected == PetWindow.CharacterByte;
         _petCtxCharacterEmber.Checked = selected == PetWindow.CharacterEmber;
+        foreach (ToolStripItem item in _petCharacterItem.DropDownItems)
+        {
+            if (item.Tag is string id) ((ToolStripMenuItem)item).Checked = selected == id;
+        }
+        foreach (ToolStripItem item in _petCtxCharacterItem.DropDownItems)
+        {
+            if (item.Tag is string id) ((ToolStripMenuItem)item).Checked = selected == id;
+        }
+    }
+
+    private static IEnumerable<(string Id, string Name)> InstalledCustomPets()
+    {
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "pets");
+        if (!Directory.Exists(root)) yield break;
+        foreach (var directory in Directory.EnumerateDirectories(root))
+        {
+            var id = Path.GetFileName(directory).ToLowerInvariant();
+            if (PetWindow.NormalizeCharacter(id) != id || id is PetWindow.CharacterClawd or PetWindow.CharacterSprout or PetWindow.CharacterByte or PetWindow.CharacterEmber) continue;
+            var manifestPath = Path.Combine(directory, "pet.json");
+            var spritesheetPath = Path.Combine(directory, "spritesheet.webp");
+            if (!File.Exists(manifestPath) || !File.Exists(spritesheetPath)) continue;
+            string name = id;
+            try
+            {
+                var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))?.AsObject();
+                if (manifest?["id"]?.GetValue<string>()?.ToLowerInvariant() != id) continue;
+                name = manifest?["displayName"]?.GetValue<string>()?.Trim() is { Length: > 0 } displayName
+                    ? displayName
+                    : id;
+            }
+            catch { continue; }
+            yield return (id, name);
+        }
+    }
+
+    private void RebuildCustomPetMenus()
+    {
+        static void RemoveCustom(ToolStripItemCollection items)
+        {
+            foreach (var item in items.Cast<ToolStripItem>().Where(item => item.Tag is string).ToArray())
+                items.Remove(item);
+        }
+        RemoveCustom(_petCharacterItem.DropDownItems);
+        RemoveCustom(_petCtxCharacterItem.DropDownItems);
+        foreach (var (id, name) in InstalledCustomPets().OrderBy(pet => pet.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var trayItem = CreateMenuItem(name, (_, _) => SetPetCharacter(id));
+            trayItem.Tag = id;
+            _petCharacterItem.DropDownItems.Add(trayItem);
+            var contextItem = CreateMenuItem(name, (_, _) => SetPetCharacter(id));
+            contextItem.Tag = id;
+            _petCtxCharacterItem.DropDownItems.Add(contextItem);
+        }
+        StyleSubmenu(_petCharacterItem.DropDown);
+        StyleSubmenu(_petCtxCharacterItem.DropDown);
     }
 
     /// <summary>True while the dashboard window is shown (not hidden / minimized).</summary>

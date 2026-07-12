@@ -1,18 +1,43 @@
-import React, { useEffect, useState } from "react";
-import { MonitorUp, Zap } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { FileArchive, Link2, Loader2, MonitorUp, Trash2, Upload, Zap } from "lucide-react";
 import { ToggleSwitch, SegmentedControl } from "../components/settings/Controls.jsx";
 import { usePetSettings } from "../hooks/use-pet-settings.js";
+import { usePetCatalog } from "../hooks/use-pet-catalog.js";
+import { importPetPackage, installPetFromUrl, removePet } from "../lib/pets-api.js";
 import { copy } from "../lib/copy";
 import { cn } from "../lib/cn";
 import { ClawdAnimated } from "../ui/foundation/ClawdAnimated.jsx";
 import { FadeIn } from "../ui/foundation/FadeIn.jsx";
+import { showToast } from "../ui/components/Toast.jsx";
 
-const CHARACTERS = [
-  { id: "clawd", nameKey: "pet.character.clawd", tint: "from-oai-amber-50 dark:from-orange-950/70" },
-  { id: "sprout", nameKey: "pet.character.sprout", tint: "from-oai-brand-100 dark:from-emerald-950/70" },
-  { id: "byte", nameKey: "pet.character.byte", tint: "from-oai-gray-200 dark:from-slate-800/70" },
-  { id: "ember", nameKey: "pet.character.ember", tint: "from-orange-100 dark:from-orange-950/80" },
-];
+const CHARACTER_TINTS = {
+  clawd: "from-oai-amber-50 dark:from-orange-950/70",
+  sprout: "from-oai-brand-100 dark:from-emerald-950/70",
+  byte: "from-oai-gray-200 dark:from-slate-800/70",
+  ember: "from-orange-100 dark:from-orange-950/80",
+};
+
+/** Renders localized copy with the literal "codex-pets.net" turned into a link. */
+function ImportSubtitle() {
+  const text = copy("pet.import.subtitle");
+  const site = "codex-pets.net";
+  const index = text.indexOf(site);
+  if (index < 0) return text;
+  return (
+    <>
+      {text.slice(0, index)}
+      <a
+        href="https://codex-pets.net"
+        target="_blank"
+        rel="noreferrer"
+        className="underline decoration-oai-gray-400 underline-offset-2 transition-colors hover:text-oai-black dark:decoration-oai-gray-500 dark:hover:text-white"
+      >
+        {site}
+      </a>
+      {text.slice(index + site.length)}
+    </>
+  );
+}
 
 const PREVIEW_STATES = [
   { id: "idle-living", labelKey: "pet.state.calm" },
@@ -23,40 +48,75 @@ const PREVIEW_STATES = [
   { id: "sleeping", labelKey: "pet.state.rest" },
 ];
 
-function CharacterCard({ character, selected, onSelect }) {
+function CharacterCard({ character, selected, onSelect, onRemove, removeDisabled }) {
+  const name = character.nameKey ? copy(character.nameKey) : character.displayName;
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        "group relative overflow-hidden rounded-xl border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500",
-        selected
-          ? "border-oai-brand-500/40 bg-white dark:border-oai-brand-500/25 dark:bg-oai-gray-900/80"
-          : "border-oai-gray-200/80 bg-white/55 hover:border-oai-gray-400 dark:border-oai-gray-800 dark:bg-oai-gray-950/55 dark:hover:border-oai-gray-600",
-      )}
-    >
-      <div className={cn("absolute inset-0 bg-gradient-to-br to-transparent opacity-80 dark:opacity-55", character.tint)} />
-      <div className="relative flex items-center gap-2.5">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white/70 dark:bg-black/15">
-          <ClawdAnimated state="idle-living" character={character.id} size={44} />
+    <div className="group relative">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className={cn(
+          "relative w-full overflow-hidden rounded-xl border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500",
+          selected
+            ? "border-oai-brand-500/40 bg-white dark:border-oai-brand-500/25 dark:bg-oai-gray-900/80"
+            : "border-oai-gray-200/80 bg-white/55 hover:border-oai-gray-400 dark:border-oai-gray-800 dark:bg-oai-gray-950/55 dark:hover:border-oai-gray-600",
+        )}
+      >
+        <div className={cn("absolute inset-0 bg-gradient-to-br to-transparent opacity-80 dark:opacity-55", CHARACTER_TINTS[character.id] || "from-oai-gray-200/80 dark:from-oai-gray-800/70")} />
+        <div className="relative flex items-center gap-2.5">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+            <ClawdAnimated state="idle-living" character={character.id} pet={character} size={44} />
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-semibold text-oai-black dark:text-white">{name}</span>
+            {character.spriteVersionNumber === 2 ? (
+              <span className="shrink-0 rounded border border-oai-gray-300/80 px-1 text-[9px] font-semibold text-oai-gray-500 dark:border-oai-gray-600 dark:text-oai-gray-400">{copy("pet.format.v2")}</span>
+            ) : null}
+            {selected ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-oai-brand-500" aria-hidden /> : null}
+          </div>
         </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold text-oai-black dark:text-white">{copy(character.nameKey)}</span>
-          {selected ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-oai-brand-500" aria-hidden /> : null}
-        </div>
-      </div>
-    </button>
+      </button>
+      {onRemove ? (
+        <button
+          type="button"
+          disabled={removeDisabled}
+          onClick={onRemove}
+          aria-label={`${copy("pet.import.remove")} · ${name}`}
+          className={cn(
+            "absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md border border-oai-gray-200/90 bg-white/95 text-oai-gray-500 transition-opacity hover:text-red-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500 disabled:opacity-40 dark:border-oai-gray-700 dark:bg-oai-gray-900/95 dark:text-oai-gray-400 dark:hover:text-red-400",
+            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <Trash2 className="h-3 w-3" aria-hidden />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
-function PetStage({ character, state, onStateChange }) {
+function PetStage({ pet, state, onStateChange }) {
+  const [lookDirectionIndex, setLookDirectionIndex] = useState(null);
+  const spriteRef = useRef(null);
   const stateSpec = PREVIEW_STATES.find(function findState(item) {
     return item.id === state;
   });
   const stateLabel = copy(stateSpec?.labelKey || "pet.state.calm");
   return (
-    <section className="relative flex min-h-[400px] flex-col overflow-hidden bg-oai-gray-50 dark:bg-oai-gray-950 sm:min-h-[440px] lg:min-h-[480px]">
+    <section
+      className="relative flex min-h-[400px] flex-col overflow-hidden bg-oai-gray-50 dark:bg-oai-gray-950 sm:min-h-[440px] lg:min-h-[480px]"
+      onPointerMove={(event) => {
+        // V2 pets track the pointer across the whole stage (mirroring the desktop
+        // pet watching the cursor across the screen), not just over the sprite.
+        if (pet?.spriteVersionNumber !== 2 || !spriteRef.current) return;
+        const rect = spriteRef.current.getBoundingClientRect();
+        const dx = event.clientX - (rect.left + rect.width / 2);
+        const dy = event.clientY - (rect.top + rect.height / 2);
+        const angle = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+        setLookDirectionIndex(Math.round(angle / 22.5) % 16);
+      }}
+      onPointerLeave={() => setLookDirectionIndex(null)}
+    >
       <div
         className="absolute inset-0 opacity-[0.16] dark:opacity-[0.12]"
         style={{ backgroundImage: "radial-gradient(currentColor 0.7px, transparent 0.7px)", backgroundSize: "14px 14px" }}
@@ -72,12 +132,24 @@ function PetStage({ character, state, onStateChange }) {
         </div>
       </div>
       <div className="relative flex flex-1 items-center justify-center px-6 py-5">
-        <div className="relative flex h-52 w-52 items-center justify-center sm:h-56 sm:w-56">
-          <div className="absolute bottom-5 h-3 w-28 rounded-full bg-black/10 blur-sm dark:bg-black/35" aria-hidden />
-          <ClawdAnimated state={state} character={character} size={190} />
+        <div
+          ref={spriteRef}
+          className="relative flex h-52 w-52 items-center justify-center sm:h-56 sm:w-56 lg:h-64 lg:w-64"
+        >
+          {/* Pixel art upscales cleanly; a transform keeps the sprite responsive
+              without re-deriving the atlas geometry from a JS media query. */}
+          <div className="origin-bottom lg:scale-[1.18]">
+            <ClawdAnimated
+              state={state}
+              character={pet?.id || "clawd"}
+              pet={pet}
+              size={190}
+              lookDirectionIndex={lookDirectionIndex}
+            />
+          </div>
         </div>
       </div>
-      <div className="relative border-t border-oai-gray-200/70 bg-white/70 px-3 py-2 backdrop-blur-sm dark:border-oai-gray-800 dark:bg-oai-gray-950/70">
+      <div className="relative border-t border-oai-gray-200/70 bg-white/85 px-3 py-2 dark:border-oai-gray-800 dark:bg-oai-gray-950/85">
         <div className="grid grid-cols-3 gap-1" aria-label={copy("pet.preview.states")}>
           {PREVIEW_STATES.map((previewState) => (
             <button
@@ -110,11 +182,43 @@ function PetStage({ character, state, onStateChange }) {
 
 export function PetPage() {
   const { available, settings, setSetting } = usePetSettings();
+  const { pets, loading: catalogLoading, available: catalogAvailable, refresh } = usePetCatalog();
+  const [importUrl, setImportUrl] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
   const [previewState, setPreviewState] = useState("idle-living");
   // Auto-cycle the preview until the user picks a state themselves — a manual
   // choice must stick, so the first click stops the rotation for this visit.
   const [autoRotate, setAutoRotate] = useState(true);
   const selectedCharacter = settings.character || "clawd";
+  const selectedPet = pets.find((pet) => pet.id === selectedCharacter) || pets[0];
+  // A long codex-pets.net download deserves live feedback, and failures must not
+  // read like successes — success confirms via toast, errors stay inline by the form.
+  const importLine = importBusy
+    ? { kind: "busy", text: copy("pet.import.busy") }
+    : (importError ? { kind: "error", text: importError } : null);
+
+  useEffect(() => {
+    if (!catalogLoading && pets.length > 0 && !pets.some((pet) => pet.id === selectedCharacter)) {
+      setSetting("character", "clawd");
+    }
+  }, [catalogLoading, pets, selectedCharacter, setSetting]);
+
+  async function runImport(operation, successMessage = copy("pet.import.success")) {
+    setImportBusy(true);
+    setImportError("");
+    try {
+      const result = await operation();
+      await refresh();
+      if (result?.pet?.id) setSetting("character", result.pet.id);
+      showToast({ title: successMessage, timeout: 4000 });
+      setImportUrl("");
+    } catch (error) {
+      setImportError(error?.message || copy("pet.import.failed"));
+    } finally {
+      setImportBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!autoRotate) return undefined;
@@ -149,7 +253,7 @@ export function PetPage() {
           <FadeIn y={12} delay={0.04}>
             <div className="overflow-hidden rounded-[28px] border border-oai-gray-200 bg-white/75 dark:border-oai-gray-800 dark:bg-oai-gray-900/60 lg:grid lg:grid-cols-[1.12fr_0.88fr]">
               <PetStage
-                character={selectedCharacter}
+                pet={selectedPet}
                 state={previewState}
                 onStateChange={(state) => {
                   setAutoRotate(false);
@@ -168,16 +272,102 @@ export function PetPage() {
                     </p>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    {CHARACTERS.map((character) => (
+                    {pets.map((character) => (
                       <CharacterCard
                         key={character.id}
                         character={character}
                         selected={selectedCharacter === character.id}
                         onSelect={() => setSetting("character", character.id)}
+                        removeDisabled={importBusy}
+                        onRemove={catalogAvailable && character.custom
+                          ? () => runImport(async () => {
+                            await removePet(character.id);
+                            if (selectedCharacter === character.id) setSetting("character", "clawd");
+                            return null;
+                          }, copy("pet.import.removed"))
+                          : undefined}
                       />
                     ))}
                   </div>
                 </section>
+
+                {catalogAvailable ? (
+                  <section className="mt-6 border-t border-oai-gray-200/70 pt-5 dark:border-oai-gray-800" aria-labelledby="pet-import-title">
+                    <div className="flex items-center gap-2">
+                      <Upload className="h-4 w-4 text-oai-gray-500" aria-hidden />
+                      <h2 id="pet-import-title" className="text-sm font-semibold">{copy("pet.import.title")}</h2>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-oai-gray-500 dark:text-oai-gray-400">
+                      <ImportSubtitle />
+                    </p>
+                    <form
+                      className="mt-3 flex gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!importBusy && importUrl.trim()) runImport(() => installPetFromUrl(importUrl));
+                      }}
+                    >
+                      <label className="relative flex min-w-0 flex-1 items-center">
+                        <Link2 className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-oai-gray-400" aria-hidden />
+                        <input
+                          value={importUrl}
+                          onChange={(event) => setImportUrl(event.target.value)}
+                          aria-label={copy("pet.import.url_label")}
+                          placeholder="codex-pets.net/#/pets/…"
+                          className="h-9 w-full rounded-lg border border-oai-gray-200 bg-white pl-9 pr-3 text-xs outline-none focus:border-oai-brand-500 dark:border-oai-gray-700 dark:bg-oai-gray-950"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={importBusy || !importUrl.trim()}
+                        className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-oai-black px-3.5 text-xs font-semibold text-white transition-colors disabled:bg-oai-gray-200 disabled:text-oai-gray-400 dark:bg-white dark:text-black dark:disabled:bg-oai-gray-800 dark:disabled:text-oai-gray-500"
+                      >
+                        {importBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                        {copy("pet.import.add")}
+                      </button>
+                    </form>
+                    <label
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (importBusy) return;
+                        const file = event.dataTransfer?.files?.[0];
+                        if (file) runImport(() => importPetPackage(file));
+                      }}
+                      className={cn(
+                        "mt-2 flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-oai-gray-300 text-xs font-medium text-oai-gray-500 transition-colors hover:border-oai-gray-500 hover:text-oai-black dark:border-oai-gray-600 dark:text-oai-gray-400 dark:hover:border-oai-gray-400 dark:hover:text-white",
+                        importBusy && "pointer-events-none opacity-40",
+                      )}
+                    >
+                      <FileArchive className="h-3.5 w-3.5" aria-hidden />
+                      {copy("pet.import.zip")}
+                      <input
+                        type="file"
+                        accept=".zip,.codex-pet.zip,application/zip"
+                        className="sr-only"
+                        disabled={importBusy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) runImport(() => importPetPackage(file));
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {importLine ? (
+                      <p
+                        role={importLine.kind === "error" ? "alert" : "status"}
+                        className={cn(
+                          "mt-2 text-xs",
+                          importLine.kind === "error"
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-oai-gray-500 dark:text-oai-gray-400",
+                        )}
+                      >
+                        {importLine.text}
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
 
                 <section className="mt-6 border-t border-oai-gray-200/70 pt-5 dark:border-oai-gray-800">
                   <div className="flex items-center gap-2">

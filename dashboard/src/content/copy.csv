@@ -1106,3 +1106,14 @@ pet.state.rest,dashboard,PetPage,PetPage,state_rest,"Rest",,active
 pet.size.small,dashboard,PetPage,PetPage,size_small,"Small",,active
 pet.size.medium,dashboard,PetPage,PetPage,size_medium,"Medium",,active
 pet.size.large,dashboard,PetPage,PetPage,size_large,"Large",,active
+pet.import.title,dashboard,PetPage,PetPage,import_title,"Import Codex Pet",,active
+pet.import.subtitle,dashboard,PetPage,PetPage,import_subtitle,"Paste a codex-pets.net link or choose a .zip package.",,active
+pet.import.add,dashboard,PetPage,PetPage,import_add,"Add",,active
+pet.import.zip,dashboard,PetPage,PetPage,import_zip,"Choose package",,active
+pet.import.remove,dashboard,PetPage,PetPage,import_remove,"Remove imported pet",,active
+pet.import.success,dashboard,PetPage,PetPage,import_success,"Pet imported and selected.",,active
+pet.import.failed,dashboard,PetPage,PetPage,import_failed,"Could not import this pet.",,active
+pet.import.busy,dashboard,PetPage,PetPage,import_busy,"Importing…",,active
+pet.format.v2,dashboard,PetPage,PetPage,format_v2,"V2",,active
+pet.import.removed,dashboard,PetPage,PetPage,import_removed,"Imported pet removed.",,active
+pet.import.url_label,dashboard,PetPage,PetPage,import_url_label,"Codex Pets URL or pet id",,active

@@ -21,4 +21,30 @@ describe("PetAtlasAnimated", () => {
       backgroundSize: "800% 900%",
     });
   });
+
+  it("maps all 16 V2 look directions across rows 9 and 10", () => {
+    const pet = {
+      id: "samara-v2",
+      spriteVersionNumber: 2,
+      assetUrl: "/api/pets/local/samara-v2/spritesheet.webp",
+    };
+    const { container, rerender } = render(
+      <PetAtlasAnimated character={pet.id} pet={pet} lookDirectionIndex={0} size={208} />,
+    );
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundImage: "url(/api/pets/local/samara-v2/spritesheet.webp)",
+      backgroundSize: "800% 1100%",
+      backgroundPosition: "0% 90%",
+    });
+    rerender(<PetAtlasAnimated character={pet.id} pet={pet} lookDirectionIndex={15} size={208} />);
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundPosition: "100% 100%",
+    });
+    rerender(
+      <PetAtlasAnimated character={pet.id} pet={pet} state="happy" lookDirectionIndex={15} size={208} />,
+    );
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundPosition: "0% 40%",
+    });
+  });
 });

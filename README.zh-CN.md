@@ -148,6 +148,15 @@ brew install mm7894215/tokentracker/tokentracker
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+**桌面宠物** —— 悬浮在桌面上的像素小伙伴，实时响应你的 token 消耗：你写代码它也写，连击时庆祝，休息时打盹。粘贴 [codex-pets.net](https://codex-pets.net) 链接或 `.codex-pet.zip` 即可导入社区宠物，V2 宠物还能 16 方向转头追随你的鼠标。macOS / Windows / Web 三端支持。
+
+<img src="https://raw.githubusercontent.com/mm7894215/tokentracker/main/docs/screenshots/pet.png" alt="Desktop Pet" />
+
+</td>
+</tr>
 </table>
 
 ---

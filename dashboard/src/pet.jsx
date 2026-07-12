@@ -13,6 +13,7 @@ import {
 } from "./lib/pet-personality.js";
 import { petVisualScale } from "./lib/pet-appearance.js";
 import { PetAtlasAnimated } from "./ui/foundation/PetAtlasAnimated.jsx";
+import { usePetCatalog } from "./hooks/use-pet-catalog.js";
 
 /**
  * Standalone floating-pet entry for the Windows tray app (PetWindow.cs loads
@@ -277,9 +278,17 @@ function PetClawd({ state, size, leanX }) {
   );
 }
 
-function PetCharacterSprite({ state, size, leanX, character }) {
+function PetCharacterSprite({ state, size, leanX, character, pet, lookDirectionIndex }) {
   if (character !== "clawd") {
-    return <PetAtlasAnimated character={character} state={state} size={size} />;
+    return (
+      <PetAtlasAnimated
+        character={character}
+        pet={pet}
+        state={state}
+        size={size}
+        lookDirectionIndex={lookDirectionIndex}
+      />
+    );
   }
   return <PetClawd state={state} size={size * petVisualScale(character)} leanX={leanX} />;
 }
@@ -316,6 +325,7 @@ function Bubble({ text }) {
 }
 
 function Pet() {
+  const { pets, refresh: refreshPetCatalog } = usePetCatalog();
   const [today, setToday] = useState(readPetUsage);
   const [connected, setConnected] = useState(readPetConnected);
   const [currency, setCurrency] = useState(readPetCurrency);
@@ -329,10 +339,12 @@ function Pet() {
   const [speech, setSpeech] = useState(null);
   const [hovering, setHovering] = useState(false);
   const [leanX, setLeanX] = useState(0); // −1..+1, cursor offset from center while hovering
+  const [lookDirectionIndex, setLookDirectionIndex] = useState(null);
   const [size, setSize] = useState(sizeFor);
   const [miniMode, setMiniMode] = useState(false);
   const [sleepState, setSleepState] = useState(null);
   const [modelStatus, setModelStatus] = useState(null);
+  const selectedPet = pets.find((pet) => pet.id === character) || pets[0];
   const dragRef = useRef(null);
   const tapIndexRef = useRef(0);
   const quipIndexRef = useRef(0); // rotates through the quip pool on each tap (macOS quipIndex)
@@ -411,11 +423,14 @@ function Pet() {
     return () => window.removeEventListener("pet:locale", update);
   }, []);
   useEffect(() => {
-    const update = () => setCharacter(readPetCharacter());
+    const update = () => {
+      setCharacter(readPetCharacter());
+      refreshPetCatalog();
+    };
     update();
     window.addEventListener("pet:character", update);
     return () => window.removeEventListener("pet:character", update);
-  }, []);
+  }, [refreshPetCatalog]);
   // Syncing state pushed by the native host (drives the typing animation, like macOS).
   useEffect(() => {
     const update = () => setIsSyncing(Boolean(window.__ttPetSyncing));
@@ -461,8 +476,24 @@ function Pet() {
   // When the cursor leaves, straighten Clawd back up (no stuck lean — DOM moves stop
   // firing on leave, so the host's hover signal is what tells us we've left).
   useEffect(() => {
-    if (!hovering) setLeanX(0);
+    if (!hovering) {
+      setLeanX(0);
+    }
   }, [hovering]);
+
+  useEffect(() => {
+    const update = () => {
+      const value = Number(window.__ttPetLookDirectionIndex);
+      setLookDirectionIndex(
+        selectedPet?.spriteVersionNumber === 2 && Number.isInteger(value)
+          ? ((value % 16) + 16) % 16
+          : null,
+      );
+    };
+    update();
+    window.addEventListener("pet:look", update);
+    return () => window.removeEventListener("pet:look", update);
+  }, [selectedPet?.spriteVersionNumber]);
 
   // Ambient rotation: real usage context unlocks short scenes, while calm poses remain
   // heavily weighted to avoid an always-busy pet and unnecessary continuous animation.
@@ -654,12 +685,21 @@ function Pet() {
             a body lean, smoothed so the discrete cursor samples read as fluid. */}
         <div
           style={{
-            transform: `translateX(${leanX * size * LEAN_MAX_SHIFT_FRAC}px) rotate(${leanX * LEAN_MAX_TILT_DEG}deg)`,
+            transform: lookDirectionIndex == null
+              ? `translateX(${leanX * size * LEAN_MAX_SHIFT_FRAC}px) rotate(${leanX * LEAN_MAX_TILT_DEG}deg)`
+              : "none",
             transformOrigin: "50% 92%",
             transition: "transform 0.12s ease-out",
           }}
         >
-          <PetCharacterSprite state={state} size={size} leanX={leanX} character={character} />
+          <PetCharacterSprite
+            state={state}
+            size={size}
+            leanX={leanX}
+            character={character}
+            pet={selectedPet}
+            lookDirectionIndex={lookDirectionIndex}
+          />
         </div>
       </div>
     </div>

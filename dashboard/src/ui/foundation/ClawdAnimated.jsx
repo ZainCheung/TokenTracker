@@ -146,10 +146,26 @@ function ClawdSvgAnimated({ state = "idle-living", size = 48, className = "" }) 
   );
 }
 
-export function ClawdAnimated({ state = "idle-living", size = 48, className = "", character = "clawd" }) {
+export function ClawdAnimated({
+  state = "idle-living",
+  size = 48,
+  className = "",
+  character = "clawd",
+  pet = null,
+  lookDirectionIndex = null,
+}) {
   const id = normalizePetCharacter(character);
   if (id !== "clawd") {
-    return <PetAtlasAnimated character={id} state={state} size={size} className={className} />;
+    return (
+      <PetAtlasAnimated
+        character={id}
+        pet={pet}
+        state={state}
+        size={size}
+        className={className}
+        lookDirectionIndex={lookDirectionIndex}
+      />
+    );
   }
   return <ClawdSvgAnimated state={state} size={size * petVisualScale(id)} className={className} />;
 }

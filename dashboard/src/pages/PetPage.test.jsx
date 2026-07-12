@@ -12,6 +12,20 @@ vi.mock("../ui/foundation/FadeIn.jsx", () => ({
   FadeIn: ({ children }) => <>{children}</>,
 }));
 
+vi.mock("../hooks/use-pet-catalog.js", () => ({
+  usePetCatalog: () => ({
+    pets: [
+      { id: "clawd", displayName: "Clawd", nameKey: "pet.character.clawd", spriteVersionNumber: 1 },
+      { id: "sprout", displayName: "Sprout", nameKey: "pet.character.sprout", spriteVersionNumber: 1 },
+      { id: "byte", displayName: "Byte", nameKey: "pet.character.byte", spriteVersionNumber: 1 },
+      { id: "ember", displayName: "Ember", nameKey: "pet.character.ember", spriteVersionNumber: 1 },
+    ],
+    loading: false,
+    available: true,
+    refresh: vi.fn(),
+  }),
+}));
+
 function installNativeBridge() {
   const messages = [];
   window.history.pushState({}, "", "/pet-settings?app=1");
@@ -49,6 +63,7 @@ describe("PetPage", () => {
     const selectedClawd = screen.getByRole("button", { name: new RegExp(copy("pet.character.clawd")) });
     expect(selectedClawd).toHaveClass("border-oai-brand-500/40");
     expect(selectedClawd).not.toHaveClass("border-oai-black", "dark:border-white");
+    expect(screen.getByRole("heading", { name: copy("pet.import.title") })).toBeInTheDocument();
   });
 
   it("reads and updates live desktop pet settings through the native bridge", async () => {

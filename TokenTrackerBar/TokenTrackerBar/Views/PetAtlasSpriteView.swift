@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// Renders the generated 8×9 Codex-style atlas used by the non-Clawd companions.
+/// Renders Codex-compatible 8×9 (V1) and 8×11 (V2) companion atlases.
 /// Frames are cropped once and cached; the transparent desktop window only swaps the
 /// resulting NSImage, avoiding per-frame decoding or layout work.
 struct PetAtlasSpriteView: View {
     let character: PetCharacter
     let state: ClawdCompanionView.ClawdState
     let isVisible: Bool
+    let lookDirectionIndex: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -39,8 +40,8 @@ struct PetAtlasSpriteView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !isVisible || reduceMotion)) { timeline in
             if let image = PetAtlasFrameCache.shared.frame(
                 character: character,
-                row: spec.row,
-                column: reduceMotion ? 0 : frameIndex(at: timeline.date)
+                row: lookFrame?.row ?? spec.row,
+                column: lookFrame?.column ?? (reduceMotion ? 0 : frameIndex(at: timeline.date))
             ) {
                 Image(nsImage: image)
                     .resizable()
@@ -51,6 +52,12 @@ struct PetAtlasSpriteView: View {
                 Color.clear
             }
         }
+    }
+
+    private var lookFrame: (row: Int, column: Int)? {
+        guard character.spriteVersionNumber == 2, spec.row == 0, let lookDirectionIndex else { return nil }
+        let normalized = ((lookDirectionIndex % 16) + 16) % 16
+        return (9 + normalized / 8, normalized % 8)
     }
 
     private func frameIndex(at date: Date) -> Int {
@@ -76,7 +83,7 @@ private final class PetAtlasFrameCache {
     private let cellHeight = 208
 
     func frame(character: PetCharacter, row: Int, column: Int) -> NSImage? {
-        let key = "\(character.rawValue)-\(row)-\(column)"
+        let key = "\(character.atlasCacheKey)-\(row)-\(column)"
         lock.lock()
         if let cached = frames[key] {
             lock.unlock()
@@ -103,15 +110,14 @@ private final class PetAtlasFrameCache {
     }
 
     private func atlas(for character: PetCharacter) -> CGImage? {
-        if let cached = atlases[character.rawValue] { return cached }
-        let name = "pet-\(character.rawValue)"
-        let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "PetSprites")
-            ?? Bundle.main.url(forResource: name, withExtension: "png")
+        let cacheKey = character.atlasCacheKey
+        if let cached = atlases[cacheKey] { return cached }
+        let url = character.atlasURL
         guard let url, let image = NSImage(contentsOf: url),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
-        atlases[character.rawValue] = cgImage
+        atlases[cacheKey] = cgImage
         return cgImage
     }
 }

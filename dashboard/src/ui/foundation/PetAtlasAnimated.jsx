@@ -57,17 +57,31 @@ function useReducedMotion() {
   return reduced;
 }
 
-export function PetAtlasAnimated({ character, state = "idle-living", size = 48, className = "" }) {
+export function PetAtlasAnimated({
+  character,
+  pet = null,
+  state = "idle-living",
+  size = 48,
+  className = "",
+  lookDirectionIndex = null,
+}) {
   const id = normalizePetCharacter(character);
   const rowId = petAtlasRowForState(state);
   const row = ROWS[rowId];
+  const spriteVersionNumber = pet?.spriteVersionNumber === 2 ? 2 : 1;
+  const atlasRows = spriteVersionNumber === 2 ? 11 : 9;
+  const lookIndex = spriteVersionNumber === 2 && rowId === "idle" && Number.isInteger(lookDirectionIndex)
+    ? ((lookDirectionIndex % 16) + 16) % 16
+    : null;
+  const displayedRow = lookIndex == null ? row.row : 9 + Math.floor(lookIndex / 8);
+  const displayedFrame = lookIndex == null ? null : lookIndex % 8;
   const reducedMotion = useReducedMotion();
   const pageVisible = usePageVisible();
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
     setFrame(0);
-    if (reducedMotion || !pageVisible) return undefined;
+    if (reducedMotion || !pageVisible || lookIndex != null) return undefined;
     let cancelled = false;
     let timer = 0;
     const advance = (current) => {
@@ -83,17 +97,17 @@ export function PetAtlasAnimated({ character, state = "idle-living", size = 48, 
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [reducedMotion, pageVisible, row]);
+  }, [lookIndex, reducedMotion, pageVisible, row]);
 
   const style = useMemo(() => ({
     width: size * (192 / 208),
     height: size,
-    backgroundImage: `url(/pets/${id}/spritesheet.webp)`,
+    backgroundImage: `url(${pet?.assetUrl || `/pets/${id}/spritesheet.webp`})`,
     backgroundRepeat: "no-repeat",
-    backgroundSize: "800% 900%",
-    backgroundPosition: `${(frame / 7) * 100}% ${(row.row / 8) * 100}%`,
+    backgroundSize: `800% ${atlasRows * 100}%`,
+    backgroundPosition: `${((displayedFrame ?? frame) / 7) * 100}% ${(displayedRow / (atlasRows - 1)) * 100}%`,
     imageRendering: "pixelated",
-  }), [frame, id, row.row, size]);
+  }), [atlasRows, displayedFrame, displayedRow, frame, id, pet?.assetUrl, size]);
 
   return <div aria-hidden="true" className={`pet-atlas-animated ${className}`} style={style} />;
 }

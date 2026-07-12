@@ -525,6 +525,26 @@ function readJsonBody(req) {
   });
 }
 
+function readBodyLimited(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let failed = false;
+    req.on("data", (chunk) => {
+      if (failed) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        failed = true;
+        reject(new Error(`Request body exceeds ${Math.ceil(maxBytes / 1024 / 1024)} MB`));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => { if (!failed) resolve(Buffer.concat(chunks)); });
+    req.on("error", (error) => { if (!failed) reject(error); });
+  });
+}
+
 function runSyncCommand(extraEnv = {}, opts = {}) {
   return new Promise((resolve, reject) => {
     const args = [TRACKER_BIN, "sync"];
@@ -1134,6 +1154,50 @@ function createLocalApiHandler({ queuePath }) {
         "Cache-Control": "no-store",
       });
       res.end(JSON.stringify({ token: localAuthToken }));
+      return true;
+    }
+
+    // --- local Codex-compatible pet assets and package import ---
+    const localPetAssetMatch = p.match(/^\/api\/pets\/local\/([a-z0-9-]+)\/spritesheet\.webp$/);
+    if (localPetAssetMatch) {
+      const method = String(req.method || "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        json(res, { error: "Method Not Allowed" }, 405);
+        return true;
+      }
+      const pet = require("./pet-packages").resolvePetAsset(localPetAssetMatch[1]);
+      if (!pet) {
+        json(res, { error: "Pet not found" }, 404);
+        return true;
+      }
+      const stat = fs.statSync(pet.spritesheetPath);
+      res.writeHead(200, {
+        "Content-Type": "image/webp",
+        "Content-Length": stat.size,
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
+      if (method === "HEAD") res.end();
+      else fs.createReadStream(pet.spritesheetPath).pipe(res);
+      return true;
+    }
+
+    if (p === "/api/pets/import") {
+      if (String(req.method || "GET").toUpperCase() !== "POST") {
+        json(res, { ok: false, error: "Method Not Allowed" }, 405);
+        return true;
+      }
+      if (!isAuthorizedLocalMutation(req)) {
+        json(res, { ok: false, error: "Unauthorized" }, 401);
+        return true;
+      }
+      const pets = require("./pet-packages");
+      try {
+        const body = await readBodyLimited(req, pets.MAX_PACKAGE_BYTES);
+        json(res, { ok: true, pet: await pets.importPetZip(body) });
+      } catch (error) {
+        if (!res.headersSent) json(res, { ok: false, error: error?.message || "Pet import failed" }, 400);
+      }
       return true;
     }
 
@@ -2041,6 +2105,39 @@ function createLocalApiHandler({ queuePath }) {
         a.models[model] = (a.models[model] || 0) + (row.total_tokens || 0);
       }
       json(res, { from, to, scope, excluded_sources: excludedSources, data: Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month)) });
+      return true;
+    }
+
+    // --- Codex-compatible pet manager ---
+    if (p === "/functions/tokentracker-pets") {
+      const method = String(req.method || "GET").toUpperCase();
+      const pets = require("./pet-packages");
+      try {
+        if (method === "GET") {
+          json(res, { pets: pets.listInstalledPets() });
+          return true;
+        }
+        if (method === "POST") {
+          if (!isAuthorizedLocalMutation(req)) {
+            json(res, { ok: false, error: "Unauthorized" }, 401);
+            return true;
+          }
+          const body = await readJsonBody(req);
+          if (body?.action === "install_url") {
+            json(res, { ok: true, pet: await pets.installFromCodexPets(body.url || body.id) });
+            return true;
+          }
+          if (body?.action === "remove") {
+            json(res, { ok: true, ...pets.removeInstalledPet(body.id) });
+            return true;
+          }
+          json(res, { ok: false, error: "Unknown pets action" }, 400);
+          return true;
+        }
+        json(res, { ok: false, error: "Method Not Allowed" }, 405);
+      } catch (error) {
+        json(res, { ok: false, error: error?.message || "Pet operation failed" }, 400);
+      }
       return true;
     }
 

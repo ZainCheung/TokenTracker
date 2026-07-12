@@ -146,6 +146,15 @@ brew install mm7894215/tokentracker/tokentracker
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+**デスクトップペット** — デスクトップに浮かぶピクセルコンパニオン。実際のトークン消費に反応し、コーディング中は一緒に作業、連続使用ではお祝い、休憩中は居眠り。[codex-pets.net](https://codex-pets.net) のリンクか `.codex-pet.zip` でコミュニティペットをインポートでき、V2 ペットはカーソルを 16 方向で追いかけます。macOS / Windows / Web 対応。
+
+<img src="https://raw.githubusercontent.com/mm7894215/tokentracker/main/docs/screenshots/pet.png" alt="Desktop Pet" />
+
+</td>
+</tr>
 </table>
 
 ---

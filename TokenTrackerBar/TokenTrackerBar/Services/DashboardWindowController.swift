@@ -413,6 +413,28 @@ final class DashboardWindowController: NSObject, NSWindowDelegate, WKNavigationD
         return nil
     }
 
+    /// WKWebView never opens a picker for `<input type="file">` on its own — without
+    /// this delegate method the dashboard's pet/skill import buttons silently no-op.
+    func webView(
+        _ webView: WKWebView,
+        runOpenPanelWith parameters: WKOpenPanelParameters,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping ([URL]?) -> Void
+    ) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+        if let window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(panel.runModal())
+        }
+    }
+
     // MARK: - WKNavigationDelegate
 
     private func isLocalDashboardURL(_ url: URL) -> Bool {

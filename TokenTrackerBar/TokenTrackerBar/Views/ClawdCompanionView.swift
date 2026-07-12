@@ -26,6 +26,7 @@ struct ClawdCompanionView: View {
     @ObservedObject var petState: PetWindowState = .alwaysAllowed
     /// Appearance is shared with the floating pet so the popover changes immediately.
     @ObservedObject private var characterStore = PetCharacterStore.shared
+    @ObservedObject private var petCatalog = PetCatalog.shared
 
     /// Floating pet: briefly reveal the quip bubble after a tap (hover shows data instead).
     @State private var floatingBubbleShown = false
@@ -33,6 +34,7 @@ struct ClawdCompanionView: View {
 
     @State private var eyesClosed = false
     @State private var hoverSide: HoverSide = .none
+    @State private var hoverDirectionIndex: Int? = nil
     @State private var currentAction: CharacterAction = .none
     @State private var quipIndex = 0
     @State private var armWave = false
@@ -112,8 +114,10 @@ struct ClawdCompanionView: View {
                 .modifier(ClawdHoverModifier(hoveringCharacter: $hoveringCharacter, onActive: { loc in
                     let mid = 15 * px / 2
                     hoverSide = loc.x < mid - 10 ? .left : (loc.x > mid + 10 ? .right : .center)
+                    updateLookDirection(at: loc, in: CGSize(width: 15 * px, height: 16 * px))
                 }, onEnded: {
                     hoverSide = .none
+                    hoverDirectionIndex = nil
                 }))
                 .onTapGesture { handleTap() }
 
@@ -153,6 +157,16 @@ struct ClawdCompanionView: View {
                 .scaleEffect(floatingScale)
                 .frame(width: 15 * px * floatingScale, height: 16 * px * floatingScale)
                 .modifier(ActionModifier(action: currentAction))
+                .modifier(PetLookHoverModifier(
+                    enabled: activeCharacter.spriteVersionNumber == 2,
+                    onActive: { loc in
+                        updateLookDirection(
+                            at: loc,
+                            in: CGSize(width: 15 * px * floatingScale, height: 16 * px * floatingScale)
+                        )
+                    },
+                    onEnded: { hoverDirectionIndex = nil }
+                ))
                 // Floating pet uses a plain discrete hover (NOT ClawdHoverModifier's
                 // continuous one): the per-frame .active flickered the hover-gated bubble.
                 // No lean here — the pet stays upright in exchange for rock-steady hover.
@@ -351,7 +365,8 @@ struct ClawdCompanionView: View {
                 PetAtlasSpriteView(
                     character: activeCharacter,
                     state: clawdState,
-                    isVisible: layout != .floating || petState.isWindowVisible
+                    isVisible: layout != .floating || petState.isWindowVisible,
+                    lookDirectionIndex: hoverDirectionIndex ?? (layout == .floating ? petState.lookDirectionIndex : nil)
                 )
             }
         }
@@ -360,6 +375,17 @@ struct ClawdCompanionView: View {
 
     private var activeCharacter: PetCharacter {
         characterStore.character
+    }
+
+    private func updateLookDirection(at location: CGPoint, in size: CGSize) {
+        guard activeCharacter.spriteVersionNumber == 2 else {
+            hoverDirectionIndex = nil
+            return
+        }
+        let dx = location.x - size.width / 2
+        let dy = location.y - size.height / 2
+        let degrees = (atan2(dx, -dy) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+        hoverDirectionIndex = Int((degrees / 22.5).rounded()) % 16
     }
 
     private var clawdCanvas: some View {
@@ -1559,6 +1585,28 @@ private struct ClawdHoverModifier: ViewModifier {
                     if hoveringCharacter { NSCursor.pop() }
                     hoveringCharacter = false
                     onEnded()
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Direction-only continuous hover used by V2 atlas pets. It deliberately does not
+/// mutate the bubble's hover state, so the floating window keeps its stable discrete
+/// enter/leave behavior while the sprite can still choose all 16 look cells.
+private struct PetLookHoverModifier: ViewModifier {
+    let enabled: Bool
+    var onActive: (CGPoint) -> Void
+    var onEnded: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled, #available(macOS 14, *) {
+            content.onContinuousHover { phase in
+                switch phase {
+                case .active(let location): onActive(location)
+                case .ended: onEnded()
                 }
             }
         } else {
