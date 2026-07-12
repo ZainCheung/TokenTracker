@@ -217,11 +217,11 @@ test("parseCopilotAppDbIncremental reads sessions table summaries into copilot b
     assert.equal(rows.length, 1);
     assert.equal(rows[0].model, "claude-sonnet-4-6");
     assert.equal(rows[0].input_tokens, 700);
-    assert.equal(rows[0].output_tokens, 200);
+    assert.equal(rows[0].output_tokens, 160);
     assert.equal(rows[0].cached_input_tokens, 300);
     assert.equal(rows[0].reasoning_output_tokens, 40);
     assert.equal(rows[0].cache_creation_input_tokens, 0);
-    assert.equal(rows[0].total_tokens, 1240);
+    assert.equal(rows[0].total_tokens, 1200);
     assert.equal(rows[0].conversation_count, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -287,10 +287,10 @@ test("parseCopilotAppDbIncremental emits only positive deltas on subsequent sync
     const latest = latestByBucket(readQueue(queuePath).filter((row) => row.source === "copilot"));
     assert.equal(latest.length, 1);
     assert.equal(latest[0].input_tokens, 150);
-    assert.equal(latest[0].output_tokens, 30);
+    assert.equal(latest[0].output_tokens, 25);
     assert.equal(latest[0].cached_input_tokens, 25);
     assert.equal(latest[0].reasoning_output_tokens, 5);
-    assert.equal(latest[0].total_tokens, 210);
+    assert.equal(latest[0].total_tokens, 205);
     assert.equal(latest[0].conversation_count, 1, "growth in an existing App session must not add another conversation");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -381,9 +381,36 @@ test("parseCopilotAppDbIncremental clamps cached input to raw input delta", asyn
     assert.equal(rows.length, 1);
     assert.equal(rows[0].input_tokens, 0);
     assert.equal(rows[0].cached_input_tokens, 100);
-    assert.equal(rows[0].output_tokens, 7);
+    assert.equal(rows[0].output_tokens, 4);
     assert.equal(rows[0].reasoning_output_tokens, 3);
-    assert.equal(rows[0].total_tokens, 110);
+    assert.equal(rows[0].total_tokens, 107);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("parseCopilotAppDbIncremental clamps reasoning to inclusive output totals", async () => {
+  const { dir, dbPath } = makeCopilotAppDb([
+    {
+      id: "reasoning-heavy",
+      session_type: "project",
+      model: "gpt-5.5",
+      created_at: "2026-07-07T14:35:00Z",
+      updated_at: "2026-07-07T14:36:00Z",
+      total_input_tokens: 100,
+      total_output_tokens: 50,
+      total_cached_tokens: 0,
+      total_reasoning_tokens: 80,
+    },
+  ]);
+  try {
+    const queuePath = path.join(dir, "queue.jsonl");
+    await parseCopilotAppDbIncremental({ dbPath, cursors: {}, queuePath });
+    const [row] = readQueue(queuePath).filter((entry) => entry.source === "copilot");
+    assert.equal(row.input_tokens, 100);
+    assert.equal(row.output_tokens, 0);
+    assert.equal(row.reasoning_output_tokens, 50);
+    assert.equal(row.total_tokens, 150);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -572,7 +599,7 @@ test("Copilot App DB and OTEL parsing coexist without sharing cursors or changin
     assert.equal(byModel.get("gpt-4o").output_tokens, 20);
     assert.equal(byModel.get("claude-sonnet-4-6").input_tokens, 45);
     assert.equal(byModel.get("claude-sonnet-4-6").cached_input_tokens, 5);
-    assert.equal(byModel.get("claude-sonnet-4-6").output_tokens, 10);
+    assert.equal(byModel.get("claude-sonnet-4-6").output_tokens, 8);
 
     const otelSecond = await parseCopilotIncremental({ otelPaths: [otelPath], cursors, queuePath });
     const appSecond = await parseCopilotAppDbIncremental({ dbPath, cursors, queuePath });
