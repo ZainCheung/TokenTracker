@@ -492,15 +492,19 @@ async function cmdSync(argv) {
       }
     }
 
-    let geminiFiles = [];
-    if (sourceAllowed("gemini")) {
+    let geminiPaths = null;
+    if (sourceAllowed("gemini") || sourceAllowed("antigravity")) {
       const geminiNativeValue = process.env.GEMINI_HOME || (process.platform === "win32" && typeof process.env.LOCALAPPDATA === "string"
         ? path.join(process.env.LOCALAPPDATA.trim(), "Gemini")
         : path.join(home, ".gemini"));
       const wslGeminiDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
         ? wsl.discoverWslHome(".gemini")
         : null;
-      const geminiPaths = resolveInstallPaths({ nativeValue: geminiNativeValue, wslValue: wslGeminiDir });
+      geminiPaths = resolveInstallPaths({ nativeValue: geminiNativeValue, wslValue: wslGeminiDir });
+    }
+
+    let geminiFiles = [];
+    if (sourceAllowed("gemini") && geminiPaths) {
       const fileSets = [];
       if (geminiPaths.native) {
         fileSets.push(await listGeminiSessionFiles(path.join(geminiPaths.native, "tmp")));
@@ -548,14 +552,7 @@ async function cmdSync(argv) {
     }
 
     let antigravityFiles = [];
-    if (sourceAllowed("antigravity")) {
-      const geminiNativeValue = process.env.GEMINI_HOME || (process.platform === "win32" && typeof process.env.LOCALAPPDATA === "string"
-        ? path.join(process.env.LOCALAPPDATA.trim(), "Gemini")
-        : path.join(home, ".gemini"));
-      const wslGeminiDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
-        ? wsl.discoverWslHome(".gemini")
-        : null;
-      const geminiPaths = resolveInstallPaths({ nativeValue: geminiNativeValue, wslValue: wslGeminiDir });
+    if (sourceAllowed("antigravity") && geminiPaths) {
       const fileSets = [];
       if (geminiPaths.native) {
         fileSets.push(await listAntigravityTranscripts(geminiPaths.native));
