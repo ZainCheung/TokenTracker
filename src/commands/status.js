@@ -67,6 +67,7 @@ const {
 const wsl = require("../lib/wsl-probe");
 const { getWslMode, isInvalidWslMode, shouldProbeWsl } = wsl;
 const { resolveInstallPaths } = require("../lib/install-resolver");
+
 const { probeGrokHookState, resolveGrokHome } = require("../lib/grok-hook");
 
 function formatResolvedPaths(paths, filename) {
@@ -299,6 +300,32 @@ async function cmdStatus(argv = []) {
   const zcodeInstalled = zcodeActive.length > 0;
   const zcodeDbPath = zcodeActive.join(" | ");
 
+  // OpenCode (JSON files + SQLite DB) — passive scan of storage/message/ and opencode.db.
+  const opencodeStorageNativeValue = process.env.OPENCODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
+    ? path.join(process.env.APPDATA.trim(), "opencode")
+    : path.join(xdgDataHome, "opencode"));
+  const wslOpencodeStorageDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+    ? wsl.discoverWslHome(".local/share/opencode")
+    : null;
+  const opencodeStoragePaths = resolveInstallPaths({
+    nativeValue: opencodeStorageNativeValue,
+    wslValue: wslOpencodeStorageDir,
+  });
+  const opencodeStorageActive = formatResolvedPaths(opencodeStoragePaths);
+
+  const opencodeDbNativeValue = process.env.OPENCODE_HOME || (process.platform === "win32" && typeof process.env.APPDATA === "string"
+    ? path.join(process.env.APPDATA.trim(), "opencode")
+    : path.join(xdgDataHome, "opencode"));
+  const wslOpencodeDbDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+    ? wsl.discoverWslHome(".local/share/opencode")
+    : null;
+  const opencodeDbPaths = resolveInstallPaths({
+    nativeValue: opencodeDbNativeValue,
+    wslValue: wslOpencodeDbDir,
+  });
+  const opencodeDbActive = formatResolvedPaths(opencodeDbPaths, "opencode.db");
+  const opencodeInstalled = opencodeStorageActive.length > 0 || opencodeDbActive.length > 0;
+
   // Kilo Code VS Code extension — passive scan of all VS Code-family
   // globalStorage/kilocode.kilo-code/tasks/ ui_messages.json files.
   const kilocodeTaskFiles = resolveKilocodeTaskFiles(process.env);
@@ -340,15 +367,9 @@ async function cmdStatus(argv = []) {
   // install / WSL auto-discovery. Surface the resolved path (UNC included) and,
   // on Windows, the discovered distros so WSL users can debug "why no sync"
   // without guessing the right UNC alias (#87).
-  const hermesPaths = resolveInstallPaths({
-    nativeValue: process.env.TOKENTRACKER_HERMES_HOME || (process.platform === "win32" && typeof process.env.LOCALAPPDATA === "string"
-      ? path.join(process.env.LOCALAPPDATA.trim(), "hermes")
-      : path.join(home, ".hermes")),
-    wslDir: ".hermes",
-  });
-  const hermesActive = formatResolvedPaths(hermesPaths, "state.db");
-  const hermesInstalled = hermesActive.length > 0;
-  const hermesPath = hermesActive.join(" | ");
+  const hermesPath = resolveHermesPath();
+  const hermesDbPath = resolveHermesDbPath();
+  const hermesInstalled = Boolean(hermesDbPath && fssync.existsSync(hermesDbPath));
   const wslDistros = process.platform === "win32" && shouldProbeWsl(process.env) ? probeWslDistros() : [];
 
   const copilotToken = readCopilotOauthToken({ home });
@@ -560,6 +581,9 @@ async function cmdStatus(argv = []) {
         : null,
       zcodeInstalled
         ? `- ZCode: passive reader (${zcodeDbPath})`
+        : null,
+      opencodeInstalled
+        ? `- OpenCode: passive reader (storage: ${opencodeStorageActive.join(" | ") || "not found"}, DB: ${opencodeDbActive.join(" | ") || "not found"})`
         : null,
       kilocodeInstalled
         ? `- Kilo Code (VS Code extension): passive reader (${kilocodeTaskFiles.length} task${kilocodeTaskFiles.length !== 1 ? "s" : ""} across ${new Set(kilocodeTaskFiles.map((t) => t.ide)).size} IDE${new Set(kilocodeTaskFiles.map((t) => t.ide)).size !== 1 ? "s" : ""})`
