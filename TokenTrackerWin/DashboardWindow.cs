@@ -516,7 +516,7 @@ internal sealed class DashboardWindow : Window
                own blur(30px), which double-blurs the sidebar region vs the top strip and
                creates the visible seam. Killing it makes the sidebar show the single
                body::before glass exactly like the top strip → one continuous surface. */
-            html.native-windows-app .tt-native-glass-shell aside[aria-label]{
+            html.native-windows-app .tt-native-glass-shell aside[data-native-sidebar]{
               background:transparent!important;
               border-right:none!important;
               box-shadow:none!important;

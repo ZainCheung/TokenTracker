@@ -235,7 +235,7 @@ html.native-windows-app.dark .tt-native-glass-shell::before {
     repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 5px);
 }
 
-html.native-windows-app .tt-native-glass-shell aside[aria-label] {
+html.native-windows-app .tt-native-glass-shell aside[data-native-sidebar] {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.018) 42%, rgba(0, 0, 0, 0.1)),
     rgba(28, 28, 28, 0.58);

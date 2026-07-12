@@ -419,6 +419,7 @@ function Sidebar({ collapsed, onToggleCollapsed }) {
 
   return (
     <aside
+      data-native-sidebar
       aria-label={copy("nav.aside_label")}
       className={cn(
         "hidden lg:flex flex-col shrink-0 h-full min-h-0 transition-[width] duration-200",
