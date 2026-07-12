@@ -627,7 +627,7 @@ async function cmdSync(argv) {
       });
 
       const parseOpencodeForInstall = async (options) => {
-        const { storageDir, dbDir } = options;
+        const { storageDir, dbDir, cursors } = options;
         let filesResult = { filesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
         if (storageDir) {
           const storagePath = path.join(storageDir, "storage");
@@ -643,12 +643,31 @@ async function cmdSync(argv) {
         let dbResult = { messagesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
         if (dbDir) {
           const dbPath = path.join(dbDir, "opencode.db");
-          const dbMessages = readOpencodeDbMessages(dbPath);
-          if (dbMessages.length > 0) {
-            dbResult = await parseOpencodeDbIncremental({
-              ...options,
-              dbMessages,
-            });
+          let shouldSkip = false;
+          let stats = null;
+          try {
+            stats = fssync.statSync(dbPath);
+            const cursorNamespace = options.cursorKey || "opencode";
+            const cursorState = cursors[cursorNamespace];
+            if (cursorState && cursorState.dbSize === stats.size && cursorState.dbMtime === stats.mtimeMs) {
+              shouldSkip = true;
+            }
+          } catch (_e) { }
+
+          if (!shouldSkip) {
+            const dbMessages = readOpencodeDbMessages(dbPath);
+            if (dbMessages.length > 0) {
+              dbResult = await parseOpencodeDbIncremental({
+                ...options,
+                dbMessages,
+              });
+            }
+            if (stats) {
+              const cursorNamespace = options.cursorKey || "opencode";
+              if (!cursors[cursorNamespace]) cursors[cursorNamespace] = {};
+              cursors[cursorNamespace].dbSize = stats.size;
+              cursors[cursorNamespace].dbMtime = stats.mtimeMs;
+            }
           }
         }
 
