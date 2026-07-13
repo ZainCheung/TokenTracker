@@ -373,5 +373,6 @@
   "qpd.card.totals": "マージ済: {{accepted}}/{{outcomes}} PR · 総消費額 {{cost}}",
   "qpd.card.et": "有効トークン: {{tokens}} (採択率 {{rate}})",
   "qpd.card.et_tooltip": "有効トークン (Effective Tokens) — 最終的に採用・マージされたコードに使用されたトークンの割合",
-  "qpd.card.sparse_notice": "ヒント：データ量が少ない場合、費用対効果の数値が偏る可能性があります。期間を狭めてお試しください。"
+  "qpd.card.sparse_notice": "ヒント：データ量が少ない場合、費用対効果の数値が偏る可能性があります。期間を狭めてお試しください。",
+  "nav.achievements": "実績"
 }

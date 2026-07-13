@@ -1,0 +1,393 @@
+-- Achievement / badge system storage + compute (feature: profile achievements).
+--
+-- Design:
+--   1. tokentracker_badge_catalog — the ONE place badge thresholds live.
+--      Edges/read RPCs return thresholds in payloads; neither the edge
+--      functions nor the dashboard embed threshold literals
+--      (test/user-badges-thresholds-single-source.test.js enforces this).
+--   2. tokentracker_user_badges — one row per (user, badge). tier 0..4 is
+--      MONOTONIC (never downgrades — deduped history can retroactively shrink
+--      on device revocation, but earned badges stay earned). tier-0 rows are
+--      kept so the owner's progress toward unearned badges is served without
+--      extra compute. Per-tier first-achieved timestamps are 4 columns; they
+--      are set once and never overwritten.
+--   3. user_badges_refresh() — pure-SQL compute + threshold evaluation +
+--      monotonic upsert, called directly by pg_cron (same shape as
+--      leaderboard_rollup_daily_rebuild; no edge function on the write path).
+--      Facts come from tokentracker_leaderboard_rollup_daily UNION ALL a
+--      live-deduped tail — the exact base/tail cut leaderboard_usage_grouped
+--      uses, so badge numbers agree with leaderboard numbers.
+--   4. user_badges_compact(uuid[]) / user_badges_full(uuid, boolean) — read
+--      RPCs for the leaderboard list and profile edges. RPC (POST body)
+--      instead of PostgREST .in() avoids the gateway URL-size limits.
+--
+-- podium (best-ever leaderboard rank): snapshots are pruned to the newest 3
+-- windows, so best-ever rank cannot be derived later — each refresh samples
+-- the CURRENT total-period rank and the monotonic upsert (LEAST) keeps the
+-- best. Schedule this refresh shortly after the leaderboard refresh ticks so
+-- every published rank is observed at least once.
+--
+-- Blocklist (LEADERBOARD_BLOCKED_USER_IDS) stays an edge-layer secret: the
+-- compute may write rows for blocked users, but read edges filter them and
+-- RLS (zero policies) keeps the table unreadable directly.
+--
+-- Idempotent. Rollback:
+--   SELECT cron.unschedule('tokentracker-user-badges-refresh');
+--   DROP FUNCTION user_badges_full(uuid, boolean);
+--   DROP FUNCTION user_badges_compact(uuid[]);
+--   DROP FUNCTION user_badges_refresh();
+--   DROP TABLE tokentracker_user_badges, tokentracker_badge_catalog;
+
+-- ── 1. Catalog: thresholds single source of truth ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.tokentracker_badge_catalog (
+  badge_id        text PRIMARY KEY,
+  sort_order      int  NOT NULL,
+  -- podium: rank 3 beats rank 100 — thresholds compare downward.
+  lower_is_better boolean NOT NULL DEFAULT false,
+  bronze  numeric NOT NULL,
+  silver  numeric NOT NULL,
+  gold    numeric NOT NULL,
+  diamond numeric NOT NULL
+);
+
+INSERT INTO public.tokentracker_badge_catalog
+  (badge_id, sort_order, lower_is_better, bronze, silver, gold, diamond)
+VALUES
+  ('token_titan', 1, false, 100000000, 1000000000, 10000000000, 100000000000),
+  ('big_day',     2, false, 10000000, 50000000, 200000000, 1000000000),
+  ('marathoner',  3, false, 7, 30, 100, 365),
+  ('streak',      4, false, 3, 7, 30, 100),
+  ('momentum',    5, false, 1.5, 2, 3, 5),
+  ('polyglot',    6, false, 3, 8, 15, 30),
+  ('multitool',   7, false, 2, 4, 6, 10),
+  ('podium',      8, true,  100, 30, 10, 3),
+  ('veteran',     9, false, 30, 90, 180, 365)
+ON CONFLICT (badge_id) DO UPDATE SET
+  sort_order      = EXCLUDED.sort_order,
+  lower_is_better = EXCLUDED.lower_is_better,
+  bronze  = EXCLUDED.bronze,
+  silver  = EXCLUDED.silver,
+  gold    = EXCLUDED.gold,
+  diamond = EXCLUDED.diamond;
+
+-- ── 2. Earned badges + progress ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.tokentracker_user_badges (
+  user_id      uuid NOT NULL,
+  badge_id     text NOT NULL REFERENCES public.tokentracker_badge_catalog(badge_id),
+  tier         smallint NOT NULL DEFAULT 0 CHECK (tier BETWEEN 0 AND 4),
+  -- Current metric value (podium: best-ever rank via LEAST on upsert).
+  metric_value numeric NOT NULL DEFAULT 0,
+  meta         jsonb NOT NULL DEFAULT '{}'::jsonb,
+  -- First time each tier was observed by a refresh; set once, never cleared.
+  bronze_at  timestamptz,
+  silver_at  timestamptz,
+  gold_at    timestamptz,
+  diamond_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, badge_id)
+);
+
+-- Same security model as the rollup tables: RLS on, ZERO policies, deny-all
+-- grants. Only project_admin (edges via service role) and cron/superuser
+-- reach these tables.
+ALTER TABLE public.tokentracker_badge_catalog ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tokentracker_user_badges  ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.tokentracker_badge_catalog TO project_admin;
+GRANT ALL ON public.tokentracker_user_badges  TO project_admin;
+REVOKE ALL ON public.tokentracker_badge_catalog FROM anon, authenticated, PUBLIC;
+REVOKE ALL ON public.tokentracker_user_badges  FROM anon, authenticated, PUBLIC;
+
+-- ── 3. Refresh: facts → tiers → monotonic upsert ─────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.user_badges_refresh()
+RETURNS bigint
+LANGUAGE plpgsql
+SET work_mem TO '96MB'
+SET hash_mem_multiplier TO '4'
+SET statement_timeout TO '120s'
+AS $func$
+DECLARE
+  v_through timestamptz;
+  v_upserted bigint;
+BEGIN
+  -- Concurrency/throttle guard — reuse the leaderboard claim primitive with a
+  -- dedicated key. Anything other than true means another attempt claimed the
+  -- window recently: skip (the refresh is idempotent; next tick catches up).
+  IF public.leaderboard_refresh_try_claim('badges', 300) IS DISTINCT FROM true THEN
+    RETURN 0;
+  END IF;
+
+  SELECT m.through INTO v_through
+  FROM tokentracker_leaderboard_rollup_meta m
+  WHERE m.id = 1;
+  v_through := COALESCE(v_through, '-infinity'::timestamptz);
+
+  WITH
+  -- (user, source, model, day): rollup base + live tail. The watermark sits on
+  -- a UTC midnight, so no hourly bucket spans the cut — base + tail is exactly
+  -- the deduped full history.
+  usm AS (
+    SELECT x.user_id, x.source, x.model, x.day, SUM(x.total_tokens) AS tokens
+    FROM (
+      SELECT r.user_id, r.source, r.model, r.day, r.total_tokens
+      FROM tokentracker_leaderboard_rollup_daily r
+      UNION ALL
+      SELECT t.user_id, t.source, t.model,
+             (t.hour_start AT TIME ZONE 'UTC')::date AS day, t.total_tokens
+      FROM leaderboard_hourly_dedup(v_through, now()) t
+    ) x
+    GROUP BY x.user_id, x.source, x.model, x.day
+  ),
+  -- Active day := any tokens that UTC day.
+  daily AS (
+    SELECT user_id, day, SUM(tokens) AS tokens
+    FROM usm
+    GROUP BY user_id, day
+    HAVING SUM(tokens) > 0
+  ),
+  base AS (
+    SELECT user_id,
+           SUM(tokens)                    AS total_tokens,
+           COUNT(*)                       AS active_days,
+           MIN(day)                       AS first_day,
+           (current_date - MIN(day))      AS veteran_days,
+           MAX(tokens)                    AS max_day_tokens
+    FROM daily
+    GROUP BY user_id
+  ),
+  best_day AS (
+    SELECT DISTINCT ON (user_id) user_id, day AS best_day
+    FROM daily
+    ORDER BY user_id, tokens DESC, day ASC
+  ),
+  -- Longest streak: gaps-and-islands (day minus row_number is constant within
+  -- a consecutive run).
+  islands AS (
+    SELECT user_id, grp, COUNT(*) AS len, MIN(day) AS run_start, MAX(day) AS run_end
+    FROM (
+      SELECT user_id, day,
+             day - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day))::int AS grp
+      FROM daily
+    ) g
+    GROUP BY user_id, grp
+  ),
+  streaks AS (
+    SELECT DISTINCT ON (user_id) user_id, len AS longest_streak, run_start, run_end
+    FROM islands
+    ORDER BY user_id, len DESC, run_end DESC
+  ),
+  -- Max week-over-week growth over ADJACENT ISO weeks (prev_wk = wk - 7 is
+  -- load-bearing: LAG alone returns the previous ACTIVE week, which may be
+  -- months earlier). Prior week must clear a 10M floor to count. A partial
+  -- current week can only understate the ratio — no false positives.
+  weekly AS (
+    SELECT user_id, date_trunc('week', day)::date AS wk, SUM(tokens) AS wtok
+    FROM daily
+    GROUP BY user_id, date_trunc('week', day)::date
+  ),
+  momentum AS (
+    SELECT DISTINCT ON (user_id) user_id,
+           (wtok::numeric / prev_wtok::numeric) AS max_wow,
+           wk AS wow_week
+    FROM (
+      SELECT user_id, wk, wtok,
+             LAG(wk)   OVER (PARTITION BY user_id ORDER BY wk) AS prev_wk,
+             LAG(wtok) OVER (PARTITION BY user_id ORDER BY wk) AS prev_wtok
+      FROM weekly
+    ) w
+    WHERE prev_wk = wk - 7 AND prev_wtok >= 10000000
+    ORDER BY user_id, (wtok::numeric / prev_wtok::numeric) DESC
+  ),
+  variety AS (
+    SELECT user_id,
+           COUNT(DISTINCT model)  AS models,
+           COUNT(DISTINCT source) AS sources
+    FROM usm
+    WHERE tokens > 0
+    GROUP BY user_id
+  ),
+  fav AS (
+    SELECT DISTINCT ON (user_id) user_id, model AS favorite_model
+    FROM (
+      SELECT user_id, model, SUM(tokens) AS t
+      FROM usm GROUP BY user_id, model
+    ) m
+    ORDER BY user_id, t DESC
+  ),
+  -- Current rank from the newest total-period snapshot window (sampled; the
+  -- monotonic upsert turns samples into best-ever).
+  cur_rank AS (
+    SELECT s.user_id, MIN(s.rank) AS rank
+    FROM tokentracker_leaderboard_snapshots s
+    WHERE s.period = 'total'
+      AND s.to_day = (SELECT MAX(to_day) FROM tokentracker_leaderboard_snapshots
+                      WHERE period = 'total')
+    GROUP BY s.user_id
+  ),
+  facts AS (
+    SELECT b.user_id,
+           b.total_tokens, b.max_day_tokens, bd.best_day,
+           b.active_days, b.first_day, b.veteran_days,
+           s.longest_streak, s.run_start, s.run_end,
+           mo.max_wow, mo.wow_week,
+           v.models, v.sources, f.favorite_model,
+           r.rank AS current_rank
+    FROM base b
+    LEFT JOIN best_day bd USING (user_id)
+    LEFT JOIN streaks  s  USING (user_id)
+    LEFT JOIN momentum mo USING (user_id)
+    LEFT JOIN variety  v  USING (user_id)
+    LEFT JOIN fav      f  USING (user_id)
+    LEFT JOIN cur_rank r  USING (user_id)
+  )
+  INSERT INTO tokentracker_user_badges AS ub
+    (user_id, badge_id, tier, metric_value, meta,
+     bronze_at, silver_at, gold_at, diamond_at, updated_at)
+  SELECT f.user_id, c.badge_id, ev.tier, m.val, m.meta,
+         CASE WHEN ev.tier >= 1 THEN now() END,
+         CASE WHEN ev.tier >= 2 THEN now() END,
+         CASE WHEN ev.tier >= 3 THEN now() END,
+         CASE WHEN ev.tier >= 4 THEN now() END,
+         now()
+  FROM facts f
+  CROSS JOIN LATERAL (VALUES
+    ('token_titan', f.total_tokens::numeric,   '{}'::jsonb),
+    ('big_day',     f.max_day_tokens::numeric, jsonb_build_object('date', f.best_day)),
+    ('marathoner',  f.active_days::numeric,    '{}'::jsonb),
+    ('streak',      f.longest_streak::numeric, jsonb_build_object('run_start', f.run_start, 'run_end', f.run_end)),
+    ('momentum',    f.max_wow,                 jsonb_build_object('week', f.wow_week)),
+    ('polyglot',    f.models::numeric,         jsonb_build_object('favorite_model', f.favorite_model)),
+    ('multitool',   f.sources::numeric,        '{}'::jsonb),
+    ('podium',      f.current_rank::numeric,   '{}'::jsonb),
+    ('veteran',     f.veteran_days::numeric,   jsonb_build_object('first_day', f.first_day))
+  ) AS m(badge_id, val, meta)
+  JOIN tokentracker_badge_catalog c ON c.badge_id = m.badge_id
+  CROSS JOIN LATERAL (
+    SELECT CASE
+      WHEN m.val IS NULL THEN 0
+      WHEN c.lower_is_better THEN CASE
+        WHEN m.val <= c.diamond THEN 4
+        WHEN m.val <= c.gold    THEN 3
+        WHEN m.val <= c.silver  THEN 2
+        WHEN m.val <= c.bronze  THEN 1
+        ELSE 0 END
+      ELSE CASE
+        WHEN m.val >= c.diamond THEN 4
+        WHEN m.val >= c.gold    THEN 3
+        WHEN m.val >= c.silver  THEN 2
+        WHEN m.val >= c.bronze  THEN 1
+        ELSE 0 END
+      END AS tier
+  ) ev
+  -- momentum/podium have no value until a qualifying week / a rank exists;
+  -- skip those rows (the dashboard renders missing rows as locked at zero).
+  WHERE m.val IS NOT NULL
+  ON CONFLICT (user_id, badge_id) DO UPDATE SET
+    -- MONOTONIC: tier only ever ratchets up.
+    tier = GREATEST(ub.tier, EXCLUDED.tier),
+    -- podium keeps the best-ever (lowest) rank; every other metric is a
+    -- whole-history aggregate and simply takes the latest computation.
+    metric_value = CASE
+      WHEN (SELECT lower_is_better FROM tokentracker_badge_catalog cc
+            WHERE cc.badge_id = ub.badge_id)
+        THEN LEAST(ub.metric_value, EXCLUDED.metric_value)
+      ELSE EXCLUDED.metric_value END,
+    meta = ub.meta || EXCLUDED.meta,
+    -- First-achieved timestamps: set once, never overwritten.
+    bronze_at  = COALESCE(ub.bronze_at,  EXCLUDED.bronze_at),
+    silver_at  = COALESCE(ub.silver_at,  EXCLUDED.silver_at),
+    gold_at    = COALESCE(ub.gold_at,    EXCLUDED.gold_at),
+    diamond_at = COALESCE(ub.diamond_at, EXCLUDED.diamond_at),
+    updated_at = now();
+
+  GET DIAGNOSTICS v_upserted = ROW_COUNT;
+  RETURN v_upserted;
+END
+$func$;
+
+REVOKE EXECUTE ON FUNCTION public.user_badges_refresh() FROM anon, authenticated, PUBLIC;
+
+-- ── 4. Read RPCs (called by edges through the service role) ──────────────────
+
+-- Compact map for the leaderboard list: top-3 earned badges per user
+-- (priority: tier DESC, then catalog order) + total earned count.
+-- Shape: { "<user_id>": { "badges": [{"id","tier"}...], "badge_count": n } }
+CREATE OR REPLACE FUNCTION public.user_badges_compact(p_user_ids uuid[])
+RETURNS jsonb
+LANGUAGE sql STABLE
+SET statement_timeout TO '5s'
+AS $func$
+  SELECT COALESCE(jsonb_object_agg(g.user_id, g.per_user), '{}'::jsonb)
+  FROM (
+    SELECT b.user_id,
+           jsonb_build_object(
+             'badges',
+             COALESCE(jsonb_agg(jsonb_build_object('id', b.badge_id, 'tier', b.tier)
+                                ORDER BY b.tier DESC, b.sort_order ASC)
+                      FILTER (WHERE b.rn <= 3), '[]'::jsonb),
+             'badge_count', COUNT(*)
+           ) AS per_user
+    FROM (
+      SELECT ub.user_id, ub.badge_id, ub.tier, c.sort_order,
+             ROW_NUMBER() OVER (PARTITION BY ub.user_id
+                                ORDER BY ub.tier DESC, c.sort_order ASC) AS rn
+      FROM tokentracker_user_badges ub
+      JOIN tokentracker_badge_catalog c USING (badge_id)
+      WHERE ub.user_id = ANY(p_user_ids) AND ub.tier >= 1
+    ) b
+    GROUP BY b.user_id
+  ) g;
+$func$;
+
+-- Full list for the profile edge. p_include_unearned = true ONLY when the
+-- verified caller IS the profile user (owner progress). Thresholds ride the
+-- payload so the frontend never embeds them.
+CREATE OR REPLACE FUNCTION public.user_badges_full(p_user_id uuid, p_include_unearned boolean)
+RETURNS jsonb
+LANGUAGE sql STABLE
+SET statement_timeout TO '5s'
+AS $func$
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'id', b.badge_id,
+    'tier', b.tier,
+    'metric_value', b.metric_value,
+    'thresholds', jsonb_build_array(c.bronze, c.silver, c.gold, c.diamond),
+    'lower_is_better', c.lower_is_better,
+    'next_threshold', CASE b.tier
+      WHEN 4 THEN NULL
+      WHEN 3 THEN c.diamond
+      WHEN 2 THEN c.gold
+      WHEN 1 THEN c.silver
+      ELSE c.bronze END,
+    'achieved', jsonb_build_object(
+      'bronze', b.bronze_at, 'silver', b.silver_at,
+      'gold', b.gold_at, 'diamond', b.diamond_at),
+    'meta', b.meta,
+    'updated_at', b.updated_at
+  ) ORDER BY b.tier DESC, c.sort_order ASC), '[]'::jsonb)
+  FROM tokentracker_user_badges b
+  JOIN tokentracker_badge_catalog c USING (badge_id)
+  WHERE b.user_id = p_user_id
+    AND (p_include_unearned OR b.tier >= 1);
+$func$;
+
+-- Functions get EXECUTE for PUBLIC by default — revoke it, then grant the
+-- read RPCs back to project_admin only (the edges call them via the service
+-- role). The refresh stays cron/superuser-only.
+REVOKE EXECUTE ON FUNCTION public.user_badges_compact(uuid[]) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.user_badges_full(uuid, boolean) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.user_badges_compact(uuid[]) TO project_admin;
+GRANT EXECUTE ON FUNCTION public.user_badges_full(uuid, boolean) TO project_admin;
+
+-- ── 5. Schedule (run once via CLI after applying the above) ──────────────────
+-- Check existing ticks first: SELECT jobname, schedule FROM cron.job;
+-- Align ~15 min after the leaderboard refresh so every published rank is
+-- observed at least once (podium sampling).
+-- (Leaderboard refresh cron ticks at :17; :32 samples rank right after.)
+-- SELECT cron.schedule(
+--   'tokentracker-user-badges-refresh',
+--   '32 */6 * * *',
+--   'SELECT public.user_badges_refresh()'
+-- );

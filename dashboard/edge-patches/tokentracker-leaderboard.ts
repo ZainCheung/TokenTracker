@@ -174,12 +174,47 @@ export default async function (req: Request): Promise<Response> {
       ? me
       : null;
 
+  // Achievement badges: one RPC for the page's users (top-3 per user by tier,
+  // then catalog order). Exposure policy mirrors the profile modal: presence
+  // in the snapshot table already makes aggregate numbers public, and badges
+  // are derived from those same numbers, so every visible row gets its badges
+  // (anonymous rows included — badges carry no identity). Fail-soft: the list
+  // must never 500 because badges hiccuped.
+  type CompactBadge = { id: string; tier: number };
+  type CompactBadges = { badges?: CompactBadge[]; badge_count?: number };
+  let badgeMap: Record<string, CompactBadges> = {};
+  const badgeUserIds = [
+    ...new Set(
+      [...visibleEntries, visibleMe]
+        .map((e) => (e as { user_id?: string } | null)?.user_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (badgeUserIds.length > 0) {
+    try {
+      const { data: badgeData, error: badgeErr } = await client.database.rpc(
+        "user_badges_compact",
+        { p_user_ids: badgeUserIds },
+      );
+      if (!badgeErr && badgeData && typeof badgeData === "object") {
+        badgeMap = badgeData as Record<string, CompactBadges>;
+      }
+    } catch {
+      /* fail-soft: render the list without badges */
+    }
+  }
+  const badgesFor = (e: { user_id?: string } | null) => ({
+    badges: (e?.user_id && badgeMap[e.user_id]?.badges) || [],
+    badge_count: (e?.user_id && badgeMap[e.user_id]?.badge_count) || 0,
+  });
+
   return json({
     entries: visibleEntries.map((e: { user_id?: string }) => ({
       ...e,
+      ...badgesFor(e),
       is_me: (visibleMe as { user_id?: string } | null)?.user_id === e.user_id,
     })),
-    me: visibleMe,
+    me: visibleMe ? { ...(visibleMe as Record<string, unknown>), ...badgesFor(visibleMe as { user_id?: string }) } : null,
     total_entries: count || 0,
     total_pages: Math.ceil((count || 0) / limit),
     from: from_day,

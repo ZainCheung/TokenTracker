@@ -82,6 +82,7 @@ export function prependMeRowToPage({ entries, me, meLabel }) {
     other_tokens: me?.other_tokens ?? "0",
     total_tokens: me?.total_tokens ?? "0",
     estimated_cost_usd: me?.estimated_cost_usd ?? null,
+    badges: Array.isArray(me?.badges) ? me.badges : [],
   };
 
   return [pinnedRow, ...rows];

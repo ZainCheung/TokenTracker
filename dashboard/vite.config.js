@@ -978,7 +978,10 @@ function localDataApiPlugin() {
         // app on :7680 would 404 the drill-down modal.
         const isRepoProjectUsageApi =
           url.pathname === "/functions/tokentracker-project-usage-summary"
-          || url.pathname === "/functions/tokentracker-project-usage-detail";
+          || url.pathname === "/functions/tokentracker-project-usage-detail"
+          // Achievements ship with this checkout too — a stale packaged app
+          // on :7680 would 404 the local badges.
+          || url.pathname === "/functions/tokentracker-achievements";
         if (isRepoPetApi || isRepoProjectUsageApi) {
           Promise.resolve(handleRepoLocalApi(req, res, url))
             .then((handled) => { if (!handled) next(); })

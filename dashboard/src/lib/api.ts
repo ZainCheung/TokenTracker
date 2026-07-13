@@ -9,6 +9,7 @@ import {
   getMockProjectUsageSummary,
   getMockProjectUsageDetail,
   getMockLeaderboard,
+  getMockAchievements,
   isMockEnabled,
 } from "./mock-data";
 import { getInsforgeRemoteUrl, getInsforgeAnonKey } from "./insforge-config";
@@ -27,6 +28,7 @@ const PATHS = {
   usageCategoryBreakdown: "tokentracker-usage-category-breakdown",
   projectUsageSummary: "tokentracker-project-usage-summary",
   projectUsageDetail: "tokentracker-project-usage-detail",
+  achievements: "tokentracker-achievements",
   userStatus: "tokentracker-user-status",
   localSync: "tokentracker-local-sync",
   usageLimits: "tokentracker-usage-limits",
@@ -182,6 +184,18 @@ export async function getProjectUsageDetail({
   if (from) params.from = from;
   if (to) params.to = to;
   return fetchLocalJson(PATHS.projectUsageDetail, params);
+}
+
+/**
+ * Local (privacy-scoped) achievements: project_hopper / project_devotion /
+ * night_owl, computed by the local CLI from queue data that never leaves the
+ * machine. Cloud badges arrive inside getLeaderboardProfile responses.
+ */
+export async function getLocalAchievements({ timeZone, tzOffsetMinutes }: AnyRecord = {}) {
+  if (isMockEnabled()) {
+    return getMockAchievements();
+  }
+  return fetchLocalJson(PATHS.achievements, buildTimeZoneParams({ timeZone, tzOffsetMinutes }));
 }
 
 async function fetchInsforgeFunction(slug: string, options: {
@@ -354,6 +368,10 @@ export async function getLeaderboardProfile({
       by_provider: [],
       heatmap,
       daily_trend: dailyTrend,
+      badges: getMockAchievements().achievements.filter(
+        (badge: any) => badge.tier >= 1 && !["project_hopper", "project_devotion", "night_owl"].includes(badge.id),
+      ),
+      badges_include_unearned: false,
     };
   }
   return fetchInsforgeFunction("tokentracker-leaderboard-profile", {

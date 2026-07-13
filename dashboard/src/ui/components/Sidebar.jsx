@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
+  Award,
   BarChart3,
   Gauge,
   Trophy,
@@ -38,6 +39,7 @@ export function getNavGroups() {
         { id: "usage", to: "/dashboard", icon: BarChart3, label: copy("nav.usage") },
         { id: "limits", to: "/limits", icon: Gauge, label: copy("nav.limits") },
         { id: "leaderboard", to: "/leaderboard", icon: Trophy, label: copy("nav.leaderboard") },
+        { id: "achievements", to: "/achievements", icon: Award, label: copy("nav.achievements") },
       ],
     },
     {

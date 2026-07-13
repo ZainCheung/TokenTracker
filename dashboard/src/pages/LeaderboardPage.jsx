@@ -48,6 +48,7 @@ import { getCloudSyncEnabled, setCloudSyncEnabled } from "../lib/cloud-sync-pref
 import { runCloudUsageSyncNow } from "../lib/cloud-sync";
 import { LeaderboardAvatar } from "../components/LeaderboardAvatar.jsx";
 import { LeaderboardProviderColumnHeader } from "../components/LeaderboardProviderColumnHeader.jsx";
+import { BadgeMini } from "../ui/achievements/BadgeMini.jsx";
 
 const LeaderboardProfileModal = lazy(() =>
   import("../components/leaderboard/LeaderboardProfileModal.jsx").then((m) => ({
@@ -704,6 +705,7 @@ export function LeaderboardPage({
                         />
                         <span className="truncate font-semibold text-oai-black dark:text-oai-white">{name}</span>
                         {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
+                        <BadgeMini badges={entry?.badges} className="hidden sm:inline-flex" />
                       </div>
                     </td>
                     <td className="px-3 sm:px-4 py-4 font-medium text-oai-black dark:text-oai-white whitespace-nowrap text-right tabular-nums bg-oai-brand-50 dark:bg-oai-brand-900/10">
@@ -738,6 +740,7 @@ export function LeaderboardPage({
                       />
                       <span className="truncate font-medium text-oai-gray-800 dark:text-oai-gray-200">{name}</span>
                       {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
+                      <BadgeMini badges={entry?.badges} className="hidden sm:inline-flex" />
                     </div>
                   </td>
                   <td className="px-3 sm:px-4 py-4 font-semibold text-oai-gray-800 dark:text-oai-gray-200 whitespace-nowrap text-right tabular-nums bg-white dark:bg-oai-gray-950 group-hover:bg-oai-gray-50 dark:group-hover:bg-oai-gray-900/60">

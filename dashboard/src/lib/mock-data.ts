@@ -607,6 +607,74 @@ function computeLeaderboardWindow(period: string) {
   return { from, to };
 }
 
+const MOCK_BADGE_IDS = [
+  "token_titan",
+  "big_day",
+  "marathoner",
+  "streak",
+  "momentum",
+  "polyglot",
+  "multitool",
+  "podium",
+  "veteran",
+];
+
+/** Deterministic compact badge list (0–3 entries) for a mock leaderboard row. */
+function mockCompactBadges(id: number): Array<{ id: string; tier: number }> {
+  const count = id % 4; // 0..3 badges
+  const badges: Array<{ id: string; tier: number }> = [];
+  for (let i = 0; i < count; i += 1) {
+    const badgeId = MOCK_BADGE_IDS[(id * 3 + i * 5) % MOCK_BADGE_IDS.length];
+    if (badges.some((b) => b.id === badgeId)) continue;
+    badges.push({ id: badgeId, tier: 4 - i > 0 ? ((id + i) % 4) + 1 : 1 });
+  }
+  return badges.sort((a, b) => b.tier - a.tier);
+}
+
+/** Local achievements payload for dashboard:dev — mixed tiers + progress. */
+export function getMockAchievements() {
+  const now = Date.now();
+  const iso = (daysAgo: number) => new Date(now - daysAgo * 86400000).toISOString();
+  const make = (
+    id: string,
+    tier: number,
+    value: number,
+    thresholds: number[],
+    meta: AnyRecord = {},
+  ) => ({
+    id,
+    tier,
+    metric_value: value,
+    thresholds,
+    lower_is_better: id === "podium",
+    next_threshold: tier >= 4 ? null : thresholds[tier],
+    achieved: {
+      bronze: tier >= 1 ? iso(90) : null,
+      silver: tier >= 2 ? iso(45) : null,
+      gold: tier >= 3 ? iso(12) : null,
+      diamond: tier >= 4 ? iso(2) : null,
+    },
+    meta,
+  });
+  return {
+    generated_at: new Date(now).toISOString(),
+    achievements: [
+      make("token_titan", 3, 24_500_000_000, [100_000_000, 1_000_000_000, 10_000_000_000, 100_000_000_000]),
+      make("big_day", 2, 92_000_000, [10_000_000, 50_000_000, 200_000_000, 1_000_000_000], { date: iso(12).slice(0, 10) }),
+      make("marathoner", 2, 61, [7, 30, 100, 365]),
+      make("streak", 1, 5, [3, 7, 30, 100]),
+      make("momentum", 0, 1.2, [1.5, 2, 3, 5]),
+      make("polyglot", 2, 11, [3, 8, 15, 30], { favorite_model: "claude-opus-4-7" }),
+      make("multitool", 3, 7, [2, 4, 6, 10]),
+      make("podium", 1, 42, [100, 30, 10, 3]),
+      make("veteran", 2, 132, [30, 90, 180, 365], { first_day: iso(132).slice(0, 10) }),
+      make("project_hopper", 2, 6, [3, 5, 10, 20]),
+      make("project_devotion", 3, 240_000_000, [1_000_000, 10_000_000, 100_000_000, 1_000_000_000], { project_key: "mock" }),
+      make("night_owl", 1, 9, [5, 20, 60, 150]),
+    ],
+  };
+}
+
 export function getMockLeaderboard({
   seed,
   period: rawPeriod,
@@ -720,6 +788,8 @@ export function getMockLeaderboard({
       other_tokens: String(entry.other_tokens ?? 0),
       total_tokens: String(entry.total_tokens),
       is_public: Boolean(entry.is_public),
+      badges: mockCompactBadges(entry.id),
+      badge_count: mockCompactBadges(entry.id).length,
     }));
 
   const meRow = sorted.find((entry: any) => entry?.is_me) || null;

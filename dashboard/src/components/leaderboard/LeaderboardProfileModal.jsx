@@ -17,6 +17,13 @@ import { LikeButton } from "../../ui/dashboard/components/LikeButton.jsx";
 import { getInsforgeRemoteUrl } from "../../lib/insforge-config";
 import { safeWriteClipboard } from "../../lib/safe-browser";
 import { useInsforgeAuth } from "../../contexts/InsforgeAuthContext.jsx";
+import { AchievementsSection } from "../../ui/achievements/AchievementsSection.jsx";
+import { AvatarWithBadge } from "../../ui/achievements/AvatarWithBadge.jsx";
+import { BadgeStrip } from "../../ui/achievements/BadgeStrip.jsx";
+import { highestBadge } from "../../ui/achievements/badge-catalog";
+
+// Lazy: the 3D coin + dialog code ships only when a badge is clicked.
+const BadgeDetailModal = React.lazy(() => import("../../ui/achievements/BadgeDetailModal.jsx"));
 
 function formatCost(value, currency, rate) {
   const n = Number(value);
@@ -296,7 +303,7 @@ function Header({ user, onClose }) {
  * larger avatar, the name as the page's primary heading, and the rank pushed
  * to the right edge as a deliberate counterweight.
  */
-function PageHero({ user }) {
+function PageHero({ user, topBadge }) {
   const handle = extractGithubHandle(user?.github_url);
   const rank = Number(user?.rank) || 0;
   const rankTone =
@@ -309,12 +316,13 @@ function PageHero({ user }) {
           : "text-oai-gray-400 dark:text-oai-gray-500";
   return (
     <div className="flex items-center gap-5 px-6 sm:px-8 pt-8 pb-7">
-      <LeaderboardAvatar
+      <AvatarWithBadge
+        badge={topBadge}
         avatarUrl={user?.avatar_url}
         displayName={user?.display_name || ""}
         seed={user?.user_id || user?.display_name}
         size="xl"
-        className="shrink-0 ring-1 ring-oai-gray-200 dark:ring-oai-gray-800"
+        className="shrink-0 ring-1 ring-oai-gray-200 dark:ring-oai-gray-800 rounded-full"
       />
       <div className="min-w-0 flex-1 flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -443,6 +451,9 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
   const heatmapData = useMemo(() => buildHeatmapForModal(heatmap), [heatmap]);
   const favoriteName = models?.favorite?.model_name;
   const modelCount = Number(models?.count) || 0;
+  // Older edge deployments don't send `badges` — everything guards on this.
+  const badges = Array.isArray(data.badges) ? data.badges : [];
+  const [selectedBadge, setSelectedBadge] = useState(null);
 
   // Only the profile owner sees the embeddable badge (it belongs to them); the
   // leaderboard user_id matches the signed-in InsForge auth user id.
@@ -455,7 +466,7 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
 
   return (
     <>
-      {isPage ? <PageHero user={user} /> : <Header user={user} onClose={onClose} />}
+      {isPage ? <PageHero user={user} topBadge={highestBadge(badges)} /> : <Header user={user} onClose={onClose} />}
       <div
         className={cn(
           "space-y-6",
@@ -530,6 +541,29 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
           </FactRow>
         </dl>
 
+        {/* Achievements. The modal is space-constrained: one overlapping
+            coin strip (click a coin for details). The standalone /u/ page has
+            room for the full grid with names, tiers, and (own view) progress. */}
+        {(isOwnProfile || badges.some((b) => (b?.tier || 0) >= 1)) && (
+          <section className="border-t border-oai-gray-200/70 dark:border-oai-gray-800/60 pt-5">
+            <SectionLabel>{copy("achievements.section.title")}</SectionLabel>
+            {isPage ? (
+              <AchievementsSection
+                achievements={badges}
+                isOwn={isOwnProfile && Boolean(data.badges_include_unearned)}
+                scope="cloud"
+                onSelect={setSelectedBadge}
+              />
+            ) : (
+              <BadgeStrip
+                badges={badges}
+                isOwn={isOwnProfile && Boolean(data.badges_include_unearned)}
+                onSelect={setSelectedBadge}
+              />
+            )}
+          </section>
+        )}
+
         {heatmapData && (
           <section className="border-t border-oai-gray-200/70 dark:border-oai-gray-800/60 pt-5">
             <SectionLabel>{copy("leaderboard.profile_modal.heatmap.title")}</SectionLabel>
@@ -581,6 +615,11 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
         )}
       </div>
 
+      {selectedBadge && (
+        <React.Suspense fallback={null}>
+          <BadgeDetailModal badge={selectedBadge} onClose={() => setSelectedBadge(null)} />
+        </React.Suspense>
+      )}
     </>
   );
 }

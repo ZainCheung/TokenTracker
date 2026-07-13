@@ -589,8 +589,10 @@ export default async function (req: Request): Promise<Response> {
   }
 
   // Hero/identity row: pull display_name + avatar from profile, and
-  // anonymous/github flags + url from settings.
-  const [settingsRes, profileRes] = await Promise.all([
+  // anonymous/github flags + url from settings. Badges ride along in the same
+  // round-trip: unearned (tier-0 progress) rows are included ONLY for the
+  // verified owner. Fail-soft — a badges hiccup must not 500 the profile.
+  const [settingsRes, profileRes, badgesRes] = await Promise.all([
     client.database
       .from("tokentracker_user_settings")
       .select("leaderboard_anonymous, github_url, show_github_url")
@@ -601,7 +603,16 @@ export default async function (req: Request): Promise<Response> {
       .select("display_name, avatar_url")
       .eq("user_id", userId)
       .maybeSingle(),
+    client.database
+      .rpc("user_badges_full", { p_user_id: userId, p_include_unearned: isSelf })
+      .then(
+        (res: { data?: unknown; error?: unknown }) => res,
+        () => ({ data: null, error: true }),
+      ),
   ]);
+  const badges = Array.isArray((badgesRes as { data?: unknown }).data)
+    ? ((badgesRes as { data?: unknown }).data as Array<Record<string, unknown>>)
+    : [];
   const settings = (settingsRes.data || {}) as {
     leaderboard_anonymous?: boolean;
     github_url?: string | null;
@@ -814,5 +825,7 @@ export default async function (req: Request): Promise<Response> {
     by_provider: byProvider,
     heatmap,
     daily_trend: dailyTrend,
+    badges,
+    badges_include_unearned: isSelf,
   });
 }

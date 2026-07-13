@@ -370,5 +370,6 @@
   "shared.time.m_ago": "vor {{n}} Min",
   "skills.action.search_clear": "Suche zurücksetzen",
   "skills.my.placeholder": "Installierte Skills filtern …",
-  "usage.summary.toggle_aria": "Kompaktes Zahlenformat umschalten"
+  "usage.summary.toggle_aria": "Kompaktes Zahlenformat umschalten",
+  "nav.achievements": "Erfolge"
 }

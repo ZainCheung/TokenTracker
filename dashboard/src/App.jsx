@@ -37,6 +37,7 @@ const DashboardPage = lazy(() =>
   import("./pages/DashboardPage.jsx").then((m) => ({ default: m.DashboardPage })),
 );
 const IpCheckPage = lazy(() => import("./pages/IpCheckPage.jsx"));
+const AchievementsPage = lazy(() => import("./pages/AchievementsPage.jsx"));
 const LandingPage = lazy(() =>
   import("./pages/LandingPage.jsx").then((m) => ({ default: m.LandingPage })),
 );
@@ -190,7 +191,8 @@ export default function App() {
   const isWidgetsPath = normalizedPath === "/widgets";
   const isPetPath = normalizedPath === "/pet-settings";
   const isIpCheckPath = normalizedPath === "/ip-check";
-  if (isLimitsPath || isSettingsPath || isSkillsPath || isWidgetsPath || isPetPath || isIpCheckPath) gate = "dashboard";
+  const isAchievementsPath = normalizedPath === "/achievements";
+  if (isLimitsPath || isSettingsPath || isSkillsPath || isWidgetsPath || isPetPath || isIpCheckPath || isAchievementsPath) gate = "dashboard";
 
   let PageComponent = DashboardPage;
   if (profileUserId) {
@@ -209,6 +211,8 @@ export default function App() {
     PageComponent = PetPage;
   } else if (isIpCheckPath) {
     PageComponent = IpCheckPage;
+  } else if (isAchievementsPath) {
+    PageComponent = AchievementsPage;
   }
 
   const showSidebar =
@@ -222,7 +226,8 @@ export default function App() {
       isSkillsPath ||
       isWidgetsPath ||
       isPetPath ||
-      isIpCheckPath);
+      isIpCheckPath ||
+      isAchievementsPath);
 
   // Public-host gating: on www.tokentracker.cc et al. there is no local
   // CLI :7680 to fall back to, so dashboard / settings / etc. require a

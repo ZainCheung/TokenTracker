@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-07-13T07:34:11.867Z",
+  "generatedAt": "2026-07-13T11:25:45.228Z",
   "root": "dashboard/src",
   "rules": {
     "colors": "hex/rgb(a) literals",
     "rawText": "JSX text nodes containing letters or digits"
   },
   "totals": {
-    "colors": 293,
-    "rawText": 174
+    "colors": 367,
+    "rawText": 183
   },
   "files": {
     "dashboard/src/components/InsforgeUserHeaderControls.jsx": {
@@ -45,10 +45,11 @@
     },
     "dashboard/src/components/leaderboard/LeaderboardProfileModal.jsx": {
       "colors": 6,
-      "rawText": 2,
+      "rawText": 3,
       "rawTextTokens": [
         "0 && n",
-        "1 && ("
+        "1 && (",
+        "= 1)) && ("
       ]
     },
     "dashboard/src/components/settings/AccountSection.jsx": {
@@ -70,6 +71,13 @@
       "rawText": 1,
       "rawTextTokens": [
         "setIsOpen(false), []); return ("
+      ]
+    },
+    "dashboard/src/pages/AchievementsPage.jsx": {
+      "colors": 0,
+      "rawText": 1,
+      "rawTextTokens": [
+        "= 1).length, [merged], ); const total = BADGE_CATALOG.length; return ("
       ]
     },
     "dashboard/src/pages/DevicePage.jsx": {
@@ -175,6 +183,52 @@
         "/@keyframes // so the animations still run. const result = raw.replace(/",
         "whose class/id contains \"eye\" (e.g. eyes-look, * eyes-focus, eyes-read). Those groups already run their own blink/track transform * animations, which would override any transform we set directly — so after a pose * loads we wrap each (non-shut) eye group in our own"
       ]
+    },
+    "dashboard/src/ui/achievements/AchievementBadge.jsx": {
+      "colors": 2,
+      "rawText": 0,
+      "rawTextTokens": []
+    },
+    "dashboard/src/ui/achievements/AchievementsSection.jsx": {
+      "colors": 0,
+      "rawText": 3,
+      "rawTextTokens": [
+        "(c.record.tier || 0)",
+        ") : isOwn ? (",
+        "= 1; const name = copy(badgeCopyKey(entry.id, \"name\")); const tName = earned ? tierName(record.tier) : null; const progress = badgeProgress(record); return ("
+      ]
+    },
+    "dashboard/src/ui/achievements/Badge3DCoin.jsx": {
+      "colors": 21,
+      "rawText": 0,
+      "rawTextTokens": []
+    },
+    "dashboard/src/ui/achievements/BadgeDetailModal.jsx": {
+      "colors": 11,
+      "rawText": 2,
+      "rawTextTokens": [
+        "= 1; const tName = earned ? tierName(badge.tier) : null; const achievedDate = formatDate( earned ? badge.achieved?.[tName] || (latestAchievedAt(badge) ? new Date(latestAchievedAt(badge)).toISOString() : null) : null, ); const valueText = formatBadgeValue(entry?.format, badge.metric_value); const progress = badgeProgress(badge); const nextTierName = badge.tier",
+        "= index + 1; const at = formatDate(badge.achieved?.[name]); const palette = TIER_PALETTE[name]; return ("
+      ]
+    },
+    "dashboard/src/ui/achievements/BadgeMini.jsx": {
+      "colors": 0,
+      "rawText": 1,
+      "rawTextTokens": [
+        "= 1), ).slice(0, max); if (list.length === 0) return null; return ("
+      ]
+    },
+    "dashboard/src/ui/achievements/BadgeStrip.jsx": {
+      "colors": 0,
+      "rawText": 1,
+      "rawTextTokens": [
+        "= 1); if (list.length === 0) return null; return ("
+      ]
+    },
+    "dashboard/src/ui/achievements/tier-palette.js": {
+      "colors": 40,
+      "rawText": 0,
+      "rawTextTokens": []
     },
     "dashboard/src/ui/components/ConfirmModal.jsx": {
       "colors": 2,
