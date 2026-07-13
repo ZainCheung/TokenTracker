@@ -313,14 +313,8 @@ async function cmdSync(argv) {
     }
     let grokHookSignalConsumed = false;
 
-    const codexHome = process.env.CODEX_HOME || path.join(home, ".codex");
-    const codeHome = process.env.CODE_HOME || path.join(home, ".code");
     const claudeProjectsDir = path.join(home, ".claude", "projects");
-    const geminiHome = process.env.GEMINI_HOME || path.join(home, ".gemini");
-    const geminiTmpDir = path.join(geminiHome, "tmp");
     const xdgDataHome = process.env.XDG_DATA_HOME || path.join(home, ".local", "share");
-    const opencodeHome = process.env.OPENCODE_HOME || path.join(xdgDataHome, "opencode");
-    const opencodeStorageDir = path.join(opencodeHome, "storage");
     const kiloHome = process.env.KILO_HOME || path.join(xdgDataHome, "kilo");
     const mimoHome = process.env.MIMO_HOME || path.join(xdgDataHome, "mimocode");
     const zcodeHome = process.env.ZCODE_HOME || path.join(home, ".zcode");
@@ -347,22 +341,36 @@ async function cmdSync(argv) {
 
     const sources = [];
     if (sourceAllowed("codex")) {
-      sources.push({ source: "codex", sessionsDir: path.join(codexHome, "sessions"), codexInventoryCache: true });
-      if (!isBackgroundLightweightSync) {
-        sources.push(
-          // Codex-Manager archives sessions to ~/.codex/archived_sessions/ on every
-          // account/channel switch (issue #187). Scanning it too keeps that usage
-          // counted instead of orphaning it in the cloud (a re-upload's upsert can
-          // never delete cloud rows whose local source file has vanished). Safe
-          // against double-counting: the codex event dedup keys on sessionUUID (in
-          // the filename) + event timestamp, both stable across a sessions/ ->
-          // archived_sessions/ move, so re-reading an archived copy is a no-op.
-          { source: "codex", sessionsDir: path.join(codexHome, "archived_sessions"), deep: true },
-        );
+      const codexNativeValue = process.env.CODEX_HOME || path.join(home, ".codex");
+      const wslCodexDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".codex")
+        : null;
+      const codexPaths = resolveInstallPaths({ nativeValue: codexNativeValue, wslValue: wslCodexDir });
+      if (codexPaths.native) {
+        sources.push({ source: "codex", sessionsDir: path.join(codexPaths.native, "sessions"), codexInventoryCache: true });
+        if (!isBackgroundLightweightSync) {
+          sources.push({ source: "codex", sessionsDir: path.join(codexPaths.native, "archived_sessions"), deep: true });
+        }
+      }
+      if (codexPaths.wsl) {
+        sources.push({ source: "codex", sessionsDir: path.join(codexPaths.wsl, "sessions"), codexInventoryCache: true });
+        if (!isBackgroundLightweightSync) {
+          sources.push({ source: "codex", sessionsDir: path.join(codexPaths.wsl, "archived_sessions"), deep: true });
+        }
       }
     }
     if (sourceAllowed("every-code")) {
-      sources.push({ source: "every-code", sessionsDir: path.join(codeHome, "sessions") });
+      const codeNativeValue = process.env.CODE_HOME || path.join(home, ".code");
+      const wslCodeDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".code")
+        : null;
+      const codePaths = resolveInstallPaths({ nativeValue: codeNativeValue, wslValue: wslCodeDir });
+      if (codePaths.native) {
+        sources.push({ source: "every-code", sessionsDir: path.join(codePaths.native, "sessions") });
+      }
+      if (codePaths.wsl) {
+        sources.push({ source: "every-code", sessionsDir: path.join(codePaths.wsl, "sessions") });
+      }
     }
 
     const rolloutFiles = [];
@@ -532,7 +540,34 @@ async function cmdSync(argv) {
       }
     }
 
-    const geminiFiles = sourceAllowed("gemini") ? await listGeminiSessionFiles(geminiTmpDir) : [];
+    let geminiPaths = null;
+    if (sourceAllowed("gemini") || sourceAllowed("antigravity")) {
+      const geminiNativeValue = process.env.GEMINI_HOME || path.join(home, ".gemini");
+      const wslGeminiDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".gemini")
+        : null;
+      geminiPaths = resolveInstallPaths({ nativeValue: geminiNativeValue, wslValue: wslGeminiDir });
+    }
+
+    let geminiFiles = [];
+    if (sourceAllowed("gemini") && geminiPaths) {
+      const fileSets = [];
+      if (geminiPaths.native) {
+        fileSets.push(await listGeminiSessionFiles(path.join(geminiPaths.native, "tmp")));
+      }
+      if (geminiPaths.wsl) {
+        fileSets.push(await listGeminiSessionFiles(path.join(geminiPaths.wsl, "tmp")));
+      }
+      const seen = new Set();
+      for (const set of fileSets) {
+        for (const f of set) {
+          if (!seen.has(f)) {
+            seen.add(f);
+            geminiFiles.push(f);
+          }
+        }
+      }
+    }
     let geminiResult = { filesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
     if (geminiFiles.length > 0) {
       if (progress?.enabled) {
@@ -562,7 +597,25 @@ async function cmdSync(argv) {
       }
     }
 
-    const antigravityFiles = sourceAllowed("antigravity") ? await listAntigravityTranscripts(geminiHome) : [];
+    let antigravityFiles = [];
+    if (sourceAllowed("antigravity") && geminiPaths) {
+      const fileSets = [];
+      if (geminiPaths.native) {
+        fileSets.push(await listAntigravityTranscripts(geminiPaths.native));
+      }
+      if (geminiPaths.wsl) {
+        fileSets.push(await listAntigravityTranscripts(geminiPaths.wsl));
+      }
+      const seen = new Set();
+      for (const set of fileSets) {
+        for (const f of set) {
+          if (!seen.has(f)) {
+            seen.add(f);
+            antigravityFiles.push(f);
+          }
+        }
+      }
+    }
     let antigravityResult = { filesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
     if (antigravityFiles.length > 0) {
       if (progress?.enabled) {
@@ -592,69 +645,89 @@ async function cmdSync(argv) {
       }
     }
 
-    const opencodeFiles = sourceAllowed("opencode") ? await listOpencodeMessageFiles(opencodeStorageDir) : [];
     let opencodeResult = { filesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
-    if (opencodeFiles.length > 0) {
-      if (progress?.enabled) {
-        progress.start(
-          `Parsing Opencode ${renderBar(0)} 0/${formatNumber(opencodeFiles.length)} files | buckets 0`,
-        );
-      }
-      try {
-        opencodeResult = await parseOpencodeIncremental({
-          messageFiles: opencodeFiles,
-          cursors,
-          queuePath,
-          projectQueuePath,
-          onProgress: (p) => {
-            if (!progress?.enabled) return;
-            const pct = p.total > 0 ? p.index / p.total : 1;
-            progress.update(
-              `Parsing Opencode ${renderBar(pct)} ${formatNumber(p.index)}/${formatNumber(
-                p.total,
-              )} files | buckets ${formatNumber(p.bucketsQueued)}`,
-            );
-          },
-          source: "opencode",
-        });
-      } catch (err) {
-        warnProviderParseFailure("Opencode", err, opts);
-      }
-    }
+    if (sourceAllowed("opencode")) {
+      const opencodeStorageNativeValue = process.env.OPENCODE_HOME || path.join(xdgDataHome, "opencode");
+      const wslOpencodeStorageDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".local/share/opencode")
+        : null;
+      const storagePaths = resolveInstallPaths({
+        nativeValue: opencodeStorageNativeValue,
+        wslValue: wslOpencodeStorageDir,
+      });
 
-    // OpenCode v1.2+ stores messages in SQLite (opencode.db) instead of JSON files.
-    const opencodeDbPath = path.join(opencodeHome, "opencode.db");
-    let opencodeDbResult = { messagesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
-    const dbMessages = sourceAllowed("opencode") ? readOpencodeDbMessages(opencodeDbPath) : [];
-    if (dbMessages.length > 0) {
-      if (progress?.enabled) {
-        progress.start(
-          `Parsing Opencode DB ${renderBar(0)} 0/${formatNumber(dbMessages.length)} msgs | buckets 0`,
-        );
-      }
-      try {
-        opencodeDbResult = await parseOpencodeDbIncremental({
-          dbMessages,
-          cursors,
-          queuePath,
-          projectQueuePath,
-          onProgress: (p) => {
-            if (!progress?.enabled) return;
-            const pct = p.total > 0 ? p.index / p.total : 1;
-            progress.update(
-              `Parsing Opencode DB ${renderBar(pct)} ${formatNumber(p.index)}/${formatNumber(
-                p.total,
-              )} msgs | buckets ${formatNumber(p.bucketsQueued)}`,
-            );
-          },
-          source: "opencode",
-        });
-      } catch (err) {
-        warnProviderParseFailure("Opencode DB", err, opts);
-      }
-      opencodeResult.filesProcessed += opencodeDbResult.messagesProcessed;
-      opencodeResult.eventsAggregated += opencodeDbResult.eventsAggregated;
-      opencodeResult.bucketsQueued += opencodeDbResult.bucketsQueued;
+      const opencodeDbNativeValue = process.env.OPENCODE_HOME || path.join(xdgDataHome, "opencode");
+      const wslOpencodeDbDir = process.platform === "win32" && wsl.shouldProbeWsl(process.env)
+        ? wsl.discoverWslHome(".local/share/opencode")
+        : null;
+      const dbPaths = resolveInstallPaths({
+        nativeValue: opencodeDbNativeValue,
+        wslValue: wslOpencodeDbDir,
+      });
+
+      const parseOpencodeForInstall = async (options) => {
+        const { storageDir, dbDir, cursors } = options;
+        let filesResult = { filesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
+        if (storageDir) {
+          const storagePath = path.join(storageDir, "storage");
+          const messageFiles = await listOpencodeMessageFiles(storagePath);
+          if (messageFiles.length > 0) {
+            filesResult = await parseOpencodeIncremental({
+              ...options,
+              messageFiles,
+            });
+          }
+        }
+
+        let dbResult = { messagesProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
+        if (dbDir) {
+          const dbPath = path.join(dbDir, "opencode.db");
+          const dbMessages = readOpencodeDbMessages(dbPath);
+          if (dbMessages.length > 0) {
+            dbResult = await parseOpencodeDbIncremental({
+              ...options,
+              dbMessages,
+            });
+          }
+        }
+
+        return {
+          recordsProcessed: filesResult.filesProcessed + dbResult.messagesProcessed,
+          eventsAggregated: filesResult.eventsAggregated + dbResult.eventsAggregated,
+          bucketsQueued: filesResult.bucketsQueued + dbResult.bucketsQueued,
+        };
+      };
+
+      const opencodePaths = {
+        native: storagePaths.native || dbPaths.native,
+        wsl: storagePaths.wsl || dbPaths.wsl,
+      };
+
+      const multiResult = await multiInstallParse({
+        paths: opencodePaths,
+        parserFn: parseOpencodeForInstall,
+        providerName: "opencode",
+        cursors,
+        queuePath,
+        projectQueuePath,
+        getParams: (p, key) => ({ storageDir: storagePaths[key], dbDir: dbPaths[key] }),
+        onProgress: (p) => {
+          if (!progress?.enabled) return;
+          const pct = p.total > 0 ? p.index / p.total : 1;
+          progress.update(
+            `Parsing Opencode (${p.install || "default"}) ${renderBar(pct)} ${formatNumber(
+              p.index,
+            )}/${formatNumber(p.total)} | buckets ${formatNumber(p.bucketsQueued)}`,
+          );
+        },
+        source: "opencode",
+      });
+
+      opencodeResult = {
+        filesProcessed: multiResult.recordsProcessed,
+        eventsAggregated: multiResult.eventsAggregated,
+        bucketsQueued: multiResult.bucketsQueued,
+      };
     }
 
     async function parseOpencodeDbForInstall({ dbPath, readFn, source, cursorKey, ...rest }) {
@@ -1097,7 +1170,9 @@ async function cmdSync(argv) {
 
     // ── Kimi (passive wire.jsonl reader) ──
     let kimiResult = { recordsProcessed: 0, eventsAggregated: 0, bucketsQueued: 0 };
-    const kimiWireFiles = sourceAllowed("kimi") ? resolveKimiWireFiles(process.env) : [];
+    const kimiWireFiles = sourceAllowed("kimi")
+      ? mergeBothFileSources({ resolveFiles: resolveKimiWireFiles, env: process.env })
+      : [];
     if (kimiWireFiles.length > 0) {
       if (progress?.enabled) {
         progress.start(`Parsing Kimi Code ${renderBar(0)} | buckets 0`);

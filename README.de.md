@@ -267,6 +267,29 @@ Die meisten Nutzer brauchen das nie – die Standardwerte sind sinnvoll. Für fo
 | `GROK_HOME` | Legacy-Grok-Build-Verzeichnis, falls `TOKENTRACKER_GROK_HOME` nicht gesetzt | `~/.grok` |
 | `TOKENTRACKER_ANTIGRAVITY_HOME` | Einzelnes Antigravity-Skills-Verzeichnis erzwingen (sonst Auto-Erkennung von `~/.gemini/antigravity` + `~/.gemini/antigravity-ide`) | auto |
 
+### 🐧 WSL-Erkennung unter Windows (WSL Auto-Discovery)
+
+Wenn du KI-Coding-Agents unter Windows in WSL verwendest, kann TokenTracker deine Windows- und WSL-Installationen automatisch erkennen und die Token-Nutzung zusammenrechnen.
+
+Konfiguriere dieses Verhalten über die Umgebungsvariable `TOKENTRACKER_WSL_MODE`:
+* `both` (Empfohlen): Liest und addiert die Daten aus beiden Umgebungen (Windows und WSL).
+* `wsl-first` (Standard): Bevorzugt WSL. Wenn Daten in WSL vorliegen, werden diese genutzt, andernfalls die von Windows.
+* `native-first`: Bevorzugt Windows. Wenn Daten unter Windows vorliegen, werden diese genutzt, andernfalls die von WSL.
+* `wsl-only`: Liest ausschließlich die Daten aus der WSL-Umgebung.
+* `native-only`: Liest ausschließlich die Daten aus der nativen Windows-Umgebung.
+
+> [!NOTE]
+> **Präferenz (`-first`) vs. Isolierung (`-only`):** Präferenzmodi bevorzugen deine Auswahl, weichen aber automatisch auf die andere Umgebung aus, falls das Tool dort fehlt. Isolierungsmodi beschränken den Scan strikt auf eine Umgebung und ignorieren die andere komplett.
+
+Unterstützte Provider für WSL-Erkennung und Zusammenführung (Aggregation):
+* **Zusammenführung bei paralleler Installation (`both`-Modus):**
+  * **Dateibasiert (Logs & Transkripte):** Every Code, Kimi (legacy & Code), Gemini CLI, Antigravity, OpenCode (JSON), Codex CLI, CodeBuddy, WorkBuddy, oh-my-pi (omp), pi, GitHub Copilot (OTEL), Roo Code, Craft, Kilo Code, Droid.
+  * **Datenbankbasiert (SQLite):** Hermes, Zed Agent, Goose, OpenCode (`opencode.db`), GitHub Copilot (App DB).
+* **WSL-Erkennung (nur Präferenz/Isolierung, keine Zusammenführung):**
+  * Grok Build (wählt dynamisch entweder die native oder WSL-Umgebung je nach Modus, führt aber im `both`-Modus nicht beide zusammen).
+* **Nur nativ (noch keine WSL-Unterstützung):**
+  * Kilo CLI, Mimo Code, ZCode.
+
 ---
 
 ## 🛠️ Entwicklung

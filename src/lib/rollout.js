@@ -5145,9 +5145,23 @@ async function parseKiroCliFromSessionFiles({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveKimiWireFiles(env = process.env) {
+function resolveKimiHome(env = process.env) {
   const home = require("node:os").homedir();
-  const kimiHome = env.KIMI_HOME || path.join(home, ".kimi");
+  const explicit = typeof env?.KIMI_HOME === "string" ? env.KIMI_HOME.trim() : "";
+  if (explicit) return path.resolve(explicit);
+  if (process.platform === "win32") {
+    return pickWin32ProviderPath({
+      env,
+      nativeValue: path.join(home, ".kimi"),
+      wslProviderDir: ".kimi",
+    });
+  }
+  return path.join(home, ".kimi");
+}
+
+function resolveKimiWireFiles(env = process.env) {
+  const kimiHome = resolveKimiHome(env);
+  if (!kimiHome) return [];
   const sessionsDir = path.join(kimiHome, "sessions");
   if (!fssync.existsSync(sessionsDir)) return [];
   const files = [];
@@ -12149,6 +12163,7 @@ module.exports = {
   parseCopilotIncremental,
   parseCopilotSessionStoreIncremental,
   parseCopilotAppDbIncremental,
+  resolveKimiHome,
   resolveKimiWireFiles,
   resolveKimiDefaultModel,
   parseKimiIncremental,

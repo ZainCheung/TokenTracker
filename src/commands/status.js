@@ -67,17 +67,19 @@ const {
   probeWslDistros,
 } = require("../lib/rollout");
 const wsl = require("../lib/wsl-probe");
-const { getWslMode, isInvalidWslMode, shouldProbeWsl } = wsl;
+const { getWslMode, isInvalidWslMode, shouldProbeWsl, discoverWslHome } = wsl;
 const { resolveInstallPaths } = require("../lib/install-resolver");
 const { probeGrokHookState, resolveGrokHome } = require("../lib/grok-hook");
 
 function formatResolvedPaths(paths, filename) {
   const active = [];
   if (paths.native) {
-    active.push(`native: ${filename ? path.join(paths.native, filename) : paths.native}`);
+    const file = filename ? path.join(paths.native, filename) : paths.native;
+    try { if (fssync.existsSync(file)) active.push(`native: ${file}`); } catch (_e) {}
   }
   if (paths.wsl) {
-    active.push(`WSL: ${filename ? path.join(paths.wsl, filename) : paths.wsl}`);
+    const file = filename ? path.join(paths.wsl, filename) : paths.wsl;
+    try { if (fssync.existsSync(file)) active.push(`WSL: ${file}`); } catch (_e) {}
   }
   return active;
 }
@@ -107,11 +109,11 @@ async function cmdStatus(argv = []) {
   const codeConfigPath = path.join(codeHome, "config.toml");
   const claudeSettingsPath = path.join(home, ".claude", "settings.json");
   const codebuddySettingsPath = path.join(
-    process.env.CODEBUDDY_HOME || path.join(home, ".codebuddy"),
+    resolveCodebuddyHome(process.env) || path.join(home, ".codebuddy"),
     "settings.json",
   );
   const workbuddySettingsPath = path.join(
-    process.env.WORKBUDDY_HOME || path.join(home, ".workbuddy"),
+    resolveWorkbuddyHome(process.env) || path.join(home, ".workbuddy"),
     "settings.json",
   );
   const geminiConfigDir = resolveGeminiConfigDir({ home, env: process.env });
@@ -226,7 +228,7 @@ async function cmdStatus(argv = []) {
   // CodeBuddy — passive scan only (no hooks). Surface the file count so
   // operators can confirm JSONL sessions and extension logs are discovered.
   const codebuddyHome = resolveCodebuddyHome(process.env);
-  const codebuddyInstalled = fssync.existsSync(codebuddyHome);
+  const codebuddyInstalled = Boolean(codebuddyHome && fssync.existsSync(codebuddyHome));
   const codebuddyFiles = codebuddyInstalled
     ? resolveCodebuddyProjectFiles(process.env)
     : [];
@@ -234,7 +236,7 @@ async function cmdStatus(argv = []) {
   // WorkBuddy — passive scan (sibling Claude-Code fork). Surface both the
   // recursive JSONL count and SQLite fallback so operators can confirm coverage.
   const workbuddyHome = resolveWorkbuddyHome(process.env);
-  const workbuddyInstalled = fssync.existsSync(workbuddyHome);
+  const workbuddyInstalled = Boolean(workbuddyHome && fssync.existsSync(workbuddyHome));
   const workbuddyFiles = workbuddyInstalled
     ? resolveWorkbuddyProjectFiles(process.env)
     : [];
@@ -256,7 +258,7 @@ async function cmdStatus(argv = []) {
 
   // Craft Agents — passive scan only (no hooks).
   const craftConfigDir = resolveCraftConfigDir(process.env);
-  const craftInstalled = fssync.existsSync(craftConfigDir);
+  const craftInstalled = Boolean(craftConfigDir && fssync.existsSync(craftConfigDir));
   const craftFiles = craftInstalled ? resolveCraftSessionFiles(process.env) : [];
 
   // Kilo CLI (kilo.ai @kilocode/plugin) — passive scan of kilo.db.
@@ -299,6 +301,87 @@ async function cmdStatus(argv = []) {
   const zcodeInstalled = zcodeActive.length > 0;
   const zcodeDbPath = zcodeActive.join(" | ");
 
+  // OpenCode (JSON files + SQLite DB) — passive scan of storage/message/ and opencode.db.
+  const opencodeStorageNativeValue = process.env.OPENCODE_HOME || path.join(xdgDataHome, "opencode");
+  const wslOpencodeStorageDir = process.platform === "win32" && shouldProbeWsl(process.env)
+    ? discoverWslHome(".local/share/opencode")
+    : null;
+  const opencodeStoragePaths = resolveInstallPaths({
+    nativeValue: opencodeStorageNativeValue,
+    wslValue: wslOpencodeStorageDir,
+  });
+  const opencodeStorageActive = formatResolvedPaths(opencodeStoragePaths);
+
+  const opencodeDbNativeValue = process.env.OPENCODE_HOME || path.join(xdgDataHome, "opencode");
+  const wslOpencodeDbDir = process.platform === "win32" && shouldProbeWsl(process.env)
+    ? discoverWslHome(".local/share/opencode")
+    : null;
+  const opencodeDbPaths = resolveInstallPaths({
+    nativeValue: opencodeDbNativeValue,
+    wslValue: wslOpencodeDbDir,
+  });
+  const opencodeDbActive = formatResolvedPaths(opencodeDbPaths, "opencode.db");
+  const opencodeInstalled = opencodeStorageActive.length > 0 || opencodeDbActive.length > 0;
+
+  // Every Code (passive sessions scan)
+  const codePaths = resolveInstallPaths({
+    nativeValue: process.env.CODE_HOME || path.join(home, ".code"),
+    wslDir: ".code",
+  });
+  const codeActive = formatResolvedPaths(codePaths, "sessions");
+  const codeInstalled = codeActive.length > 0;
+
+  // Gemini CLI & Antigravity (shared home)
+  const geminiPaths = resolveInstallPaths({
+    nativeValue: process.env.GEMINI_HOME || path.join(home, ".gemini"),
+    wslDir: ".gemini",
+  });
+  const geminiActive = formatResolvedPaths(geminiPaths);
+  const geminiInstalledStatus = geminiActive.length > 0;
+
+  // Gemini CLI (passive sessions scan)
+  const geminiCliActive = formatResolvedPaths(geminiPaths, "tmp");
+  const geminiCliInstalled = geminiCliActive.length > 0;
+
+  // Antigravity (passive brains scan)
+  const antigravityActive = [];
+  if (geminiPaths.native) {
+    const dirs = [
+      path.join(geminiPaths.native, "antigravity", "brain"),
+      path.join(geminiPaths.native, "antigravity-ide", "brain"),
+      path.join(geminiPaths.native, "antigravity-cli", "brain"),
+    ];
+    if (dirs.some(d => { try { return fssync.existsSync(d); } catch (_) { return false; } })) {
+      antigravityActive.push(`native: ${geminiPaths.native}`);
+    }
+  }
+  if (geminiPaths.wsl) {
+    const dirs = [
+      path.join(geminiPaths.wsl, "antigravity", "brain"),
+      path.join(geminiPaths.wsl, "antigravity-ide", "brain"),
+      path.join(geminiPaths.wsl, "antigravity-cli", "brain"),
+    ];
+    if (dirs.some(d => { try { return fssync.existsSync(d); } catch (_) { return false; } })) {
+      antigravityActive.push(`WSL: ${geminiPaths.wsl}`);
+    }
+  }
+  const antigravityInstalled = antigravityActive.length > 0;
+
+  // Codex CLI (passive sessions scan)
+  const codexPaths = resolveInstallPaths({
+    nativeValue: process.env.CODEX_HOME || path.join(home, ".codex"),
+    wslDir: ".codex",
+  });
+  const codexActive = formatResolvedPaths(codexPaths, "sessions");
+  const codexInstalledStatus = codexActive.length > 0;
+
+  // Kimi (passive sessions scan)
+  const kimiPaths = resolveInstallPaths({
+    nativeValue: path.join(home, ".kimi"),
+    wslDir: ".kimi",
+  });
+  const kimiActive = formatResolvedPaths(kimiPaths, "sessions");
+
   // Kilo Code VS Code extension — passive scan of all VS Code-family
   // globalStorage/kilocode.kilo-code/tasks/ ui_messages.json files.
   const kilocodeTaskFiles = resolveKilocodeTaskFiles(process.env);
@@ -340,9 +423,15 @@ async function cmdStatus(argv = []) {
   // install / WSL auto-discovery. Surface the resolved path (UNC included) and,
   // on Windows, the discovered distros so WSL users can debug "why no sync"
   // without guessing the right UNC alias (#87).
-  const hermesPath = resolveHermesPath();
-  const hermesDbPath = resolveHermesDbPath();
-  const hermesInstalled = Boolean(hermesDbPath && fssync.existsSync(hermesDbPath));
+  const hermesPaths = resolveInstallPaths({
+    nativeValue: process.env.TOKENTRACKER_HERMES_HOME || (process.platform === "win32" && typeof process.env.LOCALAPPDATA === "string"
+      ? path.join(process.env.LOCALAPPDATA.trim(), "hermes")
+      : path.join(home, ".hermes")),
+    wslDir: ".hermes",
+  });
+  const hermesActive = formatResolvedPaths(hermesPaths, "state.db");
+  const hermesInstalled = hermesActive.length > 0;
+  const hermesPath = hermesActive.join(" | ");
   const wslDistros = process.platform === "win32" && shouldProbeWsl(process.env) ? probeWslDistros() : [];
 
   const copilotToken = readCopilotOauthToken({ home });
@@ -634,7 +723,7 @@ async function cmdStatus(argv = []) {
       `- OpenClaw session plugin conversation access: ${openclawSessionPluginState?.conversationAccess ? "set" : "unset"}`,
       `- OpenClaw hook (legacy): ${openclawHookState?.configured ? "set" : "unset"}`,
       kimiInstalled || kimiCodeInstalled
-        ? `- Kimi Code: passive reader (${kimiWireFiles.length + kimiCodeWireFiles.length} wire.jsonl file${(kimiWireFiles.length + kimiCodeWireFiles.length) !== 1 ? "s" : ""} found)`
+        ? `- Kimi Code: passive reader (${kimiWireFiles.length + kimiCodeWireFiles.length} wire.jsonl file${(kimiWireFiles.length + kimiCodeWireFiles.length) !== 1 ? "s" : ""} found, directories: ${kimiActive.join(" | ") || "none"})`
         : null,
       kiroCliInstalled
         ? `- Kiro CLI: SQLite data.sqlite3 found (tokens approximated from char lengths, merged under 'kiro' source)`
@@ -662,6 +751,24 @@ async function cmdStatus(argv = []) {
         : null,
       zcodeInstalled
         ? `- ZCode: passive reader (${zcodeDbPath})`
+        : null,
+      opencodeInstalled
+        ? `- OpenCode: passive reader (storage: ${opencodeStorageActive.join(" | ") || "not found"}, DB: ${opencodeDbActive.join(" | ") || "not found"})`
+        : null,
+      codeInstalled
+        ? `- Every Code: sessions found (${codeActive.join(" | ")})`
+        : null,
+      geminiCliInstalled
+        ? `- Gemini CLI: sessions found (${geminiCliActive.join(" | ")})`
+        : null,
+      antigravityInstalled
+        ? `- Antigravity: brain found (${antigravityActive.join(" | ")})`
+        : null,
+      (!geminiCliInstalled && !antigravityInstalled && geminiInstalledStatus)
+        ? `- Gemini CLI / Antigravity: home found (${geminiActive.join(" | ")})`
+        : null,
+      codexInstalledStatus
+        ? `- Codex CLI: sessions found (${codexActive.join(" | ")})`
         : null,
       kilocodeInstalled
         ? `- Kilo Code (VS Code extension): passive reader (${kilocodeTaskFiles.length} task${kilocodeTaskFiles.length !== 1 ? "s" : ""} across ${new Set(kilocodeTaskFiles.map((t) => t.ide)).size} IDE${new Set(kilocodeTaskFiles.map((t) => t.ide)).size !== 1 ? "s" : ""})`

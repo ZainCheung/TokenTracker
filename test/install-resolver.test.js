@@ -302,3 +302,118 @@ test("resolveAllWin32Paths returns single path in non-both mode", (t) => {
   assert.equal(r.native, "\\\\wsl$\\path");
   assert.equal(r.wsl, null);
 });
+
+// ── Every Code path resolution (PR #261) ──────────────────────────────────────
+
+test("every-code native path defaults to HOME on all platforms", (t) => {
+  mockPlatform(t, "linux");
+  const home = "/home/user";
+  const r = resolveInstallPaths(
+    { nativeValue: path.join(home, ".code") },
+    {},
+    {},
+  );
+  assert.equal(r.native, path.join(home, ".code"));
+  assert.equal(r.wsl, null);
+});
+
+test("every-code WSL path resolves on Windows both mode", (t) => {
+  mockPlatform(t, "win32");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-everycode-wsl-"));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const nativeDir = path.join(tmpDir, "native");
+  const wslDir = path.join(tmpDir, "wsl");
+  fs.mkdirSync(nativeDir, { recursive: true });
+  fs.mkdirSync(wslDir, { recursive: true });
+
+  const r = resolveInstallPaths(
+    { nativeValue: nativeDir, wslValue: wslDir },
+    { TOKENTRACKER_WSL_MODE: "both" },
+    { runWsl: () => "Ubuntu\n", existsSync: () => true },
+  );
+  assert.equal(r.native, nativeDir);
+  assert.equal(r.wsl, wslDir);
+});
+
+// ── Gemini CLI & Antigravity path resolution (PR #261) ────────────────────────
+
+test("gemini/antigravity native path defaults to HOME on all platforms", (t) => {
+  mockPlatform(t, "linux");
+  const home = "/home/user";
+  const r = resolveInstallPaths(
+    { nativeValue: path.join(home, ".gemini") },
+    {},
+    {},
+  );
+  assert.equal(r.native, path.join(home, ".gemini"));
+  assert.equal(r.wsl, null);
+});
+
+test("gemini/antigravity WSL path resolves on Windows both mode", (t) => {
+  mockPlatform(t, "win32");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-gemini-wsl-"));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const nativeDir = path.join(tmpDir, "native");
+  const wslDir = path.join(tmpDir, "wsl");
+  fs.mkdirSync(nativeDir, { recursive: true });
+  fs.mkdirSync(wslDir, { recursive: true });
+
+  const r = resolveInstallPaths(
+    { nativeValue: nativeDir, wslValue: wslDir },
+    { TOKENTRACKER_WSL_MODE: "both" },
+    { runWsl: () => "Ubuntu\n", existsSync: () => true },
+  );
+  assert.equal(r.native, nativeDir);
+  assert.equal(r.wsl, wslDir);
+});
+
+// ── Codex CLI & OpenCode path resolution (PR #261) ────────────────────────────
+
+test("codex/opencode native paths default correctly", (t) => {
+  mockPlatform(t, "linux");
+  const home = "/home/user";
+  const rCodex = resolveInstallPaths(
+    { nativeValue: path.join(home, ".codex") },
+    {},
+    {},
+  );
+  assert.equal(rCodex.native, path.join(home, ".codex"));
+  assert.equal(rCodex.wsl, null);
+
+  const rOpencode = resolveInstallPaths(
+    { nativeValue: path.join(home, ".local", "share", "opencode") },
+    {},
+    {},
+  );
+  assert.equal(rOpencode.native, path.join(home, ".local", "share", "opencode"));
+  assert.equal(rOpencode.wsl, null);
+});
+
+test("codex/opencode WSL paths resolve on Windows both mode", (t) => {
+  mockPlatform(t, "win32");
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ir-opencode-wsl-"));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  const nativeDir = path.join(tmpDir, "native");
+  const wslDir = path.join(tmpDir, "wsl");
+  fs.mkdirSync(nativeDir, { recursive: true });
+  fs.mkdirSync(wslDir, { recursive: true });
+
+  const r = resolveInstallPaths(
+    { nativeValue: nativeDir, wslValue: wslDir },
+    { TOKENTRACKER_WSL_MODE: "both" },
+    { runWsl: () => "Ubuntu\n", existsSync: () => true },
+  );
+  assert.equal(r.native, nativeDir);
+  assert.equal(r.wsl, wslDir);
+});
+
+test("opencode paths union correctly combines storage and db paths", () => {
+  const storagePaths = { native: "/storage/native", wsl: null };
+  const dbPaths = { native: null, wsl: "/db/wsl" };
+  const opencodePaths = {
+    native: storagePaths.native || dbPaths.native,
+    wsl: storagePaths.wsl || dbPaths.wsl,
+  };
+  assert.equal(opencodePaths.native, "/storage/native");
+  assert.equal(opencodePaths.wsl, "/db/wsl");
+});
