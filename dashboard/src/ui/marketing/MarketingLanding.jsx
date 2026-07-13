@@ -59,7 +59,7 @@ export function MarketingLanding({
 
   return (
     <div
-      className="relative min-h-screen bg-[color:var(--lv3-bg)] text-oai-white font-oai antialiased dark"
+      className="relative min-h-screen overflow-x-hidden bg-[color:var(--lv3-bg)] text-oai-white font-oai antialiased dark"
       style={LV3_CSS_VARS}
     >
       <header

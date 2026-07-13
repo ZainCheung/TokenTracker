@@ -17,9 +17,23 @@ import {
   staticChipPositions,
 } from "./galaxy-config.js";
 
+const COMPACT_GALAXY_QUERY = "(max-width: 1023px)";
+
+export function getViewportHeight(
+  view = typeof window === "undefined" ? undefined : window,
+  doc = typeof document === "undefined" ? undefined : document,
+) {
+  return (
+    view?.visualViewport?.height ||
+    doc?.documentElement?.clientHeight ||
+    view?.innerHeight ||
+    1
+  );
+}
+
 function isLowPower() {
   if (typeof window === "undefined") return true;
-  const smallViewport = window.matchMedia?.("(max-width: 768px)")?.matches;
+  const smallViewport = window.matchMedia?.(COMPACT_GALAXY_QUERY)?.matches;
   const fewCores = (navigator.hardwareConcurrency || 8) <= 4;
   return Boolean(smallViewport || fewCores);
 }
@@ -126,7 +140,7 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
     }
 
     const lowPower = isLowPower();
-    const compactViewport = window.matchMedia?.("(max-width: 768px)")?.matches ?? false;
+    const compactViewport = window.matchMedia?.(COMPACT_GALAXY_QUERY)?.matches ?? false;
     const orbitSpeed = orbitSpeedForViewport({ compactViewport });
     const sceneConfig = sceneConfigForViewport({ compactViewport });
     const dpr = Math.min(window.devicePixelRatio || 1, lowPower ? 1.5 : 2);
@@ -213,7 +227,7 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
       camera.updateProjectionMatrix();
 
       // Keep galaxy visual center aligned to the top 100vh of the canvas by shifting projection center
-      const hView = window.innerHeight || 1;
+      const hView = getViewportHeight();
       if (h > hView) {
         camera.projectionMatrix.elements[9] = - (h - hView) / h;
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
@@ -297,15 +311,22 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
         sceneConfig.cameraZ +
         (1 - introEase) * DISC.cameraDollyIn -
         progress * DISC.cameraPushIn;
+      // On compact screens, aim the camera at the black-hole origin itself
+      // before deriving the projection offset. This keeps the actual WebGL
+      // event horizon—not just the DOM glow—at the provider orbit center.
+      if (compactViewport) {
+        camera.lookAt(0, sceneConfig.lookAtY, 0);
+        camera.updateMatrixWorld();
+      }
       // Keep galaxy visual center aligned to 68vh of the viewport dynamically
-      const hView = window.innerHeight || 1;
+      const hView = getViewportHeight();
       const v_camera = new THREE.Vector3(0, DISC.yOffset, 0);
       v_camera.applyMatrix4(camera.matrixWorldInverse);
       const targetY_ndc = 1 - 2 * (0.68 * hView / lastH);
       camera.projectionMatrix.elements[9] = (camera.projectionMatrix.elements[5] * v_camera.y) / (-v_camera.z) - targetY_ndc;
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 
-      camera.lookAt(0, 0, 0);
+      if (!compactViewport) camera.lookAt(0, sceneConfig.lookAtY, 0);
 
       renderer.render(scene, camera);
 
@@ -331,7 +352,13 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
         const el = chipRefs.current[i];
         if (!el) continue;
         const theta = baseAngles[i] + uniforms.uOrbit.value;
-        const pos = orbScreenPos(theta, orbExplosionScale, compactViewport);
+        const compactCenterPct = (68 * hView) / lastH;
+        const pos = orbScreenPos(
+          theta,
+          orbExplosionScale,
+          compactViewport,
+          compactCenterPct,
+        );
         chipAnchorOnPlane(pos.left, pos.top, uniforms.uAnchors.value[i]);
         const x = (pos.left / 100) * lastW;
         const y = (pos.top / 100) * lastH;
@@ -385,7 +412,7 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
       {/* Core convergence glow (both modes; the particles amplify it in full mode). */}
       <div
         ref={glowRef}
-        className="absolute left-1/2 top-[68vh] h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-45 sm:h-[28rem] sm:w-[28rem]"
+        className="absolute left-1/2 top-[68vh] h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-45 lg:h-[28rem] lg:w-[28rem]"
         style={{
           background:
             "radial-gradient(circle, var(--lv3-bg) 6%, rgba(138, 122, 255, 0.28) 18%, rgba(138, 122, 255, 0.05) 45%, transparent 68%)",
@@ -408,7 +435,7 @@ export function TokenGalaxy({ mode = "full", progressRef, className = "" }) {
           ref={(el) => {
             chipRefs.current[i] = el;
           }}
-          className="absolute left-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 sm:h-12 sm:w-12"
+          className="absolute left-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 lg:h-12 lg:w-12"
           style={{
             background: "var(--lv3-orb-surface)",
             boxShadow: "var(--lv3-orb-shadow)",

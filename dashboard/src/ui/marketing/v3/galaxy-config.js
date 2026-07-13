@@ -74,6 +74,7 @@ export function sceneConfigForViewport({ compactViewport }) {
         cameraY: DISC.mobileCameraY,
         cameraZ: DISC.mobileCameraZ,
         lensScale: DISC.mobileLensScale,
+        lookAtY: DISC.yOffset,
         pointScale: DISC.mobilePointScale,
       }
     : {
@@ -81,6 +82,7 @@ export function sceneConfigForViewport({ compactViewport }) {
         cameraY: DISC.cameraY,
         cameraZ: DISC.cameraZ,
         lensScale: 1,
+        lookAtY: 0,
         pointScale: 1,
       };
 }
@@ -95,7 +97,9 @@ const FRAME_ASPECT = 1.78;
 // along it keeps every orb inside the frame forever — orbiting disc-plane
 // circles instead would fling the large-radius ones off screen.
 const ORB_RING = { cx: 50, cy: 43, rx: 40, ry: 34 };
-const MOBILE_ORB_RING = { cx: 50, cy: 50, rx: 41, ry: 15 };
+// Compact screens use a viewport-height galaxy stage, with the shared black
+// hole / counter focal point at 68vh.
+const MOBILE_ORB_RING = { cx: 50, cy: 68, rx: 41, ry: 15 };
 
 // Initial angle of each provider on the orbit, matching the designed slots.
 export function orbBaseAngles() {
@@ -104,11 +108,17 @@ export function orbBaseAngles() {
   );
 }
 
-export function orbScreenPos(theta, scale = 1.0, compactViewport = false) {
+export function orbScreenPos(
+  theta,
+  scale = 1.0,
+  compactViewport = false,
+  compactCenterPct = MOBILE_ORB_RING.cy,
+) {
   const ring = compactViewport ? MOBILE_ORB_RING : ORB_RING;
+  const centerY = compactViewport ? compactCenterPct : ring.cy;
   return {
     left: ring.cx + Math.cos(theta) * ring.rx * scale,
-    top: ring.cy - Math.sin(theta) * ring.ry * scale,
+    top: centerY - Math.sin(theta) * ring.ry * scale,
   };
 }
 

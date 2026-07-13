@@ -6,6 +6,12 @@ import { InstallCommand } from "./InstallCommand.jsx";
 import { DownloadButtons } from "./DownloadButtons.jsx";
 import { CountUp } from "../../components/CountUp.jsx";
 
+export function galaxyStageClassName(animate) {
+  return animate
+    ? "absolute inset-x-0 bottom-0 top-0 z-0 lg:bottom-[-40vh]"
+    : "absolute inset-0 z-0";
+}
+
 /**
  * Split-stage hero: the copy (headline, install command, CTAs) sits on clean
  * black in the upper half; the token galaxy is a fully visible top-down
@@ -125,7 +131,7 @@ export function HeroSection({
         {/* The galaxy canvas covers the whole viewport — no container edge can
             slice it — while the disc itself is parked in the lower half, with
             the live counter floating on its bright core. */}
-        <div className={animate ? "absolute inset-x-0 top-0 bottom-[-40vh] z-0" : "absolute inset-0 z-0"}>
+        <div className={galaxyStageClassName(animate)}>
           <TokenGalaxy mode={galaxyMode} progressRef={progressRef} />
 
           {/* Outer div owns the centering; GSAP animates the inner one so the

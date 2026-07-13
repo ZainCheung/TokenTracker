@@ -1,6 +1,6 @@
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TokenGalaxy } from "./TokenGalaxy";
+import { getViewportHeight, TokenGalaxy } from "./TokenGalaxy";
 import { DISC, orbScreenPos, orbitSpeedForViewport, sceneConfigForViewport } from "./galaxy-config";
 
 vi.mock("three", () => ({
@@ -24,15 +24,32 @@ describe("TokenGalaxy", () => {
     });
   });
 
-  it("keeps provider orbs visible below the sm breakpoint", () => {
+  it("uses the visual viewport height that CSS vh resolves against", () => {
+    expect(
+      getViewportHeight(
+        { innerHeight: 1461, visualViewport: { height: 844 } },
+        { documentElement: { clientHeight: 844 } },
+      ),
+    ).toBe(844);
+  });
+
+  it("keeps provider orbs compact below the desktop breakpoint", () => {
     const { container } = render(<TokenGalaxy mode="static" progressRef={{ current: 0 }} />);
     const providerOrbs = container.querySelectorAll("[data-provider-orb]");
 
     expect(providerOrbs).toHaveLength(8);
     providerOrbs.forEach((orb) => {
-      expect(orb).toHaveClass("flex", "h-10", "w-10", "sm:h-12", "sm:w-12");
+      expect(orb).toHaveClass("flex", "h-10", "w-10", "lg:h-12", "lg:w-12");
       expect(orb).not.toHaveClass("hidden");
     });
+  });
+
+  it("keeps the compact galaxy styling through tablet-width viewports", () => {
+    const { container } = render(<TokenGalaxy mode="static" progressRef={{ current: 0 }} />);
+    const coreGlow = container.firstElementChild?.firstElementChild;
+
+    expect(coreGlow).toHaveClass("h-72", "w-72", "lg:h-[28rem]", "lg:w-[28rem]");
+    expect(coreGlow).not.toHaveClass("sm:h-[28rem]", "sm:w-[28rem]");
   });
 
   it("uses a clearly perceptible orbit speed on compact viewports", () => {
@@ -46,8 +63,9 @@ describe("TokenGalaxy", () => {
       orbScreenPos(angle, 1, true),
     );
 
-    expect(compactPositions.map(({ top }) => top)).toEqual([50, 35, 50, 65]);
+    expect(compactPositions.map(({ top }) => top)).toEqual([68, 53, 68, 83]);
     expect(compactPositions.every(({ left }) => left >= 9 && left <= 91)).toBe(true);
+    expect(orbScreenPos(0, 1, true, 55).top).toBe(55);
   });
 
   it("widens the mobile camera while preserving the black-hole focal weight", () => {
@@ -58,5 +76,7 @@ describe("TokenGalaxy", () => {
     expect(mobile.cameraZ).toBeGreaterThan(desktop.cameraZ);
     expect(mobile.pointScale).toBeGreaterThan(1);
     expect(mobile.lensScale).toBeGreaterThan(1);
+    expect(mobile.lookAtY).toBe(DISC.yOffset);
+    expect(desktop.lookAtY).toBe(0);
   });
 });
