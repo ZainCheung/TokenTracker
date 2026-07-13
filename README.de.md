@@ -284,11 +284,9 @@ Konfiguriere dieses Verhalten über die Umgebungsvariable `TOKENTRACKER_WSL_MODE
 Unterstützte Provider für WSL-Erkennung und Zusammenführung (Aggregation):
 * **Zusammenführung bei paralleler Installation (`both`-Modus):**
   * **Dateibasiert (Logs & Transkripte):** Every Code, Kimi (legacy & Code), Gemini CLI, Antigravity, OpenCode (JSON), Codex CLI, CodeBuddy, WorkBuddy, oh-my-pi (omp), pi, GitHub Copilot (OTEL), Roo Code, Craft, Kilo Code, Droid.
-  * **Datenbankbasiert (SQLite):** Hermes, Zed Agent, Goose, OpenCode (`opencode.db`), GitHub Copilot (App DB).
+  * **Datenbankbasiert (SQLite):** Hermes, Zed Agent, Goose, OpenCode (`opencode.db`), Kilo CLI, Mimo Code, ZCode, GitHub Copilot (App DB).
 * **WSL-Erkennung (nur Präferenz/Isolierung, keine Zusammenführung):**
   * Grok Build (wählt dynamisch entweder die native oder WSL-Umgebung je nach Modus, führt aber im `both`-Modus nicht beide zusammen).
-* **Nur nativ (noch keine WSL-Unterstützung):**
-  * Kilo CLI, Mimo Code, ZCode.
 
 ---
 
