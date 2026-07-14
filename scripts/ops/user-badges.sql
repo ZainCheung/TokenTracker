@@ -51,18 +51,28 @@ CREATE TABLE IF NOT EXISTS public.tokentracker_badge_catalog (
   diamond numeric NOT NULL
 );
 
+-- 2026-07-14 recalibration (launch data, 710 users): the original big_day /
+-- momentum / polyglot thresholds put 17% / 55% / 21% of users at DIAMOND —
+-- no scarcity at the top. New values target roughly bronze ~2 in 3 users,
+-- silver ~1 in 3, gold ~1 in 8, diamond ~1 in 30 (percentiles measured on
+-- live metric_value distributions). wordsmith / weekend_warrior added on the
+-- same data: cumulative output_tokens (real generated work — cache replay
+-- can't inflate it) and weekend active days (UTC-day grain).
 INSERT INTO public.tokentracker_badge_catalog
   (badge_id, sort_order, lower_is_better, bronze, silver, gold, diamond)
 VALUES
-  ('token_titan', 1, false, 100000000, 1000000000, 10000000000, 100000000000),
-  ('big_day',     2, false, 10000000, 50000000, 200000000, 1000000000),
-  ('marathoner',  3, false, 7, 30, 100, 365),
-  ('streak',      4, false, 3, 7, 30, 100),
-  ('momentum',    5, false, 1.5, 2, 3, 5),
-  ('polyglot',    6, false, 3, 8, 15, 30),
-  ('multitool',   7, false, 2, 4, 6, 10),
-  ('podium',      8, true,  100, 30, 10, 3),
-  ('veteran',     9, false, 30, 90, 180, 365)
+  ('token_titan',     1,  false, 100000000, 1000000000, 10000000000, 100000000000),
+  ('big_day',         2,  false, 10000000, 100000000, 500000000, 3000000000),
+  ('wordsmith',       3,  false, 5000000, 25000000, 100000000, 300000000),
+  ('marathoner',      4,  false, 7, 30, 100, 365),
+  ('streak',          5,  false, 3, 7, 30, 100),
+  ('weekend_warrior', 6,  false, 5, 20, 50, 100),
+  ('momentum',        7,  false, 2, 6, 15, 40),
+  ('polyglot',        8,  false, 5, 15, 30, 60),
+  ('trendsetter',     9,  false, 2, 5, 10, 20),
+  ('multitool',       10, false, 2, 4, 6, 10),
+  ('podium',          11, true,  100, 30, 10, 3),
+  ('veteran',         12, false, 30, 90, 180, 365)
 ON CONFLICT (badge_id) DO UPDATE SET
   sort_order      = EXCLUDED.sort_order,
   lower_is_better = EXCLUDED.lower_is_better,
@@ -129,20 +139,22 @@ BEGIN
   -- a UTC midnight, so no hourly bucket spans the cut — base + tail is exactly
   -- the deduped full history.
   usm AS (
-    SELECT x.user_id, x.source, x.model, x.day, SUM(x.total_tokens) AS tokens
+    SELECT x.user_id, x.source, x.model, x.day,
+           SUM(x.total_tokens)  AS tokens,
+           SUM(x.output_tokens) AS output_tokens
     FROM (
-      SELECT r.user_id, r.source, r.model, r.day, r.total_tokens
+      SELECT r.user_id, r.source, r.model, r.day, r.total_tokens, r.output_tokens
       FROM tokentracker_leaderboard_rollup_daily r
       UNION ALL
       SELECT t.user_id, t.source, t.model,
-             (t.hour_start AT TIME ZONE 'UTC')::date AS day, t.total_tokens
+             (t.hour_start AT TIME ZONE 'UTC')::date AS day, t.total_tokens, t.output_tokens
       FROM leaderboard_hourly_dedup(v_through, now()) t
     ) x
     GROUP BY x.user_id, x.source, x.model, x.day
   ),
   -- Active day := any tokens that UTC day.
   daily AS (
-    SELECT user_id, day, SUM(tokens) AS tokens
+    SELECT user_id, day, SUM(tokens) AS tokens, SUM(output_tokens) AS output_tokens
     FROM usm
     GROUP BY user_id, day
     HAVING SUM(tokens) > 0
@@ -150,7 +162,12 @@ BEGIN
   base AS (
     SELECT user_id,
            SUM(tokens)                    AS total_tokens,
+           SUM(output_tokens)             AS output_tokens,
            COUNT(*)                       AS active_days,
+           -- Weekend := Saturday/Sunday of the UTC day bucket. Local weekends
+           -- shift by a few hours per timezone; at day grain that only blurs
+           -- the edges, and no timezone context exists cloud-side.
+           COUNT(*) FILTER (WHERE EXTRACT(isodow FROM day) IN (6, 7)) AS weekend_days,
            MIN(day)                       AS first_day,
            (current_date - MIN(day))      AS veteran_days,
            MAX(tokens)                    AS max_day_tokens
@@ -208,6 +225,27 @@ BEGIN
     WHERE tokens > 0
     GROUP BY user_id
   ),
+  -- trendsetter: models this user first touched within 7 days of the model's
+  -- GLOBAL debut. Two guards: a >=5 distinct-user floor (private/BYO model
+  -- strings would otherwise self-debut and auto-qualify their only user) and
+  -- a 30-day dataset burn-in (at data start every model "debuts" at once).
+  model_debut AS (
+    SELECT model, MIN(day) AS debut
+    FROM usm
+    GROUP BY model
+    HAVING COUNT(DISTINCT user_id) >= 5
+       AND MIN(day) >= (SELECT MIN(day) + 30 FROM usm)
+  ),
+  trend AS (
+    SELECT uf.user_id, COUNT(*) AS early_models
+    FROM (
+      SELECT user_id, model, MIN(day) AS first_day
+      FROM usm GROUP BY user_id, model
+    ) uf
+    JOIN model_debut d USING (model)
+    WHERE uf.first_day <= d.debut + 7
+    GROUP BY uf.user_id
+  ),
   fav AS (
     SELECT DISTINCT ON (user_id) user_id, model AS favorite_model
     FROM (
@@ -228,11 +266,12 @@ BEGIN
   ),
   facts AS (
     SELECT b.user_id,
-           b.total_tokens, b.max_day_tokens, bd.best_day,
-           b.active_days, b.first_day, b.veteran_days,
+           b.total_tokens, b.output_tokens, b.max_day_tokens, bd.best_day,
+           b.active_days, b.weekend_days, b.first_day, b.veteran_days,
            s.longest_streak, s.run_start, s.run_end,
            mo.max_wow, mo.wow_week,
            v.models, v.sources, f.favorite_model,
+           t.early_models,
            r.rank AS current_rank
     FROM base b
     LEFT JOIN best_day bd USING (user_id)
@@ -240,6 +279,7 @@ BEGIN
     LEFT JOIN momentum mo USING (user_id)
     LEFT JOIN variety  v  USING (user_id)
     LEFT JOIN fav      f  USING (user_id)
+    LEFT JOIN trend    t  USING (user_id)
     LEFT JOIN cur_rank r  USING (user_id)
   )
   INSERT INTO tokentracker_user_badges AS ub
@@ -253,15 +293,18 @@ BEGIN
          now()
   FROM facts f
   CROSS JOIN LATERAL (VALUES
-    ('token_titan', f.total_tokens::numeric,   '{}'::jsonb),
-    ('big_day',     f.max_day_tokens::numeric, jsonb_build_object('date', f.best_day)),
-    ('marathoner',  f.active_days::numeric,    '{}'::jsonb),
-    ('streak',      f.longest_streak::numeric, jsonb_build_object('run_start', f.run_start, 'run_end', f.run_end)),
-    ('momentum',    f.max_wow,                 jsonb_build_object('week', f.wow_week)),
-    ('polyglot',    f.models::numeric,         jsonb_build_object('favorite_model', f.favorite_model)),
-    ('multitool',   f.sources::numeric,        '{}'::jsonb),
-    ('podium',      f.current_rank::numeric,   '{}'::jsonb),
-    ('veteran',     f.veteran_days::numeric,   jsonb_build_object('first_day', f.first_day))
+    ('token_titan',     f.total_tokens::numeric,   '{}'::jsonb),
+    ('big_day',         f.max_day_tokens::numeric, jsonb_build_object('date', f.best_day)),
+    ('wordsmith',       f.output_tokens::numeric,  '{}'::jsonb),
+    ('marathoner',      f.active_days::numeric,    '{}'::jsonb),
+    ('streak',          f.longest_streak::numeric, jsonb_build_object('run_start', f.run_start, 'run_end', f.run_end)),
+    ('weekend_warrior', f.weekend_days::numeric,   '{}'::jsonb),
+    ('momentum',        f.max_wow,                 jsonb_build_object('week', f.wow_week)),
+    ('polyglot',        f.models::numeric,         jsonb_build_object('favorite_model', f.favorite_model)),
+    ('trendsetter',     f.early_models::numeric,   '{}'::jsonb),
+    ('multitool',       f.sources::numeric,        '{}'::jsonb),
+    ('podium',          f.current_rank::numeric,   '{}'::jsonb),
+    ('veteran',         f.veteran_days::numeric,   jsonb_build_object('first_day', f.first_day))
   ) AS m(badge_id, val, meta)
   JOIN tokentracker_badge_catalog c ON c.badge_id = m.badge_id
   CROSS JOIN LATERAL (
@@ -391,3 +434,39 @@ GRANT EXECUTE ON FUNCTION public.user_badges_full(uuid, boolean) TO project_admi
 --   '32 */6 * * *',
 --   'SELECT public.user_badges_refresh()'
 -- );
+
+-- ── 6. One-time recalibration (executed 2026-07-14; kept for the record) ─────
+-- Tiers are monotonic, so raising big_day/momentum/polyglot thresholds alone
+-- would grandfather the inflated tiers forever. The system had been live <48h
+-- (backfill 2026-07-13), so a one-time recompute from the stored metric_value
+-- against the NEW catalog — downgrades allowed, timestamps above the new tier
+-- cleared — was the correct fix. Backup taken first:
+--
+-- CREATE TABLE tokentracker_user_badges_backup_20260714 AS
+--   SELECT * FROM tokentracker_user_badges
+--   WHERE badge_id IN ('big_day', 'momentum', 'polyglot');
+-- ALTER TABLE tokentracker_user_badges_backup_20260714 ENABLE ROW LEVEL SECURITY;
+-- REVOKE ALL ON tokentracker_user_badges_backup_20260714 FROM anon, authenticated, PUBLIC;
+--
+-- UPDATE tokentracker_user_badges ub
+-- SET tier       = x.new_tier,
+--     bronze_at  = CASE WHEN x.new_tier >= 1 THEN ub.bronze_at  END,
+--     silver_at  = CASE WHEN x.new_tier >= 2 THEN ub.silver_at  END,
+--     gold_at    = CASE WHEN x.new_tier >= 3 THEN ub.gold_at    END,
+--     diamond_at = CASE WHEN x.new_tier >= 4 THEN ub.diamond_at END,
+--     updated_at = now()
+-- FROM (
+--   SELECT u.user_id, u.badge_id,
+--          CASE WHEN u.metric_value >= c.diamond THEN 4
+--               WHEN u.metric_value >= c.gold    THEN 3
+--               WHEN u.metric_value >= c.silver  THEN 2
+--               WHEN u.metric_value >= c.bronze  THEN 1
+--               ELSE 0 END AS new_tier
+--   FROM tokentracker_user_badges u
+--   JOIN tokentracker_badge_catalog c USING (badge_id)
+--   WHERE u.badge_id IN ('big_day', 'momentum', 'polyglot')
+-- ) x
+-- WHERE x.user_id = ub.user_id AND x.badge_id = ub.badge_id
+--   AND ub.tier <> x.new_tier;
+--
+-- Drop the backup table once the new distribution has settled.

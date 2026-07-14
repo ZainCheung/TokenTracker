@@ -219,24 +219,31 @@ function leaderboardAvatarSeed(entry, displayName) {
 }
 
 /**
- * Small GitHub icon that expands into a tooltip on hover. The tooltip carries a
- * clickable "Settings" link so users who haven't configured their own GitHub yet
- * know where to turn it on. Uses a named Tailwind group (`group/gh`) so hover
- * state is scoped to this span — leaderboard rows already have their own
- * `group` for row-hover backgrounds and we don't want to collide.
+ * GitHub link rendered as an avatar-frame emblem: a small round chip centered
+ * on the bottom edge of the avatar's frame ring (see the `relative` +
+ * `rounded-full p-[2px]` wrapper in the row markup, which draws the ring when
+ * a github_url is present). Expands into a tooltip on hover; the tooltip
+ * carries a clickable "Settings" link so users who haven't configured their
+ * own GitHub yet know where to turn it on. Uses a named Tailwind group
+ * (`group/gh`) so hover state is scoped to this span — leaderboard rows
+ * already have their own `group` for row-hover backgrounds and we don't want
+ * to collide.
  */
 function GithubLinkWithTooltip({ githubUrl }) {
   return (
-    <span className="relative inline-flex items-center group/gh shrink-0">
+    <span className="absolute left-1/2 top-full -translate-x-1/2 -translate-y-1/2 inline-flex group/gh">
       <a
         href={githubUrl}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
         aria-label={copy("leaderboard.github.aria")}
-        className="text-oai-black hover:text-oai-gray-500 dark:text-white dark:hover:text-oai-gray-400 transition-colors"
+        // The octocat glyph is itself a filled circle, so the chip needs no
+        // border of its own: the page-background disc just knocks a crisp
+        // 1px halo out of the avatar + frame ring behind it.
+        className="flex h-4 w-4 items-center justify-center rounded-full bg-white dark:bg-oai-gray-950 text-oai-black dark:text-oai-gray-100 transition-transform hover:scale-110"
       >
-        <ProviderIcon provider="GITHUB" size={16} />
+        <ProviderIcon provider="GITHUB" size={14} />
       </a>
       <span
         role="tooltip"
@@ -253,11 +260,13 @@ function GithubLinkWithTooltip({ githubUrl }) {
         //  3. ::before bridge extends the tooltip's hit-area down to the
         //     icon's top edge so the cursor's path from icon up into the
         //     tooltip text stays inside the group the whole time.
-        // right-0 so the tooltip grows leftward from the icon (icon now sits
-        // on the right side of the cell after the name). mb-2 gives an 8px
-        // visual gap; ::before h-2.5 (10px) bridges it for hit-testing so the
-        // cursor never leaves the group while moving from icon into tooltip.
-        className="invisible opacity-0 group-hover/gh:visible group-hover/gh:opacity-100 absolute right-0 bottom-full mb-2 whitespace-nowrap rounded-md bg-oai-black dark:bg-oai-gray-700 px-2.5 py-1.5 text-[11px] leading-relaxed text-white shadow-lg transition-opacity duration-150 z-50 before:content-[''] before:absolute before:inset-x-0 before:top-full before:h-2.5"
+        // left-0 so the tooltip grows rightward from the icon (icon sits
+        // between the avatar and the name, near the left edge of the sticky
+        // user column — growing leftward would exit the horizontal-scroll
+        // container and get clipped). mb-2 gives an 8px visual gap;
+        // ::before h-2.5 (10px) bridges it for hit-testing so the cursor
+        // never leaves the group while moving from icon into tooltip.
+        className="invisible opacity-0 group-hover/gh:visible group-hover/gh:opacity-100 absolute left-0 bottom-full mb-2 whitespace-nowrap rounded-md bg-oai-black dark:bg-oai-gray-700 px-2.5 py-1.5 text-[11px] leading-relaxed text-white shadow-lg transition-opacity duration-150 z-50 before:content-[''] before:absolute before:inset-x-0 before:top-full before:h-2.5"
       >
         <span className="block">{copy("leaderboard.github.tooltipAction")}</span>
         <span className="block text-oai-gray-300 dark:text-oai-gray-400">
@@ -268,7 +277,7 @@ function GithubLinkWithTooltip({ githubUrl }) {
             className="text-white underline underline-offset-2 decoration-oai-gray-400 hover:text-oai-brand-300 hover:decoration-oai-brand-300"
           >
             {copy("leaderboard.github.tooltipSettingsLink")}
-          </Link>
+          </Link>{" "}
           {copy("leaderboard.github.tooltipSuffix")}
         </span>
       </span>
@@ -698,13 +707,29 @@ export function LeaderboardPage({
                     </td>
                     <td className={lbStickyTdUser(true)}>
                       <div className="flex min-w-0 items-center gap-2">
-                        <LeaderboardAvatar
-                          avatarUrl={entry?.avatar_url}
-                          displayName={name}
-                          seed={leaderboardAvatarSeed(entry, name)}
-                        />
+                        {/* Both padding layers render for every row (framed or
+                            not) so avatars and names stay column-aligned */}
+                        <span
+                          className={cn(
+                            "relative inline-flex shrink-0 rounded-full p-[2px]",
+                            entry?.github_url && "gh-avatar-frame",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full p-px",
+                              entry?.github_url && "bg-white dark:bg-oai-gray-950",
+                            )}
+                          >
+                            <LeaderboardAvatar
+                              avatarUrl={entry?.avatar_url}
+                              displayName={name}
+                              seed={leaderboardAvatarSeed(entry, name)}
+                            />
+                          </span>
+                          {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
+                        </span>
                         <span className="truncate font-semibold text-oai-black dark:text-oai-white">{name}</span>
-                        {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
                         <BadgeMini badges={entry?.badges} className="hidden sm:inline-flex" />
                       </div>
                     </td>
@@ -733,13 +758,29 @@ export function LeaderboardPage({
                   </td>
                   <td className={lbStickyTdUser(false)}>
                     <div className="flex min-w-0 items-center gap-2">
-                      <LeaderboardAvatar
-                        avatarUrl={entry?.avatar_url}
-                        displayName={name}
-                        seed={leaderboardAvatarSeed(entry, name)}
-                      />
+                      {/* Both padding layers render for every row (framed or
+                          not) so avatars and names stay column-aligned */}
+                      <span
+                        className={cn(
+                          "relative inline-flex shrink-0 rounded-full p-[2px]",
+                          entry?.github_url && "gh-avatar-frame",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full p-px",
+                            entry?.github_url && "bg-white dark:bg-oai-gray-950",
+                          )}
+                        >
+                          <LeaderboardAvatar
+                            avatarUrl={entry?.avatar_url}
+                            displayName={name}
+                            seed={leaderboardAvatarSeed(entry, name)}
+                          />
+                        </span>
+                        {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
+                      </span>
                       <span className="truncate font-medium text-oai-gray-800 dark:text-oai-gray-200">{name}</span>
-                      {entry?.github_url && <GithubLinkWithTooltip githubUrl={entry.github_url} />}
                       <BadgeMini badges={entry?.badges} className="hidden sm:inline-flex" />
                     </div>
                   </td>

@@ -2,8 +2,12 @@ import React from "react";
 import { BADGE_BY_ID } from "./badge-catalog";
 import { paletteForTier } from "./tier-palette";
 
-const SIZE_PX = { xs: 18, sm: 24, md: 44, xl: 80, lg: 96 };
-const RING_PX = { xs: 1.5, sm: 2, md: 3, xl: 4, lg: 5 };
+// The artwork now carries its own engraved medallion edge. Keep the tier ring
+// deliberately thin so the face remains the visual subject instead of reading
+// as a double metal border. Page-scale coins also get a little more room for
+// the denser original illustrations.
+const SIZE_PX = { xs: 18, sm: 24, md: 44, xl: 88, lg: 108 };
+const RING_PX = { xs: 0.75, sm: 1, md: 1.5, xl: 2, lg: 2 };
 
 /**
  * Badge medallion: the achievement artwork (dashboard/public/achievements/*)
@@ -27,7 +31,7 @@ export function AchievementBadge({
   // numeric sizes pin exact pixels for grids/rows.
   const fill = size === "fill";
   const px = fill ? "100%" : SIZE_PX[size] || SIZE_PX.md;
-  const ring = fill ? 6 : RING_PX[size] || RING_PX.md;
+  const ring = fill ? 4 : RING_PX[size] || RING_PX.md;
   const [artFailed, setArtFailed] = React.useState(false);
   const Glyph = entry?.icon || null;
   const showArt = Boolean(entry?.art) && !artFailed;

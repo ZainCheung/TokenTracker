@@ -75,10 +75,13 @@ test("badge id sets agree across SQL, frontend catalog, and copy.csv", () => {
   const CLOUD_IDS = [
     "token_titan",
     "big_day",
+    "wordsmith",
     "marathoner",
     "streak",
+    "weekend_warrior",
     "momentum",
     "polyglot",
+    "trendsetter",
     "multitool",
     "podium",
     "veteran",

@@ -13,38 +13,60 @@ const BadgeDetailModal = React.lazy(() => import("../ui/achievements/BadgeDetail
 /** Cloud badges for the signed-in user via their own profile payload. */
 function useOwnCloudBadges() {
   const auth = useInsforgeAuth();
-  const [state, setState] = useState({ status: "loading", achievements: [] });
+  const [state, setState] = useState({ status: "loading", achievements: [], userId: null });
+  const authLoading = Boolean(auth?.loading);
   const signedIn = Boolean(auth?.enabled && auth?.user?.id);
+  const userId = signedIn ? auth.user.id : null;
 
   useEffect(() => {
+    if (authLoading) {
+      setState({ status: "loading", achievements: [], userId: null });
+      return undefined;
+    }
     if (!signedIn) {
-      setState({ status: "signed-out", achievements: [] });
+      setState({ status: "signed-out", achievements: [], userId: null });
       return undefined;
     }
     let cancelled = false;
+    // Auth can hydrate after the local endpoint has already resolved. Reset
+    // synchronously for this user and keep the merged wall behind its skeleton
+    // until the cloud request settles, otherwise the three local badges flash
+    // first and the whole wall recolors/reorders a moment later.
+    setState({ status: "loading", achievements: [], userId });
     (async () => {
       try {
         const accessToken = await auth.getAccessToken?.();
         const data = await getLeaderboardProfile({
           accessToken,
-          userId: auth.user.id,
+          userId,
           period: "total",
         });
         if (cancelled) return;
         setState({
           status: "ready",
           achievements: Array.isArray(data?.badges) ? data.badges : [],
+          userId,
         });
       } catch {
-        if (!cancelled) setState({ status: "error", achievements: [] });
+        if (!cancelled) setState({ status: "error", achievements: [], userId });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [signedIn, auth?.user?.id]);
+  }, [authLoading, signedIn, userId]);
 
-  return { ...state, signedIn };
+  return {
+    ...state,
+    signedIn,
+    settled: cloudBadgesSettled({ authLoading, signedIn, userId, state }),
+  };
+}
+
+export function cloudBadgesSettled({ authLoading, signedIn, userId, state }) {
+  if (authLoading) return false;
+  if (!signedIn) return state.status === "signed-out";
+  return state.userId === userId && (state.status === "ready" || state.status === "error");
 }
 
 function GridSkeleton() {
@@ -52,12 +74,12 @@ function GridSkeleton() {
   // zero shift.
   return (
     <div
-      className="-mx-1.5 grid animate-pulse grid-cols-[repeat(3,max-content)] justify-between gap-y-7 sm:-mx-3.5 sm:grid-cols-[repeat(4,max-content)] lg:grid-cols-[repeat(5,max-content)]"
+      className="mx-0 grid animate-pulse grid-cols-[repeat(3,max-content)] justify-between gap-y-7 sm:-mx-2 sm:grid-cols-[repeat(4,max-content)] lg:grid-cols-[repeat(5,max-content)]"
       aria-hidden
     >
       {Array.from({ length: BADGE_CATALOG.length }).map((_, index) => (
-        <div key={index} className="flex w-[6.75rem] flex-col items-center px-1 pb-3 pt-4 sm:w-[7.75rem]">
-          <div className="h-24 w-24 rounded-full bg-oai-gray-200 dark:bg-oai-gray-800" />
+        <div key={index} className="flex w-[6.75rem] flex-col items-center px-0 pb-3 pt-4 sm:w-[7.75rem]">
+          <div className="h-[108px] w-[108px] rounded-full bg-oai-gray-200 dark:bg-oai-gray-800" />
           <div className="mt-3 h-3 w-16 rounded bg-oai-gray-200 dark:bg-oai-gray-800" />
           <div className="mt-2 h-2 w-10 rounded bg-oai-gray-100 dark:bg-oai-gray-800/60" />
         </div>
@@ -70,7 +92,7 @@ export default function AchievementsPage() {
   const local = useAchievements();
   const cloud = useOwnCloudBadges();
   const [selectedBadge, setSelectedBadge] = useState(null);
-  const loading = local.status === "loading" || cloud.status === "loading";
+  const loading = local.status === "loading" || !cloud.settled;
 
   // One merged wall — users think in badges, not in where a badge is
   // computed. Cloud and local records never share ids, so a flat concat is a
@@ -139,6 +161,7 @@ export default function AchievementsPage() {
                 isOwn
                 columns="wide"
                 size="lg"
+                animateIn
                 onSelect={setSelectedBadge}
               />
               <p className="mt-10 text-center text-xs text-oai-gray-400 dark:text-oai-gray-500">

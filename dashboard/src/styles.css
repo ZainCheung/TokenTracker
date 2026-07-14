@@ -628,6 +628,35 @@ html.native-windows-app .tt-native-glass-shell aside[data-native-sidebar] {
 :root.dark .heatmap-scroll-thin::-webkit-scrollbar-thumb {
   background: transparent;
 }
+
+/* Leaderboard: GitHub avatar frame. Machined-graphite conic ring (GitHub
+   Primer grays) echoing the achievement coins' metal finish; the element's
+   own padding is the visible ring, the inner gap layer knocks out a 1px
+   page-background seam so the ring reads as a set bezel. */
+.gh-avatar-frame {
+  background: conic-gradient(
+    from 210deg,
+    #24292e,
+    #4d565f 18%,
+    #24292e 38%,
+    #767f88 55%,
+    #24292e 72%,
+    #57606a 88%,
+    #24292e
+  );
+}
+:root.dark .gh-avatar-frame {
+  background: conic-gradient(
+    from 210deg,
+    #c6cdd5,
+    #79828b 20%,
+    #aeb7bf 42%,
+    #67707a 60%,
+    #c6cdd5 80%,
+    #8b949e 92%,
+    #c6cdd5
+  );
+}
 :root.dark .heatmap-scroll-thin:hover,
 :root.dark .heatmap-scroll-thin:focus-within {
   scrollbar-color: var(--oai-gray-600) transparent;

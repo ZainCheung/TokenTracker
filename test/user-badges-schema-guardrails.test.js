@@ -13,10 +13,13 @@ const sql = fs.readFileSync(SQL_PATH, "utf8");
 const BADGE_IDS = [
   "token_titan",
   "big_day",
+  "wordsmith",
   "marathoner",
   "streak",
+  "weekend_warrior",
   "momentum",
   "polyglot",
+  "trendsetter",
   "multitool",
   "podium",
   "veteran",
@@ -64,12 +67,37 @@ test("refresh claims the shared lock and reads the rollup + live tail", () => {
   assert.match(sql, /leaderboard_hourly_dedup\(v_through, now\(\)\)/);
 });
 
-test("catalog seeds exactly the nine cloud badges with 4-tier thresholds", () => {
+test("catalog seeds exactly the twelve cloud badges with 4-tier thresholds", () => {
   for (const id of BADGE_IDS) {
     assert.match(sql, new RegExp(`\\('${id}',`), `missing catalog seed for ${id}`);
   }
   // Spot-check threshold literals (single source of truth lives HERE).
   assert.match(sql, /100000000, 1000000000, 10000000000, 100000000000/); // token_titan
-  assert.match(sql, /'podium',\s*8,\s*true,\s*100, 30, 10, 3/); // podium lower_is_better
-  assert.match(sql, /'streak',\s*4,\s*false,\s*3, 7, 30, 100/);
+  assert.match(sql, /'podium',\s*11,\s*true,\s*100, 30, 10, 3/); // podium lower_is_better
+  assert.match(sql, /'streak',\s*5,\s*false,\s*3, 7, 30, 100/);
+  // 2026-07-14 recalibration values (see the seed comment in the SQL).
+  assert.match(sql, /'momentum',\s*7,\s*false,\s*2, 6, 15, 40/);
+  assert.match(sql, /'polyglot',\s*8,\s*false,\s*5, 15, 30, 60/);
+  assert.match(sql, /'big_day',\s*2,\s*false,\s*10000000, 100000000, 500000000, 3000000000/);
+  assert.match(sql, /'wordsmith',\s*3,\s*false,\s*5000000, 25000000, 100000000, 300000000/);
+  assert.match(sql, /'weekend_warrior',\s*6,\s*false,\s*5, 20, 50, 100/);
+  assert.match(sql, /'trendsetter',\s*9,\s*false,\s*2, 5, 10, 20/);
+});
+
+test("trendsetter guards against self-debuting models and dataset burn-in", () => {
+  // Private/BYO model strings self-debut with their only user — the >=5
+  // distinct-user floor keeps them from auto-qualifying.
+  assert.match(sql, /COUNT\(DISTINCT user_id\) >= 5/);
+  // At data start every model "debuts" at once — 30-day burn-in excludes them.
+  assert.match(sql, /MIN\(day\) >= \(SELECT MIN\(day\) \+ 30 FROM usm\)/);
+  // Early adoption window: first touch within 7 days of the global debut.
+  assert.match(sql, /uf\.first_day <= d\.debut \+ 7/);
+});
+
+test("wordsmith/weekend_warrior facts come from output tokens and UTC weekend days", () => {
+  // wordsmith must aggregate output_tokens (cache replay can't inflate it).
+  assert.match(sql, /\('wordsmith',\s*f\.output_tokens::numeric/);
+  // weekend days counted on the UTC day bucket via ISO day-of-week.
+  assert.match(sql, /EXTRACT\(isodow FROM day\) IN \(6, 7\)/);
+  assert.match(sql, /\('weekend_warrior',\s*f\.weekend_days::numeric/);
 });
