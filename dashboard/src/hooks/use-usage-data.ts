@@ -17,6 +17,7 @@ export function useUsageData({
   from,
   to,
   includeDaily = true,
+  includeSummary = true,
   cacheKey,
   timeZone,
   tzOffsetMinutes,
@@ -44,9 +45,11 @@ export function useUsageData({
   const storageKey = (() => {
     if (!cacheKey) return null;
     const host = safeHost(baseUrl) || "default";
-    const dailyKey = includeDaily ? "daily" : "summary";
+    const dataKey = includeDaily
+      ? includeSummary ? "daily-summary" : "daily-only"
+      : "summary";
     const tzKey = getTimeZoneCacheKey({ timeZone, offsetMinutes: tzOffsetMinutes });
-    return `tokentracker.usage.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${dailyKey}.${tzKey}.${deviceScope}`;
+    return `tokentracker.usage.${cacheKey}.${scopeKey}.${host}.${from}.${to}.${dataKey}.${tzKey}.${deviceScope}`;
   })();
 
   // Wipe state when the scope flips so the previously-rendered local data
@@ -71,12 +74,15 @@ export function useUsageData({
       const raw = window.localStorage.getItem(storageKey);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed || !parsed.summary) return null;
+      const hasRequestedData = includeSummary
+        ? Boolean(parsed?.summary)
+        : Array.isArray(parsed?.daily);
+      if (!parsed || !hasRequestedData) return null;
       return parsed;
     } catch (_e) {
       return null;
     }
-  }, [storageKey]);
+  }, [includeSummary, storageKey]);
 
   const writeCache = useCallback(
     (payload: any) => {
@@ -124,8 +130,33 @@ export function useUsageData({
       let dailyRes = null;
       let summaryRes = null;
       if (includeDaily) {
-        const [dailyResult, summaryResult] = await Promise.allSettled([
-          dailyFetcher({
+        if (includeSummary) {
+          const [dailyResult, summaryResult] = await Promise.allSettled([
+            dailyFetcher({
+              baseUrl,
+              accessToken: tokenForFetch,
+              from,
+              to,
+              device: deviceId,
+              timeZone,
+              tzOffsetMinutes,
+            }),
+            summaryFetcher({
+              baseUrl,
+              accessToken: tokenForFetch,
+              from,
+              to,
+              device: deviceId,
+              timeZone,
+              tzOffsetMinutes,
+              rolling: true,
+            }),
+          ]);
+          if (dailyResult.status === "rejected") throw dailyResult.reason;
+          dailyRes = dailyResult.value;
+          summaryRes = summaryResult.status === "fulfilled" ? summaryResult.value : null;
+        } else {
+          dailyRes = await dailyFetcher({
             baseUrl,
             accessToken: tokenForFetch,
             from,
@@ -133,22 +164,9 @@ export function useUsageData({
             device: deviceId,
             timeZone,
             tzOffsetMinutes,
-          }),
-          summaryFetcher({
-            baseUrl,
-            accessToken: tokenForFetch,
-            from,
-            to,
-            device: deviceId,
-            timeZone,
-            tzOffsetMinutes,
-            rolling: true,
-          }),
-        ]);
-        if (dailyResult.status === "rejected") throw dailyResult.reason;
-        dailyRes = dailyResult.value;
-        summaryRes = summaryResult.status === "fulfilled" ? summaryResult.value : null;
-      } else {
+          });
+        }
+      } else if (includeSummary) {
         summaryRes = await summaryFetcher({
           baseUrl,
           accessToken: tokenForFetch,
@@ -169,9 +187,13 @@ export function useUsageData({
           now,
         });
       }
-      let nextSummary = summaryRes?.totals || dailyRes?.summary?.totals || null;
-      let nextRolling = summaryRes?.rolling || dailyRes?.summary?.rolling || null;
-      if (includeDaily && !nextSummary && !summaryRes) {
+      let nextSummary = includeSummary
+        ? summaryRes?.totals || dailyRes?.summary?.totals || null
+        : null;
+      let nextRolling = includeSummary
+        ? summaryRes?.rolling || dailyRes?.summary?.rolling || null
+        : null;
+      if (includeSummary && includeDaily && !nextSummary && !summaryRes) {
         try {
           const fallback = await summaryFetcher({
             baseUrl,
@@ -197,7 +219,7 @@ export function useUsageData({
       setSource("edge");
       setFetchedAt(nowIso);
 
-      if (nextSummary && cacheAllowed) {
+      if ((nextSummary || (!includeSummary && includeDaily)) && cacheAllowed) {
         writeCache({
           summary: nextSummary,
           rolling: nextRolling,
@@ -205,6 +227,7 @@ export function useUsageData({
           from,
           to,
           includeDaily,
+          includeSummary,
           fetchedAt: nowIso,
         });
       } else if (!cacheAllowed) {
@@ -213,7 +236,7 @@ export function useUsageData({
     } catch (e) {
       if (cacheAllowed) {
         const cached = readCache();
-        if (cached?.summary) {
+        if (cached?.summary || (!includeSummary && Array.isArray(cached?.daily))) {
           setSummary(cached.summary);
           setRolling(cached.rolling || null);
           const cachedDaily = Array.isArray(cached.daily) ? cached.daily : [];
@@ -254,6 +277,7 @@ export function useUsageData({
     baseUrl,
     from,
     includeDaily,
+    includeSummary,
     mockEnabled,
     guestAllowed,
     cacheAllowed,
@@ -304,7 +328,7 @@ export function useUsageData({
       setFetchedAt(null);
     } else {
       const cached = readCache();
-      if (cached?.summary) {
+      if (cached?.summary || (!includeSummary && Array.isArray(cached?.daily))) {
         setSummary(cached.summary);
         setRolling(cached.rolling || null);
         const cachedDaily = Array.isArray(cached.daily) ? cached.daily : [];
@@ -332,6 +356,7 @@ export function useUsageData({
     clearCache,
     isLocalMode,
     accountViewResolving,
+    includeSummary,
   ]);
 
   // Auto-refresh when the dashboard regains focus / becomes visible again.

@@ -570,6 +570,23 @@ export default async function (req: Request): Promise<Response> {
   const isSelf = Boolean(callerUserId && callerUserId === userId);
   const client = getClient();
 
+  // Achievements only need the precomputed badge rows. Keep this authenticated
+  // owner-only fast path before every profile/snapshot/hourly query below: the
+  // full response scans up to 365 days of raw hourly rows and can take seconds
+  // for a heavy user, while user_badges_full is a small indexed lookup.
+  if (url.searchParams.get("view") === "badges") {
+    if (!isSelf) return json({ error: "Forbidden" }, 403);
+    const { data, error } = await client.database.rpc("user_badges_full", {
+      p_user_id: userId,
+      p_include_unearned: true,
+    });
+    if (error) return json({ error: error.message || "badge lookup failed" }, 500);
+    return json({
+      badges: Array.isArray(data) ? data : [],
+      badges_include_unearned: true,
+    });
+  }
+
   // Privacy gate. Mirror the leaderboard list's exposure policy: if the user
   // already appears in the public snapshot table, their aggregate numbers are
   // visible to anyone scrolling the leaderboard — so the modal should not

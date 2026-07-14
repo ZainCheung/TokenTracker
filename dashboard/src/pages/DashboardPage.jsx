@@ -550,6 +550,9 @@ export function DashboardPage({
     from: dailyBreakdownRange.from,
     to: dailyBreakdownRange.to,
     includeDaily: true,
+    // This card only renders daily rows. Avoid a second account-summary scan
+    // whose totals/rolling payload was fetched and then discarded.
+    includeSummary: false,
     cacheKey: cacheKey ? `${cacheKey}.daily-breakdown` : "daily-breakdown",
     timeZone,
     tzOffsetMinutes,

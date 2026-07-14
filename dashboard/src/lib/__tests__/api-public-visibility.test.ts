@@ -10,7 +10,7 @@ vi.mock("../insforge-config", () => ({
   getInsforgeRemoteUrl: getInsforgeRemoteUrlMock,
 }));
 
-import { getPublicVisibility, setPublicVisibility } from "../api";
+import { getPublicVisibility, getUserBadges, setPublicVisibility } from "../api";
 
 function makeJwt(payload: Record<string, unknown>) {
   const encode = (value: unknown) =>
@@ -106,5 +106,37 @@ describe("public visibility API", () => {
     await expect(getPublicVisibility({ accessToken: "token" })).rejects.toThrow(
       "InsForge base URL not configured",
     );
+  });
+});
+
+describe("achievement badges API", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    getInsforgeAnonKeyMock.mockClear();
+    getInsforgeRemoteUrlMock.mockReset();
+    getInsforgeRemoteUrlMock.mockReturnValue("https://example.insforge.app");
+  });
+
+  it("uses the authenticated badges-only profile fast path", async () => {
+    const payload = { badges: [{ id: "token_titan", tier: 1 }], badges_include_unearned: true };
+    const fetchMock = mockJsonFetch(payload);
+    const accessToken = makeJwt({ sub: "user-123" });
+
+    await expect(
+      getUserBadges({ accessToken, userId: "user-123" }),
+    ).resolves.toEqual(payload);
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0];
+    const url = new URL(requestUrl as string);
+    expect(url.pathname).toBe("/functions/tokentracker-leaderboard-profile");
+    expect(url.searchParams.get("user_id")).toBe("user-123");
+    expect(url.searchParams.get("view")).toBe("badges");
+    expect(requestInit).toEqual(expect.objectContaining({
+      method: "GET",
+      headers: expect.objectContaining({
+        apikey: "anon-key",
+        Authorization: `Bearer ${accessToken}`,
+      }),
+    }));
   });
 });

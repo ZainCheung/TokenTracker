@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useInsforgeAuth } from "../contexts/InsforgeAuthContext.jsx";
 import { useAchievements } from "../hooks/use-achievements.js";
-import { getLeaderboardProfile } from "../lib/api";
+import { getUserBadges } from "../lib/api";
 import { copy } from "../lib/copy";
 import { AchievementsSection } from "../ui/achievements/AchievementsSection.jsx";
 import { BADGE_CATALOG } from "../ui/achievements/badge-catalog.js";
@@ -36,10 +36,9 @@ function useOwnCloudBadges() {
     (async () => {
       try {
         const accessToken = await auth.getAccessToken?.();
-        const data = await getLeaderboardProfile({
+        const data = await getUserBadges({
           accessToken,
           userId,
-          period: "total",
         });
         if (cancelled) return;
         setState({

@@ -40,6 +40,25 @@ describe("useUsageData device scope", () => {
     expect(vi.mocked(fetchCloudUsageDaily).mock.calls[0][0]).toMatchObject({ device: "dev-7" });
   });
 
+  it("skips the cloud summary request for a daily-only consumer", async () => {
+    renderHook(() =>
+      useUsageData({
+        baseUrl: "https://app.tokentracker.cc",
+        from: "2026-06-01",
+        to: "2026-06-30",
+        includeDaily: true,
+        includeSummary: false,
+        cacheKey: "daily-only",
+        timeZone: "UTC",
+        accountView: true,
+        accountAccessToken: "jwt-token",
+      }),
+    );
+
+    await waitFor(() => expect(fetchCloudUsageDaily).toHaveBeenCalled());
+    expect(fetchCloudUsageSummary).not.toHaveBeenCalled();
+  });
+
   it("writes a device-scoped cache key (no collision with all-devices)", async () => {
     renderHook(() =>
       useUsageData({

@@ -18,6 +18,24 @@ import { getLocalApiAuthHeaders } from "./local-api-auth";
 
 type AnyRecord = Record<string, any>;
 
+// React auth/scope resolution can make multiple consumers ask for the exact
+// same GET while the first request is still in flight. Coalesce only that
+// overlap (no result TTL), so manual refreshes still fetch fresh data.
+const inFlightJsonGets = new Map<string, Promise<any>>();
+
+function coalesceJsonGet(key: string, request: () => Promise<any>) {
+  const existing = inFlightJsonGets.get(key);
+  if (existing) return existing;
+
+  const pending = request();
+  inFlightJsonGets.set(key, pending);
+  const cleanup = () => {
+    if (inFlightJsonGets.get(key) === pending) inFlightJsonGets.delete(key);
+  };
+  pending.then(cleanup, cleanup);
+  return pending;
+}
+
 const PATHS = {
   usageSummary: "tokentracker-usage-summary",
   usageDaily: "tokentracker-usage-daily",
@@ -78,13 +96,15 @@ async function fetchLocalJson(slug: string, params?: AnyRecord, options?: AnyRec
     const anonKey = getInsforgeAnonKey();
     if (anonKey) headers.apikey = anonKey;
     if (isValidJwtShape(accessToken)) headers.Authorization = `Bearer ${accessToken}`;
-    const response = await fetch(url.toString(), { headers, cache: "no-store" });
-    if (!response.ok) {
-      const err: any = new Error(`Request failed with HTTP ${response.status}`);
-      err.status = response.status;
-      throw err;
-    }
-    return response.json();
+    return coalesceJsonGet(`${url.toString()}\0${accessToken}`, async () => {
+      const response = await fetch(url.toString(), { headers, cache: "no-store" });
+      if (!response.ok) {
+        const err: any = new Error(`Request failed with HTTP ${response.status}`);
+        err.status = response.status;
+        throw err;
+      }
+      return response.json();
+    });
   }
 
   const url = new URL(`/functions/${slug}`, window.location.origin);
@@ -94,17 +114,19 @@ async function fetchLocalJson(slug: string, params?: AnyRecord, options?: AnyRec
     }
   }
   const { accessToken: _omit, ...fetchOptions } = options || {};
-  const response = await fetch(url.toString(), {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-    ...fetchOptions,
+  return coalesceJsonGet(url.toString(), async () => {
+    const response = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      ...fetchOptions,
+    });
+    if (!response.ok) {
+      const err: any = new Error(`Request failed with HTTP ${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    const err: any = new Error(`Request failed with HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-  return response.json();
 }
 
 function buildTimeZoneParams({ timeZone, tzOffsetMinutes }: AnyRecord = {}) {
@@ -189,7 +211,7 @@ export async function getProjectUsageDetail({
 /**
  * Local (privacy-scoped) achievements: project_hopper / project_devotion /
  * night_owl, computed by the local CLI from queue data that never leaves the
- * machine. Cloud badges arrive inside getLeaderboardProfile responses.
+ * machine. Cloud badges use the badges-only leaderboard profile fast path.
  */
 export async function getLocalAchievements({ timeZone, tzOffsetMinutes }: AnyRecord = {}) {
   if (isMockEnabled()) {
@@ -377,6 +399,29 @@ export async function getLeaderboardProfile({
   return fetchInsforgeFunction("tokentracker-leaderboard-profile", {
     accessToken,
     params: { user_id: userId, period },
+  });
+}
+
+/**
+ * Cloud achievements for the signed-in user.
+ *
+ * The full leaderboard profile response scans and aggregates up to 365 days
+ * of hourly usage for its heatmap and trend. The achievements page needs only
+ * the precomputed badge rows, so keep it on the authenticated edge fast path.
+ */
+export async function getUserBadges({ accessToken, userId }: AnyRecord = {}) {
+  if (isMockEnabled()) {
+    return {
+      badges: getMockAchievements().achievements.filter(
+        (badge: any) => !["project_hopper", "project_devotion", "night_owl"].includes(badge.id),
+      ),
+      badges_include_unearned: true,
+    };
+  }
+  return fetchInsforgeFunction("tokentracker-leaderboard-profile", {
+    accessToken,
+    method: "GET",
+    params: { user_id: userId, view: "badges" },
   });
 }
 
@@ -649,17 +694,19 @@ async function fetchAccountFunction(
   };
   const anonKey = getInsforgeAnonKey();
   if (anonKey) headers.apikey = anonKey;
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers,
-    cache: "no-store",
+  return coalesceJsonGet(`${url.toString()}\0${accessToken}`, async () => {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const err: any = new Error(`Request failed with HTTP ${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    const err: any = new Error(`Request failed with HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-  return response.json();
 }
 
 export async function fetchCloudUsageSummary({
