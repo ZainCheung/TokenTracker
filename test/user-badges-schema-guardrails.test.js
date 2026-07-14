@@ -8,7 +8,14 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const SQL_PATH = path.join(__dirname, "..", "scripts", "ops", "user-badges.sql");
+const MIGRATION_PATH = path.join(
+  __dirname,
+  "..",
+  "migrations",
+  "20260714081616_add-achievement-issue-numbers.sql",
+);
 const sql = fs.readFileSync(SQL_PATH, "utf8");
+const issueNumberMigration = fs.readFileSync(MIGRATION_PATH, "utf8");
 
 const BADGE_IDS = [
   "token_titan",
@@ -52,6 +59,32 @@ test("tier upsert is monotonic and timestamps are set-once", () => {
   }
   // podium (lower_is_better) keeps the best-ever value via LEAST.
   assert.match(sql, /LEAST\(ub\.metric_value, EXCLUDED\.metric_value\)/);
+});
+
+test("tier acquisition numbers are stable, unique, and assigned safely", () => {
+  for (const source of [sql, issueNumberMigration]) {
+    for (const tier of ["bronze", "silver", "gold", "diamond"]) {
+      assert.match(source, new RegExp(`ADD COLUMN IF NOT EXISTS ${tier}_no\\s+bigint`));
+      assert.match(
+        source,
+        new RegExp(`CREATE UNIQUE INDEX IF NOT EXISTS tokentracker_user_badges_${tier}_no_uq`),
+      );
+      assert.match(source, new RegExp(`ORDER BY b\\.${tier}_at, b\\.user_id`));
+      assert.match(source, new RegExp(`'${tier}', b\\.${tier}_no`));
+    }
+    assert.match(source, /pg_advisory_xact_lock/);
+    assert.match(source, /pg_trigger_depth\(\) > 1/);
+    assert.match(source, /BEFORE INSERT OR UPDATE ON public\.tokentracker_user_badges/);
+    assert.match(source, /AFTER INSERT OR UPDATE ON public\.tokentracker_user_badges/);
+    assert.match(
+      source,
+      /REVOKE EXECUTE ON FUNCTION public\.user_badges_assign_serials\(\) FROM anon, authenticated, PUBLIC/,
+    );
+    assert.match(
+      source,
+      /REVOKE EXECUTE ON FUNCTION public\.user_badges_assign_serials_trigger\(\) FROM anon, authenticated, PUBLIC/,
+    );
+  }
 });
 
 test("momentum compares ADJACENT ISO weeks with a prior-week floor", () => {

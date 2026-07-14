@@ -644,21 +644,32 @@ export function getMockAchievements() {
     value: number,
     thresholds: number[],
     meta: AnyRecord = {},
-  ) => ({
-    id,
-    tier,
-    metric_value: value,
-    thresholds,
-    lower_is_better: id === "podium",
-    next_threshold: tier >= 4 ? null : thresholds[tier],
-    achieved: {
-      bronze: tier >= 1 ? iso(90) : null,
-      silver: tier >= 2 ? iso(45) : null,
-      gold: tier >= 3 ? iso(12) : null,
-      diamond: tier >= 4 ? iso(2) : null,
-    },
-    meta,
-  });
+  ) => {
+    const isCloud = !["project_hopper", "project_devotion", "night_owl"].includes(id);
+    return {
+      id,
+      tier,
+      metric_value: value,
+      thresholds,
+      lower_is_better: id === "podium",
+      next_threshold: tier >= 4 ? null : thresholds[tier],
+      achieved: {
+        bronze: tier >= 1 ? iso(90) : null,
+        silver: tier >= 2 ? iso(45) : null,
+        gold: tier >= 3 ? iso(12) : null,
+        diamond: tier >= 4 ? iso(2) : null,
+      },
+      serials: isCloud
+        ? {
+            bronze: tier >= 1 ? 127 + id.length : null,
+            silver: tier >= 2 ? 64 + id.length : null,
+            gold: tier >= 3 ? 18 + id.length : null,
+            diamond: tier >= 4 ? 3 + id.length : null,
+          }
+        : undefined,
+      meta,
+    };
+  };
   return {
     generated_at: new Date(now).toISOString(),
     achievements: [

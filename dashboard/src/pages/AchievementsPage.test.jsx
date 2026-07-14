@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { cloudBadgesSettled } from "./AchievementsPage.jsx";
+import { cloudBadgesSettled, resolveCloudBadgeIdentity } from "./AchievementsPage.jsx";
+
+describe("resolveCloudBadgeIdentity", () => {
+  it("treats mock mode as a settled signed-in cloud identity", () => {
+    expect(
+      resolveCloudBadgeIdentity({
+        authLoading: true,
+        authEnabled: false,
+        authUserId: null,
+        mockEnabled: true,
+      }),
+    ).toEqual({ authLoading: false, signedIn: true, userId: "mock-user" });
+  });
+
+  it("keeps real auth semantics outside mock mode", () => {
+    expect(
+      resolveCloudBadgeIdentity({
+        authLoading: false,
+        authEnabled: true,
+        authUserId: "real-user",
+        mockEnabled: false,
+      }),
+    ).toEqual({ authLoading: false, signedIn: true, userId: "real-user" });
+  });
+});
 
 describe("cloudBadgesSettled", () => {
   it("keeps the wall hidden while auth is hydrating", () => {

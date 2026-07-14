@@ -401,6 +401,7 @@
   "achievements.modal.close": "關閉",
   "achievements.modal.tier_history": "等級歷程",
   "achievements.modal.coin_aria": "{{name}} 徽章——拖曳或使用方向鍵旋轉",
+  "achievements.modal.issue_number": "No.{{number}}",
   "achievements.badge.token_titan.name": "Token 巨擘",
   "achievements.badge.token_titan.desc": "在所有 AI 工具中累計消耗 Token。",
   "achievements.badge.big_day.name": "高光之日",

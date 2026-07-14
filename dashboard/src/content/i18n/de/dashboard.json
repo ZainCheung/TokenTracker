@@ -412,6 +412,7 @@
   "achievements.modal.close": "Schließen",
   "achievements.modal.tier_history": "Stufenverlauf",
   "achievements.modal.coin_aria": "{{name}}-Abzeichen — zum Drehen ziehen oder Pfeiltasten nutzen",
+  "achievements.modal.issue_number": "Nr.{{number}}",
   "achievements.badge.token_titan.name": "Token-Titan",
   "achievements.badge.token_titan.desc": "Sammle Tokens über alle deine KI-Tools hinweg.",
   "achievements.badge.big_day.name": "Großer Tag",

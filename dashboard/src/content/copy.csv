@@ -1154,6 +1154,7 @@ achievements.modal.max_tier,dashboard,*,BadgeDetailModal,max_tier,"Max tier reac
 achievements.modal.close,dashboard,*,BadgeDetailModal,close,"Close",,active
 achievements.modal.tier_history,dashboard,*,BadgeDetailModal,tier_history,"Tier history",,active
 achievements.modal.coin_aria,dashboard,*,BadgeDetailModal,coin_aria,"{{name}} badge coin — drag or use arrow keys to spin",,active
+achievements.modal.issue_number,dashboard,*,BadgeDetailModal,issue_number,"No.{{number}}",,active
 achievements.badge.token_titan.name,dashboard,*,AchievementsSection,token_titan_name,"Token Titan",,active
 achievements.badge.token_titan.desc,dashboard,*,BadgeDetailModal,token_titan_desc,"Accumulate lifetime tokens across all your AI tools.",,active
 achievements.badge.big_day.name,dashboard,*,AchievementsSection,big_day_name,"Big Day",,active

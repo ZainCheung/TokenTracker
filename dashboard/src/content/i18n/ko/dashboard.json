@@ -401,6 +401,7 @@
   "achievements.modal.close": "닫기",
   "achievements.modal.tier_history": "티어 히스토리",
   "achievements.modal.coin_aria": "{{name}} 배지 — 드래그하거나 방향키로 회전",
+  "achievements.modal.issue_number": "No.{{number}}",
   "achievements.badge.token_titan.name": "토큰 타이탄",
   "achievements.badge.token_titan.desc": "모든 AI 도구에서 누적 토큰을 쌓아 올리세요.",
   "achievements.badge.big_day.name": "빅 데이",

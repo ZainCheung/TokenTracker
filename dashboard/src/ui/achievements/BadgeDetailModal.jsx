@@ -16,6 +16,18 @@ function formatDate(value) {
   return new Date(ts).toLocaleDateString();
 }
 
+export function formatIssueNumber(value) {
+  const issueNumber = Number(value);
+  if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) return null;
+  return String(issueNumber).padStart(6, "0");
+}
+
+export function currentBadgeIssueNumber(badge, entry, currentTierName) {
+  if (entry?.scope !== "cloud" || !currentTierName) return null;
+  const issueNumber = Number(badge?.serials?.[currentTierName]);
+  return Number.isSafeInteger(issueNumber) && issueNumber >= 1 ? issueNumber : null;
+}
+
 function TierTrack({ badge }) {
   return (
     <div className="flex items-center gap-1">
@@ -58,11 +70,19 @@ function BadgeDetailBody({ badge, onClose }) {
   const valueText = formatBadgeValue(entry?.format, badge.metric_value);
   const progress = badgeProgress(badge);
   const nextTierName = badge.tier < 4 ? tierName((badge.tier || 0) + 1) : null;
-  const backLines = [
-    earned ? copy("achievements.modal.achieved_label") : copy("achievements.modal.locked"),
-    earned ? valueText : "···",
-    earned && achievedDate ? achievedDate : name,
-  ];
+  const issueNumber = currentBadgeIssueNumber(badge, entry, tName);
+  const formattedIssueNumber = formatIssueNumber(issueNumber);
+  const backLines = formattedIssueNumber
+    ? [
+        copy("achievements.modal.achieved_label"),
+        copy("achievements.modal.issue_number", { number: formattedIssueNumber }),
+        achievedDate || name,
+      ]
+    : [
+        earned ? copy("achievements.modal.achieved_label") : copy("achievements.modal.locked"),
+        earned ? valueText : "···",
+        earned && achievedDate ? achievedDate : name,
+      ];
 
   return (
     <div className="flex flex-col items-center px-6 pb-6 pt-5 text-center">

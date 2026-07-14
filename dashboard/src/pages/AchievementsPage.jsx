@@ -4,19 +4,36 @@ import { useInsforgeAuth } from "../contexts/InsforgeAuthContext.jsx";
 import { useAchievements } from "../hooks/use-achievements.js";
 import { getUserBadges } from "../lib/api";
 import { copy } from "../lib/copy";
+import { isMockEnabled } from "../lib/mock-data";
 import { AchievementsSection } from "../ui/achievements/AchievementsSection.jsx";
 import { BADGE_CATALOG } from "../ui/achievements/badge-catalog.js";
 
 // Lazy: 3D coin + dialog ship only when a badge is clicked.
 const BadgeDetailModal = React.lazy(() => import("../ui/achievements/BadgeDetailModal.jsx"));
 
+export function resolveCloudBadgeIdentity({ authLoading, authEnabled, authUserId, mockEnabled }) {
+  if (mockEnabled) {
+    return { authLoading: false, signedIn: true, userId: "mock-user" };
+  }
+  const signedIn = Boolean(authEnabled && authUserId);
+  return {
+    authLoading: Boolean(authLoading),
+    signedIn,
+    userId: signedIn ? authUserId : null,
+  };
+}
+
 /** Cloud badges for the signed-in user via their own profile payload. */
 function useOwnCloudBadges() {
   const auth = useInsforgeAuth();
   const [state, setState] = useState({ status: "loading", achievements: [], userId: null });
-  const authLoading = Boolean(auth?.loading);
-  const signedIn = Boolean(auth?.enabled && auth?.user?.id);
-  const userId = signedIn ? auth.user.id : null;
+  const mockEnabled = isMockEnabled();
+  const { authLoading, signedIn, userId } = resolveCloudBadgeIdentity({
+    authLoading: auth?.loading,
+    authEnabled: auth?.enabled,
+    authUserId: auth?.user?.id,
+    mockEnabled,
+  });
 
   useEffect(() => {
     if (authLoading) {
@@ -35,7 +52,7 @@ function useOwnCloudBadges() {
     setState({ status: "loading", achievements: [], userId });
     (async () => {
       try {
-        const accessToken = await auth.getAccessToken?.();
+        const accessToken = mockEnabled ? null : await auth.getAccessToken?.();
         const data = await getUserBadges({
           accessToken,
           userId,
@@ -53,7 +70,7 @@ function useOwnCloudBadges() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, signedIn, userId]);
+  }, [authLoading, mockEnabled, signedIn, userId]);
 
   return {
     ...state,

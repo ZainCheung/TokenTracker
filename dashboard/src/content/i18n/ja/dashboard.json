@@ -401,6 +401,7 @@
   "achievements.modal.close": "閉じる",
   "achievements.modal.tier_history": "ティア履歴",
   "achievements.modal.coin_aria": "{{name}} バッジ——ドラッグまたは矢印キーで回転",
+  "achievements.modal.issue_number": "No.{{number}}",
   "achievements.badge.token_titan.name": "トークンタイタン",
   "achievements.badge.token_titan.desc": "すべての AI ツールで生涯トークンを積み上げる。",
   "achievements.badge.big_day.name": "ビッグデイ",
