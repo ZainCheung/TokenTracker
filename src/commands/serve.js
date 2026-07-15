@@ -9,6 +9,7 @@ const { createLocalApiHandler, resolveQueuePath } = require("../lib/local-api");
 const { ensurePricingLoaded } = require("../lib/pricing");
 const { serveStaticFile } = require("../lib/static-server");
 const { openInBrowser } = require("../lib/browser-auth");
+const { maybeShowStarCta } = require("../lib/star-cta");
 
 const DEFAULT_PORT = 7680;
 // Windows Delivery Optimization (DoSvc) listens on 0.0.0.0:7680 on virtually
@@ -213,6 +214,8 @@ async function cmdServe(argv) {
       openInBrowser(url);
     }
   }
+
+  await maybeShowStarCta({ trackerDir });
 
   // Anonymous daily heartbeat (see src/lib/telemetry.js for the privacy
   // contract). Fire-and-forget at startup, then re-checked every 6 hours so

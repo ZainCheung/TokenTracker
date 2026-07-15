@@ -70,6 +70,7 @@ const {
   createSpinner,
 } = require("../lib/cli-ui");
 const { renderLocalReport, renderAuthTransition, renderSuccessBox } = require("../lib/init-flow");
+const { maybeShowStarCta } = require("../lib/star-cta");
 
 const ASCII_LOGO = [
   "████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗",
@@ -90,7 +91,7 @@ const DIVIDER = "----------------------------------------------";
 const DEFAULT_DASHBOARD_URL = "https://www.tokentracker.cc";
 
 // Single source of truth for the welcome screen's provider count + sample list.
-// Keep in sync with the supported-tools table in CLAUDE.md.
+// test/discovery-metadata.test.js keeps this aligned with public 27-tool copy.
 const SUPPORTED_PROVIDERS = [
   "Claude Code",
   "Codex CLI",
@@ -115,6 +116,7 @@ const SUPPORTED_PROVIDERS = [
   "Roo Code",
   "Zed Agent",
   "Goose",
+  "Droid",
   "Mimo",
   "ZCode",
   "AnythingLLM Desktop",
@@ -221,6 +223,7 @@ async function cmdInit(argv) {
   }
 
   renderLocalSuccess({ firstSync });
+  await maybeShowStarCta({ trackerDir });
 }
 
 function renderWelcome() {
@@ -267,11 +270,6 @@ function renderLocalSuccess({ firstSync } = {}) {
   lines.push(
     "",
     `  Dashboard: ${CYAN}http://localhost:7680${RESET}`,
-    "",
-    // One-shot, post-success star CTA. `init` is run once per machine, so
-    // this is the only place a CLI user naturally sees the project's GitHub
-    // URL — and they're at peak satisfaction.
-    `  ${color("⭐ Star us if useful: https://github.com/mm7894215/TokenTracker", DIM)}`,
     "",
   );
   process.stdout.write(lines.join("\n"));

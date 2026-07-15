@@ -49,6 +49,18 @@ test("marketing logo wall includes the same 27 product integrations", () => {
   }
 });
 
+test("CLI onboarding advertises the same 27 supported integrations", () => {
+  const source = read("src/commands/init.js");
+  const block = source.match(/const SUPPORTED_PROVIDERS = \[([\s\S]*?)\];/);
+  assert.ok(block, "init defines SUPPORTED_PROVIDERS");
+
+  const providers = [...block[1].matchAll(/^\s*"([^"]+)",?$/gm)].map((match) => match[1]);
+  assert.equal(providers.length, 27);
+  assert.equal(new Set(providers).size, 27);
+  assert.ok(providers.includes("Droid"));
+  assert.ok(providers.includes("AnythingLLM Desktop"));
+});
+
 test("npm metadata carries the current product hook", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.match(pkg.description, /27 tools/);
