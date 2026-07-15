@@ -1332,6 +1332,11 @@ async function isDir(p) {
 }
 
 async function installLocalTrackerApp({ appDir }) {
+  // Test-only escape hatch: skip the ~10 MB runtime copy (src + dashboard/dist +
+  // node_modules) when a test only exercises hook/config/notify wiring. Copying
+  // the bundle per test case dominates the init test suite's wall time. Tests
+  // that assert on the copied runtime simply leave this unset.
+  if (process.env.TOKENTRACKER_SKIP_LOCAL_RUNTIME_COPY === "1") return;
   // Copy the current package's runtime (bin + src) into ~/.tokentracker so notify can run sync without npx.
   const packageRoot = path.resolve(__dirname, "../..");
   const srcFrom = path.join(packageRoot, "src");
@@ -1387,6 +1392,12 @@ async function safeRealpath(p) {
 const FIRST_SYNC_TIMEOUT_MS = 15_000;
 
 async function runFirstSyncAndRead({ trackerBinPath, trackerDir, packageName }) {
+  // Test-only escape hatch: skip spawning a real `sync --drain` subprocess when
+  // a test only exercises init wiring. Returns the same shape derived from an
+  // (empty) queue so callers behave identically without the ~1s spawn per case.
+  if (process.env.TOKENTRACKER_SKIP_FIRST_SYNC === "1") {
+    return readFirstSyncTotals(trackerDir);
+  }
   const fallbackPkg = packageName || "tokentracker-cli";
   const argv = ["sync", "--drain"];
   const hasLocalRuntime = typeof trackerBinPath === "string" && fssync.existsSync(trackerBinPath);

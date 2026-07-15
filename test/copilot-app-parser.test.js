@@ -21,9 +21,7 @@ function sqlValue(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-function runSql(dbPath, sql) {
-  cp.execFileSync("sqlite3", [dbPath, sql], { stdio: ["ignore", "ignore", "pipe"] });
-}
+const { runSql } = require("./helpers/sqlite-write");
 
 function makeCopilotAppDb(rows = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-app-test-"));

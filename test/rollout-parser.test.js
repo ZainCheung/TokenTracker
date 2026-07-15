@@ -5,7 +5,22 @@ const fs = require("node:fs/promises");
 const fssync = require("node:fs");
 const { test } = require("node:test");
 
+// `cp` must stay the REAL child_process module: the WSL-discovery tests mock
+// its methods, and the mock only works on the module instance src/ requires.
 const cp = require("node:child_process");
+// Fixture sqlite writes go through the in-process node:sqlite helper instead
+// of spawning the sqlite3 CLI per statement — the spawns dominated this
+// suite's wall time. Call sites keep the execFileSync shape.
+const { runSql: runSqliteWrite } = require("./helpers/sqlite-write");
+const sqliteCli = {
+  execFileSync(bin, args) {
+    if (bin === "sqlite3") {
+      runSqliteWrite(args[0], args[1]);
+      return "";
+    }
+    throw new Error(`unexpected sqliteCli.execFileSync("${bin}") in rollout-parser test`);
+  },
+};
 const {
   parseRolloutIncremental,
   parseClaudeIncremental,
@@ -4706,7 +4721,7 @@ async function readJsonLines(filePath) {
 
 function createHermesDb(dbPath, sessions) {
   require("node:fs").mkdirSync(path.dirname(dbPath), { recursive: true });
-  cp.execFileSync("sqlite3", [
+  sqliteCli.execFileSync("sqlite3", [
     dbPath,
     `CREATE TABLE sessions (
       id TEXT PRIMARY KEY,
@@ -4745,7 +4760,7 @@ function createHermesDb(dbPath, sessions) {
       s.cache_read_tokens || 0, s.cache_write_tokens || 0,
       s.reasoning_tokens || 0, s.message_count || 0,
     ].join(",");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO sessions (id, source, model, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, message_count) VALUES (${vals});`,
     ]);
@@ -4871,7 +4886,7 @@ test("parseHermesIncremental processes sessions incrementally", async () => {
     assert.equal(second.bucketsQueued, 0);
 
     // Add a third session and parse again — incremental
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO sessions (id, source, model, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, message_count) VALUES ('sess_003', 'cli', 'gpt-5.4-mini', ${epoch2 + 3600}, ${epoch2 + 3700}, 500, 250, 0, 0, 0, 2);`,
     ]);
@@ -4902,7 +4917,7 @@ test("parseHermesIncremental re-reads cursor timestamp sessions so same-second i
     assert.equal(first.eventsAggregated, 1);
     assert.equal(cursors.hermes.lastCompletedStartedAt, epoch);
 
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO sessions (id, source, model, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, message_count) VALUES ('sess_same_second', 'cli', 'gpt-5.4-mini', ${epoch}, ${epoch + 240}, 300, 150, 0, 0, 0, 2);`,
     ]);
@@ -5288,7 +5303,7 @@ test("parseHermesIncremental tracks real-time token growth for active sessions (
     assert.equal(cursors.hermes.lastCompletedStartedAt, epoch1);
 
     // Simulate Hermes updating the active session in real-time
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `UPDATE sessions SET input_tokens = 8000, output_tokens = 400, cache_read_tokens = 2000, message_count = 10 WHERE id = 'sess_active';`,
     ]);
@@ -5319,7 +5334,7 @@ test("parseHermesIncremental tracks real-time token growth for active sessions (
     assert.equal(cursors.hermes.lastCompletedStartedAt, epoch1);
 
     // Now end the active session
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `UPDATE sessions SET ended_at = ${epoch1 + 600}, input_tokens = 10000, output_tokens = 600, cache_read_tokens = 3000 WHERE id = 'sess_active';`,
     ]);
@@ -5356,7 +5371,7 @@ test("parseHermesIncremental ingests final deltas for active sessions older than
     assert.equal(cursors.hermes.lastCompletedStartedAt, activeEpoch);
     assert.equal(cursors.hermes.snapshots["sess_active_old"].in, 100);
 
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `UPDATE sessions SET ended_at = ${activeEpoch + 3600}, input_tokens = 150, output_tokens = 25, message_count = 3 WHERE id = 'sess_active_old';`,
     ]);
@@ -6952,7 +6967,7 @@ test("parseWorkbuddyIncremental SQLite fallback emits cumulative deltas, not ful
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-"));
   try {
     const dbPath = path.join(tmp, "workbuddy.db");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       [
         "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
@@ -6972,7 +6987,7 @@ test("parseWorkbuddyIncremental SQLite fallback emits cumulative deltas, not ful
     });
     assert.equal(first.eventsAggregated, 1);
 
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "UPDATE session_usage SET used=150, updated_at=1780000010000 WHERE session_id='s1';",
     ]);
@@ -6992,7 +7007,7 @@ test("parseWorkbuddyIncremental SQLite fallback emits cumulative deltas, not ful
     assert.equal(queued[1].conversation_count, 1);
     assert.equal(cursors.workbuddy.sqliteSessions.s1.used, 150);
 
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "UPDATE session_usage SET updated_at=1780000020000 WHERE session_id='s1';",
     ]);
@@ -7013,7 +7028,7 @@ test("parseWorkbuddyIncremental uses SQLite fallback when JSONL files are empty"
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-empty-jsonl-"));
   try {
     const dbPath = path.join(tmp, "workbuddy.db");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       [
         "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
@@ -7052,7 +7067,7 @@ test("parseWorkbuddyIncremental keeps detailed JSONL authoritative over SQLite f
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "tt-workbuddy-sqlite-detailed-"));
   try {
     const dbPath = path.join(tmp, "workbuddy.db");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       [
         "CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
@@ -7321,11 +7336,11 @@ test("parseKiroCliIncremental canonicalizes Bedrock model IDs and re-buckets on 
       };
     }
 
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO conversations_v2 VALUES ('project-a', 'conv-1', '${JSON.stringify(convValue(400, 80)).replace(/'/g, "''")}', 1771667600000, 1771667700000);`,
     ]);
@@ -7362,7 +7377,7 @@ test("parseKiroCliIncremental canonicalizes Bedrock model IDs and re-buckets on 
     // Mutate the request: Kiro rewrites the same request_id with larger
     // prompt/response. The parser must subtract the prior contribution and
     // add the new one — not skip forever.
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `UPDATE conversations_v2 SET value = '${JSON.stringify(convValue(800, 160)).replace(/'/g, "''")}' WHERE conversation_id = 'conv-1';`,
     ]);
@@ -7440,7 +7455,7 @@ test("parseKiroCliIncremental retracts orphan session-file contribution when a c
       }),
     );
     await fs.writeFile(path.join(sessionsDir, `${convId}.jsonl`), "");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
@@ -7456,7 +7471,7 @@ test("parseKiroCliIncremental retracts orphan session-file contribution when a c
     // Run 2: SQLite now contains the conversation under conv_id=convId AND
     // continuation_id=convId. The retraction pass must subtract the old
     // session-file contribution before the SQLite row adds 100/200.
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO conversations_v2 VALUES ('proj', '${convId}', '${JSON.stringify(
         {
@@ -7541,7 +7556,7 @@ test("parseKiroCliIncremental retracts no-loop_id session-file entries via sessi
       }),
     );
     await fs.writeFile(path.join(sessionsDir, `${convId}.jsonl`), "");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
@@ -7555,7 +7570,7 @@ test("parseKiroCliIncremental retracts no-loop_id session-file entries via sessi
     assert.equal(firstCursor[reqKey].session_id, convId);
 
     // Migration into SQLite
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO conversations_v2 VALUES ('proj', '${convId}', '${JSON.stringify(
         {
@@ -7638,7 +7653,7 @@ test("parseKiroCliIncremental keeps newer session-file turns when older ones hav
       }),
     );
     await fs.writeFile(path.join(sessionsDir, `${convId}.jsonl`), "");
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
@@ -7657,7 +7672,7 @@ test("parseKiroCliIncremental keeps newer session-file turns when older ones hav
 
     // Run 2: turn A has flushed to SQLite (conv_id=convId, message_id=msgA).
     // Turn B is still session-only.
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO conversations_v2 VALUES ('proj', '${convId}', '${JSON.stringify(
         {
@@ -7739,7 +7754,7 @@ test("parseKiroCliIncremental early-return path still runs cap + clamp (Bug-1)",
         },
       },
     };
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
@@ -7798,11 +7813,11 @@ test("parseKiroCliIncremental never re-adds requests whose cursor entry was age-
         ],
       },
     };
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       "CREATE TABLE conversations_v2 (key TEXT, conversation_id TEXT, value TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY (key, conversation_id));",
     ]);
-    cp.execFileSync("sqlite3", [
+    sqliteCli.execFileSync("sqlite3", [
       dbPath,
       `INSERT INTO conversations_v2 VALUES ('proj', 'conv-old', '${JSON.stringify(conv).replace(/'/g, "''")}', 1, 2);`,
     ]);

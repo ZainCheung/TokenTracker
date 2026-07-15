@@ -312,6 +312,19 @@ async function removeOpenclawSessionPluginConfig({
 }
 
 function runOpenclawCli(args, env = process.env) {
+  // Test-only escape hatch: skip spawning the real `openclaw` CLI. Behaves like
+  // the CLI being absent (which is the CI environment anyway), so callers take
+  // their graceful skip path. Avoids a ~2s `plugins install --link` per cmdInit
+  // on dev machines that happen to have openclaw installed.
+  if ((env && env.TOKENTRACKER_SKIP_OPENCLAW_CLI) === "1") {
+    return {
+      code: 1,
+      skippedReason: "openclaw-cli-missing",
+      error: "skipped via TOKENTRACKER_SKIP_OPENCLAW_CLI",
+      stdout: "",
+      stderr: "",
+    };
+  }
   let res;
   try {
     res = cp.spawnSync("openclaw", args, {

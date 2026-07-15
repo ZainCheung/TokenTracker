@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+
 const cp = require("node:child_process");
 
 const { mockPlatform, mockMethod } = require("./helpers/mock");
@@ -26,9 +27,7 @@ function sqlValue(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-function runSql(dbPath, sql) {
-  cp.execFileSync("sqlite3", [dbPath, sql], { stdio: ["ignore", "ignore", "pipe"] });
-}
+const { runSql } = require("./helpers/sqlite-write");
 
 function createStoreSchema(dbPath) {
   runSql(dbPath, `

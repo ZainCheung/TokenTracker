@@ -6,6 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const { parseKiroIncremental } = require("../src/lib/rollout.js");
+const { runSql } = require("./helpers/sqlite-write");
 
 function makeTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kiro-fallback-"));
@@ -19,16 +20,16 @@ function writeJsonl(filePath, events) {
 }
 
 function seedSqlite(dbPath, events) {
-  execFileSync("sqlite3", [
+  const inserts = events
+    .map(
+      (e) =>
+        `INSERT INTO tokens_generated (tokens_prompt, tokens_generated, model, provider, timestamp) VALUES (${e.promptTokens}, ${e.generatedTokens}, 'claude-sonnet-4', 'kiro', '2026-04-19 08:00:00');`,
+    )
+    .join("\n");
+  runSql(
     dbPath,
-    "CREATE TABLE tokens_generated (id INTEGER PRIMARY KEY AUTOINCREMENT, tokens_prompt INTEGER, tokens_generated INTEGER, model TEXT, provider TEXT, timestamp TEXT);",
-  ]);
-  for (const e of events) {
-    execFileSync("sqlite3", [
-      dbPath,
-      `INSERT INTO tokens_generated (tokens_prompt, tokens_generated, model, provider, timestamp) VALUES (${e.promptTokens}, ${e.generatedTokens}, 'claude-sonnet-4', 'kiro', '2026-04-19 08:00:00');`,
-    ]);
-  }
+    `CREATE TABLE tokens_generated (id INTEGER PRIMARY KEY AUTOINCREMENT, tokens_prompt INTEGER, tokens_generated INTEGER, model TEXT, provider TEXT, timestamp TEXT);\n${inserts}`,
+  );
 }
 
 test("kiro DB→JSONL fallback does not re-read rows the DB path already consumed", async (t) => {

@@ -4,6 +4,13 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { test } = require("node:test");
 
+// These tests only exercise hook/config/notify wiring, never the copied runtime
+// or a real first sync. Skip both so each cmdInit doesn't copy ~10 MB and spawn
+// a `sync --drain` subprocess — that dominated the suite's wall time.
+process.env.TOKENTRACKER_SKIP_LOCAL_RUNTIME_COPY = "1";
+process.env.TOKENTRACKER_SKIP_FIRST_SYNC = "1";
+process.env.TOKENTRACKER_SKIP_OPENCLAW_CLI = "1";
+
 const {
   cmdInit,
   buildNotifyHandler,
@@ -709,6 +716,11 @@ test("init then uninstall restores original Codex notify (when pre-existing noti
 
   try {
     restoreHome = withHome(tmp);
+    // This case is the one that verifies init actually runs the first sync (it
+    // asserts cursors.json is written), so opt back into the real runtime copy +
+    // first sync that the file-level skips otherwise disable.
+    delete process.env.TOKENTRACKER_SKIP_LOCAL_RUNTIME_COPY;
+    delete process.env.TOKENTRACKER_SKIP_FIRST_SYNC;
     process.env.CODEX_HOME = path.join(tmp, ".codex-alt");
     delete process.env.TOKENTRACKER_DEVICE_TOKEN;
     process.env.OPENCODE_CONFIG_DIR = path.join(tmp, ".config", "opencode");
@@ -750,6 +762,8 @@ test("init then uninstall restores original Codex notify (when pre-existing noti
     else process.env.TOKENTRACKER_DEVICE_TOKEN = prevToken;
     if (prevOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
     else process.env.OPENCODE_CONFIG_DIR = prevOpencodeConfigDir;
+    process.env.TOKENTRACKER_SKIP_LOCAL_RUNTIME_COPY = "1";
+    process.env.TOKENTRACKER_SKIP_FIRST_SYNC = "1";
     await fs.rm(tmp, { recursive: true, force: true });
   }
 });

@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const cp = require("node:child_process");
+const { runSql } = require("./helpers/sqlite-write");
 
 const {
   gooseInstallOwnsCursor,
@@ -28,15 +29,10 @@ const {
 function makeDb(dir, fileName, table, ids) {
   const dbPath = path.join(dir, fileName);
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  cp.execFileSync("sqlite3", [dbPath, `CREATE TABLE ${table} (id TEXT PRIMARY KEY);`], {
-    stdio: ["ignore", "ignore", "pipe"],
-  });
-  for (const id of ids) {
-    const literal = String(id).replace(/'/g, "''");
-    cp.execFileSync("sqlite3", [dbPath, `INSERT INTO ${table} (id) VALUES ('${literal}');`], {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-  }
+  const inserts = ids
+    .map((id) => `INSERT INTO ${table} (id) VALUES ('${String(id).replace(/'/g, "''")}');`)
+    .join("\n");
+  runSql(dbPath, `CREATE TABLE ${table} (id TEXT PRIMARY KEY);\n${inserts}`);
   return dbPath;
 }
 

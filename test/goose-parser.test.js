@@ -18,7 +18,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const cp = require("node:child_process");
+// child_process is used only for sqlite3 write fixtures; route them through
+// in-process node:sqlite (see helpers/sqlite-write) to avoid per-statement spawns.
+const { sqliteOnlyCp: cp } = require("./helpers/sqlite-write");
 
 const {
   resolveGooseDbPath,
