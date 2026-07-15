@@ -1083,6 +1083,64 @@ describe("repairCodexForkReplayInflation (#169 follow-up) — fork replay histor
     }
   });
 
+  it("defers when cursors record codex history this scan does not cover (pre-gate coverage)", async () => {
+    const home = await makeTempHome();
+    try {
+      // No forked file in THIS scan — but cursors remember a codex session the
+      // scan did not include (WSL split / relocated ~/.codex / deleted file).
+      // Finalizing here would permanently foreclose the repair; the gate must
+      // defer retryably instead.
+      const codexFile = await writeCodexFile(home); // NOT forked
+      const uncoveredPath = path.join(
+        home, ".codex", "sessions", "2025", "12", "10",
+        "rollout-2025-12-10T00-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+      );
+      const queuePath = path.join(home, "queue.jsonl");
+      const queueStatePath = path.join(home, "queue.state.json");
+      await fs.writeFile(queuePath, "", "utf8");
+      await fs.writeFile(queueStatePath, JSON.stringify({ offset: 9 }), "utf8");
+      const cursors = {
+        hourly: { buckets: {}, groupQueued: {} },
+        files: { [codexFile]: { inode: 1, offset: 5 }, [uncoveredPath]: { inode: 2, offset: 5 } },
+        codexHashes: [],
+        migrations: {},
+      };
+
+      const ran = await repairCodexForkReplayInflation({
+        cursors,
+        queuePath,
+        queueStatePath,
+        rolloutFiles: [{ path: codexFile, source: "codex" }],
+      });
+      assert.equal(ran, false);
+      assert.equal(cursors.migrations[CODEX_FORK_REPLAY_REPAIR_KEY].skipped, true);
+      assert.equal(cursors.migrations[CODEX_FORK_REPLAY_REPAIR_KEY].reason, "codex_history_not_covered");
+
+      // Once the scan covers the remembered session (file reappears under a
+      // moved path with the same UUID), the retryable sentinel lets the gate
+      // finalize.
+      const reappeared = path.join(
+        home, ".codex", "archived_sessions", "2025", "12", "10",
+        "rollout-2025-12-10T00-00-00-11111111-2222-3333-4444-555555555555.jsonl",
+      );
+      await fs.mkdir(path.dirname(reappeared), { recursive: true });
+      await fs.copyFile(codexFile, reappeared);
+      const ranAgain = await repairCodexForkReplayInflation({
+        cursors,
+        queuePath,
+        queueStatePath,
+        rolloutFiles: [
+          { path: codexFile, source: "codex" },
+          { path: reappeared, source: "codex" },
+        ],
+      });
+      assert.equal(ranAgain, false);
+      assert.equal(typeof cursors.migrations[CODEX_FORK_REPLAY_REPAIR_KEY], "string");
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("defers with a retryable sentinel when a candidate head cannot be read (pre-gate indeterminate)", async () => {
     const home = await makeTempHome();
     try {

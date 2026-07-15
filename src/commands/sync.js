@@ -3539,13 +3539,20 @@ async function repairCodexForkReplayInflation({
 
   // Pre-gate: fork phantom can only exist on installs that have (or had) a
   // forked rollout. Scanning file heads is cheap; the rebuild re-parses every
-  // codex file. A forked rollout that was deleted before this repair runs is
-  // unreproducible anyway — the #187 reproducibility guard would defer forever
-  // — so gating on what is on disk loses nothing. Files forked AFTER the parser
-  // fix shipped never accrue phantom, so marking done here is final — but ONLY
-  // when every candidate head was actually inspected: an unreadable candidate
-  // could be the one forked rollout, so an indeterminate scan defers with the
-  // retryable {skipped:true} sentinel instead of finalizing.
+  // codex file. Files forked AFTER the parser fix shipped never accrue
+  // phantom, so a definitive "no forks" verdict may finalize — but ONLY when
+  // this scan can actually stand for the install's whole codex history:
+  //   1. every candidate head was readable (an unreadable candidate could be
+  //      the one forked rollout), AND
+  //   2. every codex session recorded in cursors is covered by THIS scan's
+  //      file list (same UUID-keyed reproducibility rule as the #187 guard).
+  //      A forked rollout can be real yet absent from one run's rolloutFiles —
+  //      WSL/native split probing, a temporarily missing ~/.codex, a deleted
+  //      file whose phantom is already in history — and finalizing off such a
+  //      partial view would permanently foreclose the repair this migration
+  //      exists to perform, while the guarded repair itself would only have
+  //      deferred retryably.
+  // Either failure defers with the retryable {skipped:true} sentinel.
   const forkScan = await scanForForkedCodexRollout(rolloutFiles);
   if (!forkScan.forked) {
     if (forkScan.indeterminate) {
@@ -3555,6 +3562,30 @@ async function repairCodexForkReplayInflation({
         at: new Date().toISOString(),
       };
       return false;
+    }
+    const scannedSessionIds = new Set();
+    const scannedPaths = new Set();
+    for (const entry of Array.isArray(rolloutFiles) ? rolloutFiles : []) {
+      const fp = typeof entry === "string" ? entry : entry?.path;
+      const src = typeof entry === "string" ? "codex" : String(entry?.source || "codex");
+      if (!fp || src !== "codex") continue;
+      scannedPaths.add(fp);
+      const id = codexSessionIdFromPath(fp);
+      if (id) scannedSessionIds.add(id);
+    }
+    if (cursors.files && typeof cursors.files === "object") {
+      for (const fp of Object.keys(cursors.files)) {
+        if (!isCodexSessionCursorPath(fp)) continue;
+        if (scannedPaths.has(fp)) continue;
+        const id = codexSessionIdFromPath(fp);
+        if (id && scannedSessionIds.has(id)) continue;
+        migrations[CODEX_FORK_REPLAY_REPAIR_KEY] = {
+          skipped: true,
+          reason: "codex_history_not_covered",
+          at: new Date().toISOString(),
+        };
+        return false;
+      }
     }
     migrations[CODEX_FORK_REPLAY_REPAIR_KEY] = new Date().toISOString();
     return false;

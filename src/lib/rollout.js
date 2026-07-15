@@ -1518,7 +1518,10 @@ async function parseRolloutFile({
   // resumed scan (startOffset > 0) can never see it — and never re-reads the
   // session_meta line, so isForkedRollout stays false there anyway — but gate
   // on the offset explicitly so correctness does not hinge on that distant
-  // invariant.
+  // invariant. Known accepted limitation: if a sync's read races the fork's
+  // single-flush write and persists a cursor INSIDE the burst, the resumed
+  // scan counts the remaining burst tail (bounded over-count, ms-wide window;
+  // self-heals on any inode-changing rescan and never drops genuine usage).
   let replayPrefixActive = startOffset === 0;
   let prevForkedTokenMs = null;
   const rolloutDate = rolloutDateFromPath(filePath);
