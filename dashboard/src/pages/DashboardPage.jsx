@@ -28,6 +28,7 @@ import {
 import { shouldShowInstallCard } from "../lib/install-status";
 import { getMockNow, isMockEnabled } from "../lib/mock-data";
 import { publishUsageLimitsPreloadState } from "../lib/dashboard-preload.js";
+import { startLocalUsageAutoRefresh } from "../lib/local-usage-auto-refresh";
 import { buildFleetData, buildTopModels, resolveDisplayTokens } from "../lib/model-breakdown";
 import { safeWriteClipboard } from "../lib/safe-browser";
 import { isScreenshotModeEnabled } from "../lib/screenshot-mode";
@@ -866,7 +867,7 @@ export function DashboardPage({
     }
   }, [selectedPeriod, customFrom, prevPeriod]);
 
-  const refreshAll = useCallback(async () => {
+  const refreshUsageStats = useCallback(async () => {
     await Promise.all([
       refreshUsage(),
       refreshHeatmap(),
@@ -874,7 +875,6 @@ export function DashboardPage({
       refreshModelBreakdown(),
       refreshProjectUsage(),
       refreshDailyBreakdown(),
-      refreshUsageLimits(),
     ]);
   }, [
     refreshDailyBreakdown,
@@ -883,8 +883,61 @@ export function DashboardPage({
     refreshProjectUsage,
     refreshTrend,
     refreshUsage,
+  ]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([
+      refreshUsageStats(),
+      refreshUsageLimits(),
+    ]);
+  }, [
+    refreshUsageStats,
     refreshUsageLimits,
   ]);
+
+  // The DMG starts its embedded server with --no-sync, so a page reload used
+  // to fetch the same stale queue again. Refresh all local log/database sources
+  // (Claude, Gemini, OpenCode, Codex, etc.) without doing cloud upload, Cursor
+  // network access, or deep Codex archive work, then re-read local aggregates.
+  // Keep the promise in a ref so React Strict Mode can reattach to the first
+  // request instead of starting a duplicate sync.
+  const localReloadSyncPromiseRef = useRef(null);
+  useEffect(() => {
+    if (!isLocalMode || mockEnabled) return undefined;
+    if (!localReloadSyncPromiseRef.current) {
+      localReloadSyncPromiseRef.current = triggerLocalSync({
+        auto: true,
+        background: true,
+        allLocalSources: true,
+      });
+    }
+    let active = true;
+    localReloadSyncPromiseRef.current
+      .then(() => {
+        if (active) return refreshUsageStats();
+        return undefined;
+      })
+      .catch((error) => {
+        if (active) console.warn("[DashboardPage] Reload sync failed:", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isLocalMode, mockEnabled, refreshUsageStats]);
+
+  // Provider hooks update the queue quickly, while the native server also
+  // performs a once-per-minute all-source fallback scan. Re-read the local
+  // aggregates while this dashboard remains visible so those queue updates
+  // appear without requiring a click or a page reload.
+  useEffect(() => {
+    if (!isLocalMode || mockEnabled) return undefined;
+    const autoRefresh = startLocalUsageAutoRefresh({
+      refresh: refreshUsageStats,
+      onError: (error) =>
+        console.warn("[DashboardPage] Automatic usage refresh failed:", error),
+    });
+    return () => autoRefresh.stop();
+  }, [isLocalMode, mockEnabled, refreshUsageStats]);
 
   const handleUsageRefresh = useCallback(async () => {
     setManualSyncLoading(true);
