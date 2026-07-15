@@ -15,11 +15,12 @@ import {
 import { copy } from "../lib/copy";
 import { useLocale } from "../hooks/useLocale.js";
 import { useCurrency } from "../hooks/useCurrency.js";
+import { useTokenFormat } from "../hooks/useTokenFormat.js";
+import { TOKEN_FORMAT_MODES } from "../lib/token-format.js";
 import { getDetailsSortColumns, sortDailyRows } from "../lib/daily";
 import { formatDateUTC, getRangeForPeriod } from "../lib/date-range";
 import { DETAILS_PAGE_SIZE, paginateRows, trimLeadingZeroMonths } from "../lib/details";
 import {
-  formatCompactNumber,
   formatUsdCurrency,
   toDisplayNumber,
   toFiniteNumber,
@@ -66,32 +67,6 @@ const LEFT_CARD_ORDER_DEFAULTS = [
   "qualityPerDollar",
 ];
 const RIGHT_CARD_ORDER_DEFAULTS = ["usageOverview", "dataDetails"];
-
-const SUMMARY_FORMAT_STORAGE_KEY = "tt.summaryFormat";
-
-// Persisted "compact (K/M/B) vs full" preference for the hero total, toggled by
-// clicking the big number. Returns null when no explicit choice is stored yet,
-// so the caller can fall back to a screen-width default.
-function readSummaryFormatPref() {
-  if (typeof window === "undefined") return null;
-  try {
-    const stored = window.localStorage?.getItem(SUMMARY_FORMAT_STORAGE_KEY);
-    if (stored === "compact") return true;
-    if (stored === "full") return false;
-    return null;
-  } catch (_e) {
-    return null;
-  }
-}
-
-function writeSummaryFormatPref(compact) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage?.setItem(SUMMARY_FORMAT_STORAGE_KEY, compact ? "compact" : "full");
-  } catch (_e) {
-    // localStorage may be unavailable (private mode, disabled). Non-fatal.
-  }
-}
 
 function hasUsageValue(value, level) {
   if (typeof level === "number" && level > 0) return true;
@@ -166,6 +141,7 @@ export function DashboardPage({
 }) {
   const { resolvedLocale } = useLocale();
   const { currency, rate } = useCurrency();
+  const { mode: tokenFormatMode, setMode: setTokenFormatMode, formatTokens, formatTokensTooltip } = useTokenFormat();
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [linkCode, setLinkCode] = useState(null);
   const [linkCodeExpiresAt, setLinkCodeExpiresAt] = useState(null);
@@ -174,19 +150,6 @@ export function DashboardPage({
   const [linkCodeExpiryTick, setLinkCodeExpiryTick] = useState(0);
   const [linkCodeRefreshToken, setLinkCodeRefreshToken] = useState(0);
   const [userStatus, setUserStatus] = useState(null);
-  const [compactSummary, setCompactSummary] = useState(() => {
-    const stored = readSummaryFormatPref();
-    if (stored != null) return stored;
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(max-width: 640px)").matches;
-  });
-  const toggleSummaryFormat = useCallback(() => {
-    setCompactSummary((prev) => {
-      const next = !prev;
-      writeSummaryFormatPref(next);
-      return next;
-    });
-  }, []);
   const screenshotMode = useMemo(() => {
     if (typeof window === "undefined") return false;
     return isScreenshotModeEnabled(window.location.search);
@@ -383,19 +346,6 @@ export function DashboardPage({
       window.removeEventListener("focus", handleVisibilityChange);
     };
   }, [linkCodeExpiresAt]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const media = window.matchMedia("(max-width: 640px)");
-    const sync = () => setCompactSummary(media.matches);
-    sync();
-    if (media.addEventListener) {
-      media.addEventListener("change", sync);
-      return () => media.removeEventListener("change", sync);
-    }
-    media.addListener(sync);
-    return () => media.removeListener(sync);
-  }, []);
 
   const timeZone = useMemo(() => getBrowserTimeZone(), []);
   const tzOffsetMinutes = useMemo(() => getBrowserTimeZoneOffsetMinutes(), []);
@@ -795,8 +745,13 @@ export function DashboardPage({
   function renderDetailCell(row, key) {
     if (row?.future) return "—";
     if (row?.missing) return copy("shared.status.unsynced");
-    if (key === "total_tokens") {
-      return toDisplayNumber(getBillableTotal(row));
+    if (key.endsWith("_tokens")) {
+      const value = key === "total_tokens" ? getBillableTotal(row) : row?.[key];
+      return (
+        <span title={formatTokensTooltip(value)}>
+          {formatTokens(value)}
+        </span>
+      );
     }
     return toDisplayNumber(row?.[key]);
   }
@@ -1068,27 +1023,14 @@ export function DashboardPage({
 
   const summaryLabel = copy("usage.summary.total");
   const summaryTotalTokens = getBillableTotal(summary);
-  const thousandSuffix = copy("shared.unit.thousand_abbrev");
-  const millionSuffix = copy("shared.unit.million_abbrev");
-  const billionSuffix = copy("shared.unit.billion_abbrev");
-  const summaryNumber = toFiniteNumber(summaryTotalTokens);
-  const useCompactSummary = compactSummary && summaryNumber != null;
-  const summaryValue = useMemo(() => {
-    if (!useCompactSummary) return toDisplayNumber(summaryTotalTokens);
-    return formatCompactNumber(summaryNumber, {
-      thousandSuffix,
-      millionSuffix,
-      billionSuffix,
-      decimals: 1,
-    });
-  }, [
-    billionSuffix,
-    millionSuffix,
-    summaryTotalTokens,
-    summaryNumber,
-    thousandSuffix,
-    useCompactSummary,
-  ]);
+  const summaryValue = formatTokens(summaryTotalTokens);
+  const toggleSummaryFormat = useCallback(() => {
+    setTokenFormatMode(
+      tokenFormatMode === TOKEN_FORMAT_MODES.COMPACT
+        ? TOKEN_FORMAT_MODES.FULL
+        : TOKEN_FORMAT_MODES.COMPACT,
+    );
+  }, [setTokenFormatMode, tokenFormatMode]);
 
   const coreIndexCollapseLabel = copy("dashboard.core_index.collapse_label");
   const coreIndexExpandLabel = copy("dashboard.core_index.expand_label");
@@ -1147,24 +1089,29 @@ export function DashboardPage({
     () => [
       {
         label: copy("usage.metric.total"),
-        value: toDisplayNumber(summaryTotalTokens),
+        value: formatTokens(summaryTotalTokens),
+        title: formatTokensTooltip(summaryTotalTokens),
         valueClassName: "text-white",
       },
       {
         label: copy("usage.metric.input"),
-        value: toDisplayNumber(summary?.input_tokens),
+        value: formatTokens(summary?.input_tokens),
+        title: formatTokensTooltip(summary?.input_tokens),
       },
       {
         label: copy("usage.metric.output"),
-        value: toDisplayNumber(summary?.output_tokens),
+        value: formatTokens(summary?.output_tokens),
+        title: formatTokensTooltip(summary?.output_tokens),
       },
       {
         label: copy("usage.metric.cached_input"),
-        value: toDisplayNumber(summary?.cached_input_tokens),
+        value: formatTokens(summary?.cached_input_tokens),
+        title: formatTokensTooltip(summary?.cached_input_tokens),
       },
       {
         label: copy("usage.metric.reasoning_output"),
-        value: toDisplayNumber(summary?.reasoning_output_tokens),
+        value: formatTokens(summary?.reasoning_output_tokens),
+        title: formatTokensTooltip(summary?.reasoning_output_tokens),
       },
     ],
     [
@@ -1173,6 +1120,8 @@ export function DashboardPage({
       summary?.output_tokens,
       summary?.reasoning_output_tokens,
       summaryTotalTokens,
+      formatTokens,
+      formatTokensTooltip,
     ],
   );
 
@@ -1345,9 +1294,7 @@ export function DashboardPage({
       summaryLabel={summaryLabel}
       summaryValue={summaryValue}
       summaryFullValue={displayTotalTokens}
-      onToggleSummaryFormat={
-        !screenshotMode && summaryNumber != null ? toggleSummaryFormat : null
-      }
+      onToggleSummaryFormat={toggleSummaryFormat}
       summaryTotalTokensRaw={toFiniteNumber(summaryTotalTokens) || 0}
       summaryCostValue={summaryCostValue}
       summaryConversationsValue={summaryConversationsValue}

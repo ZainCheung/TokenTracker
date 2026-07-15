@@ -3,6 +3,7 @@ import React from "react";
 import { X } from "lucide-react";
 import { copy } from "../../lib/copy";
 import { formatTokensCompact } from "../../lib/format-tokens";
+import { useTokenFormat } from "../../hooks/useTokenFormat.js";
 import { ProviderIcon } from "../../ui/dashboard/components/ProviderIcon";
 
 const ESTIMATED_USD_PER_MILLION_TOKENS = 1.75;
@@ -46,6 +47,7 @@ function Stat({ label, value, title, className = "" }) {
 }
 
 export function CommunityStatsModal({ isOpen, onClose, communityStats }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   if (!communityStats || communityStats.status !== "ready") return null;
 
   const totalTokens = Number(communityStats.tokenFloor) || 0;
@@ -91,9 +93,9 @@ export function CommunityStatsModal({ isOpen, onClose, communityStats }) {
               <Stat
                 className="pr-4"
                 label={copy("leaderboard.community.modal.total_tokens")}
-                value={formatTokensCompact(totalTokens)}
+                value={formatTokens(totalTokens)}
                 title={copy("leaderboard.community.modal.tokens_title", {
-                  count: totalTokens.toLocaleString("en-US"),
+                  count: formatTokensTooltip(totalTokens),
                 })}
               />
               <Stat
@@ -160,10 +162,10 @@ export function CommunityStatsModal({ isOpen, onClose, communityStats }) {
                         <span
                           className="relative shrink-0 text-xs font-semibold text-oai-black dark:text-white tabular-nums"
                           title={copy("leaderboard.community.modal.tokens_title", {
-                            count: Number(model.tokens).toLocaleString("en-US"),
+                            count: formatTokensTooltip(model.tokens),
                           })}
                         >
-                          {formatTokensCompact(model.tokens)}
+                          {formatTokens(model.tokens)}
                         </span>
                         <span className="relative w-11 shrink-0 text-right text-[11px] text-oai-gray-400 dark:text-oai-gray-500 tabular-nums">
                           {share}%

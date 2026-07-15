@@ -83,9 +83,10 @@ test("DataDetails project rows open the drill-down modal instead of navigating",
   );
 });
 
-test("DataDetails project rows show compact tokens, sources and share bar", () => {
+test("DataDetails project rows honor the global token format, sources and share bar", () => {
   const src = readFile(dataDetailsPath);
-  assert.ok(src.includes("formatCompactNumber(tokensRaw"), "expected compact token values");
+  assert.ok(src.includes("formatTokens(tokensRaw)"), "expected global token formatting");
+  assert.ok(src.includes("formatTokensTooltip(tokensRaw)"), "expected exact hover details");
   assert.ok(src.includes("<ProviderIcon"), "expected per-source provider icons");
   assert.ok(src.includes("maxTokens"), "expected share bar scaled to top project");
   assert.ok(src.includes("truncate"), "expected truncated project names");
@@ -211,5 +212,23 @@ test("DashboardPage supports force_install preview", () => {
   assert.ok(
     src.includes("forceInstall"),
     "expected forceInstall flag to influence install visibility",
+  );
+});
+
+test("DashboardPage removes the obsolete responsive summary format state", () => {
+  const src = readFile(containerPath);
+  assert.ok(!src.includes("setCompactSummary"), "obsolete summary setter must not survive state removal");
+  assert.ok(!src.includes("compactSummary"), "obsolete summary state must not survive global formatting");
+  assert.ok(
+    src.includes("const summaryValue = formatTokens(summaryTotalTokens)"),
+    "dashboard hero total must follow the global token format setting",
+  );
+  assert.ok(
+    src.includes("onToggleSummaryFormat={toggleSummaryFormat}"),
+    "dashboard hero click must toggle the global token format setting",
+  );
+  assert.ok(
+    src.includes("setTokenFormatMode("),
+    "dashboard hero click must persist through the shared token format provider",
   );
 });

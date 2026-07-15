@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight, Info } from "lucide-react";
 import { copy } from "../../../lib/copy";
 import { formatCompactNumber } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { getUsageCategoryBreakdown } from "../../../lib/api";
 import { getBrowserTimeZone, getBrowserTimeZoneOffsetMinutes } from "../../../lib/timezone";
 import { oklchColor } from "../../../lib/oklch-fallback";
@@ -203,11 +204,6 @@ function partitionMcpFromToolCalls(toolCallsSet) {
 
 function categoryLabel(key) {
   return copy(`dashboard.context_breakdown.category.${key}`);
-}
-
-function formatTokens(n) {
-  if (!Number.isFinite(Number(n)) || Number(n) <= 0) return "0";
-  return formatCompactNumber(Number(n), { decimals: 1 });
 }
 
 function formatToolDisplayName(name) {
@@ -511,6 +507,7 @@ function Row({
 // and output size live on the Codex side. We hide those columns when
 // `source === "claude"` so the user doesn't see five "0"s for every row.
 function ExecDrillDown({ execDetails, source = "claude" }) {
+  const { formatTokens } = useTokenFormat();
   const [activeTab, setActiveTab] = useState("by_type");
   const rows = normalizeExecRows(selectedExecRows(execDetails, activeTab));
   const showRuntime = source === "codex";
@@ -604,6 +601,7 @@ function ExecDrillDown({ execDetails, source = "claude" }) {
 // label-area's leading icon slot (chevron / square / spacer) keeps every
 // row's label starting on the same column regardless of depth.
 function ToolCallsExpanded({ toolSet, execDetails, source, codexQueueFallback }) {
+  const { formatTokens } = useTokenFormat();
   const [openCats, setOpenCats] = useState({});
   const [openExec, setOpenExec] = useState(false);
   const categories = normalizeCategoryRows(toolSet?.categories || []);
@@ -679,6 +677,7 @@ function ToolCallsExpanded({ toolSet, execDetails, source, codexQueueFallback })
 // Inline Context Breakdown for Claude Code only. Renders bare (no Card
 // wrapper) so it can drop into the UsageOverview expanded provider section.
 export function ContextBreakdownPanel({ from, to, source = "claude", referenceTotalTokens = null, onLoadingChange = null }) {
+  const { formatTokens } = useTokenFormat();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

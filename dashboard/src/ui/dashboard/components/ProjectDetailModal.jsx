@@ -2,7 +2,8 @@ import React from "react";
 import { GitBranch, X } from "lucide-react";
 import { copy } from "../../../lib/copy";
 import { cn } from "../../../lib/cn";
-import { formatCompactNumber, toDisplayNumber, toFiniteNumber } from "../../../lib/format";
+import { toDisplayNumber, toFiniteNumber } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { formatProviderDisplayName } from "../../../lib/provider-display";
 import { useProjectUsageDetail } from "../../../hooks/use-project-usage-detail";
 import { getLocalDayKey } from "../../../lib/timezone";
@@ -127,6 +128,7 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
     timeZone: query.timeZone,
     tzOffsetMinutes: query.tzOffsetMinutes,
   });
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
 
   const handleClose = React.useCallback(() => setIsClosing(true), []);
   const handleAnimationEnd = (e) => {
@@ -140,14 +142,6 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleClose]);
-
-  const tokenFormatOptions = {
-    thousandSuffix: copy("shared.unit.thousand_abbrev"),
-    millionSuffix: copy("shared.unit.million_abbrev"),
-    billionSuffix: copy("shared.unit.billion_abbrev"),
-    decimals: 1,
-  };
-  const compact = (value) => formatCompactNumber(value, tokenFormatOptions);
 
   const totals = data?.totals || null;
   const billableTotal = toFiniteNumber(totals?.billable_total_tokens) ?? 0;
@@ -254,8 +248,8 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
             <div className="grid grid-cols-2 gap-x-5 gap-y-5 border-t border-zinc-200/50 dark:border-zinc-800/50 pt-5 select-none">
               <StatCell
                 label={copy("dashboard.projects.detail.stat_total")}
-                value={compact(billableTotal)}
-                title={toDisplayNumber(billableTotal)}
+                value={formatTokens(billableTotal)}
+                title={formatTokensTooltip(billableTotal)}
               />
               <StatCell
                 label={copy("dashboard.projects.detail.stat_share")}
@@ -275,7 +269,7 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
               />
               <StatCell
                 label={copy("dashboard.projects.detail.stat_avg_day")}
-                value={daysActive > 0 ? compact(Math.round(billableTotal / daysActive)) : "—"}
+                value={daysActive > 0 ? formatTokens(Math.round(billableTotal / daysActive)) : "—"}
               />
             </div>
           ) : null}
@@ -366,9 +360,9 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
                           </span>
                           <span
                             className="text-[11px] font-bold font-mono text-zinc-900 dark:text-zinc-50 tabular-nums"
-                            title={toDisplayNumber(value)}
+                            title={formatTokensTooltip(value)}
                           >
-                            {compact(value)}
+                            {formatTokens(value)}
                           </span>
                         </div>
                       );
@@ -416,9 +410,9 @@ export function ProjectDetailModal({ entry, query = {}, onClose }) {
                             </span>
                             <span
                               className="ml-auto text-[12px] font-bold font-mono text-zinc-900 dark:text-zinc-50 tabular-nums"
-                              title={toDisplayNumber(value)}
+                              title={formatTokensTooltip(value)}
                             >
-                              {compact(value)}
+                              {formatTokens(value)}
                             </span>
                             <span className="w-9 text-right text-[10px] font-mono text-zinc-400 dark:text-zinc-500 tabular-nums">
                               {formatPercent(srcShare)}

@@ -3,11 +3,13 @@ import { Info, Languages, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme.js";
 import { useLocale } from "../../hooks/useLocale.js";
 import { useCurrency } from "../../hooks/useCurrency.js";
+import { useTokenFormat } from "../../hooks/useTokenFormat.js";
 import { DE_LOCALE, EN_LOCALE, JA_LOCALE, KO_LOCALE, SYSTEM_LOCALE, ZH_CN_LOCALE, ZH_TW_LOCALE } from "../../lib/locale";
 import { CURRENCY_USD, getSupportedCurrencies } from "../../lib/currency";
 import { copy } from "../../lib/copy";
 import { Select } from "../../ui/components";
 import { SectionCard, SegmentedControl, SettingsRow } from "./Controls.jsx";
+import { TOKEN_FORMAT_MODES } from "../../lib/token-format.js";
 
 function buildThemeOptions() {
   return [
@@ -108,6 +110,7 @@ export function AppearanceSection() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale } = useLocale();
   const { currency, rate, rateSource, rateFetchedAt, setCurrency } = useCurrency();
+  const { mode: tokenFormatMode, setMode: setTokenFormatMode } = useTokenFormat();
 
   return (
     <SectionCard title={copy("settings.section.appearance")}>
@@ -132,6 +135,26 @@ export function AppearanceSection() {
           />
         }
         control={<CurrencyDropdown currency={currency} setCurrency={setCurrency} />}
+      />
+      <SettingsRow
+        label={copy("settings.appearance.token_format.label")}
+        hint={copy("settings.appearance.token_format.hint")}
+        control={
+          <SegmentedControl
+            options={[
+              {
+                value: TOKEN_FORMAT_MODES.COMPACT,
+                label: copy("settings.appearance.token_format.compact"),
+              },
+              {
+                value: TOKEN_FORMAT_MODES.FULL,
+                label: copy("settings.appearance.token_format.full"),
+              },
+            ]}
+            value={tokenFormatMode}
+            onChange={setTokenFormatMode}
+          />
+        }
       />
     </SectionCard>
   );

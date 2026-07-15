@@ -4,6 +4,7 @@ import { Maximize2 } from "lucide-react";
 import { copy } from "../../../lib/copy";
 import { cn } from "../../../lib/cn";
 import { useCurrency } from "../../../hooks/useCurrency.js";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { formatUsdCurrency } from "../../../lib/format";
 import { formatBucketRange, formatTickLabel, granularityFromPeriod } from "../../../lib/trend-stats";
 import { TrendMonitorZoomModal } from "./TrendMonitorZoomModal";
@@ -403,6 +404,7 @@ export function TrendMonitor({
   }, [series]);
 
   const { currency, rate } = useCurrency();
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const granularity = granularityFromPeriod(period);
 
   const [hoveredBar, setHoveredBar] = React.useState(null);
@@ -614,10 +616,13 @@ export function TrendMonitor({
             {/* 内容 */}
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline gap-1">
-                <span className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none">
+                <span
+                  title={formatTokensTooltip(hoveredBar.kind === "predicted" || hoveredBar.kind === "unsynced" ? hoveredBar.displayValue : hoveredBar.value)}
+                  className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none"
+                >
                   {hoveredBar.kind === "predicted" || hoveredBar.kind === "unsynced"
-                    ? `~${Math.round(hoveredBar.displayValue ?? 0).toLocaleString()}`
-                    : hoveredBar.value.toLocaleString()}
+                    ? `~${formatTokens(Math.round(hoveredBar.displayValue ?? 0))}`
+                    : formatTokens(hoveredBar.value)}
                 </span>
                 <span className="text-[10px] text-oai-gray-400 uppercase tracking-wider font-semibold">
                   Tokens
@@ -668,8 +673,11 @@ export function TrendMonitor({
                               {name}
                             </span>
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold">
-                                {val.toLocaleString()}
+                              <span
+                                title={formatTokensTooltip(val)}
+                                className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold"
+                              >
+                                {formatTokens(val)}
                               </span>
                               <span className="text-[9px] text-oai-gray-450 dark:text-oai-gray-500 min-w-[28px] text-right font-medium">
                                 {pct}%

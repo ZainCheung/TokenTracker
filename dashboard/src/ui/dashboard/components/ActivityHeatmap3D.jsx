@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { copy } from "../../../lib/copy";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 
 
 export const PALETTES = {
@@ -61,8 +62,8 @@ function rotateVector(x, y, z, yaw, pitch) {
 }
 
 // AI 趣味数据洞察文案
-export function getAITooltipMessage(level, value) {
-  const formatVal = Number(value).toLocaleString();
+export function getAITooltipMessage(level, value, formatter = (next) => Number(next).toLocaleString()) {
+  const formatVal = formatter(value);
   if (level >= 4) {
     const index = Math.floor(Math.random() * 3) + 1;
     return copy(`heatmap.3d.voxel.joke.${index}`, { value: formatVal });
@@ -85,6 +86,7 @@ export function ActivityHeatmap3D({
   autoRotateInit = false, // 默认是否自动缓缓旋转
   onResetViewRef = null,  // 外部句柄，用来重置视角
 }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
 
   const selectedTheme = PALETTES[palette] || (palette === "auto" ? PALETTES.emerald : null);
   const colors = selectedTheme 
@@ -655,7 +657,7 @@ export function ActivityHeatmap3D({
               }}
             >
               {!interactive && c.day && (
-                <title>{`${c.day}: ${Number(c.value).toLocaleString()} tokens`}</title>
+                <title>{`${c.day}: ${formatTokensTooltip(c.value)} tokens`}</title>
               )}
               {c.renderedFaces.map((f, idx) => (
                 <path
@@ -728,8 +730,11 @@ export function ActivityHeatmap3D({
             {/* 内容 */}
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline gap-1">
-                <span className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none">
-                  {Number(hoveredCell.value).toLocaleString()}
+                <span
+                  title={formatTokensTooltip(hoveredCell.value)}
+                  className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none"
+                >
+                  {formatTokens(hoveredCell.value)}
                 </span>
                 <span className="text-[10px] text-oai-gray-400 uppercase tracking-wider font-semibold">
                   Tokens
@@ -755,8 +760,11 @@ export function ActivityHeatmap3D({
                                 {name}
                               </span>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold">
-                                  {val.toLocaleString()}
+                                <span
+                                  title={formatTokensTooltip(val)}
+                                  className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold"
+                                >
+                                  {formatTokens(val)}
                                 </span>
                                 <span className="text-[9px] text-oai-gray-450 dark:text-oai-gray-500 min-w-[28px] text-right font-medium">
                                   {pct}%
@@ -781,7 +789,7 @@ export function ActivityHeatmap3D({
                 </div>
               ) : (
                 <p className="text-[11px] text-oai-gray-600 dark:text-oai-gray-300 leading-relaxed font-normal mt-1 border-t border-dashed border-oai-gray-100 dark:border-oai-gray-800/60 pt-1.5">
-                  {getAITooltipMessage(hoveredCell.level, hoveredCell.value)}
+                  {getAITooltipMessage(hoveredCell.level, hoveredCell.value, formatTokens)}
                 </p>
               )}
             </div>

@@ -5,6 +5,7 @@ import { InsforgeAuthProvider } from "./contexts/InsforgeAuthContext.jsx";
 import { AccountViewProvider } from "./contexts/AccountViewContext.jsx";
 import { LocaleProvider } from "./ui/foundation/LocaleProvider.jsx";
 import { CurrencyProvider } from "./ui/foundation/CurrencyProvider.jsx";
+import { TokenFormatProvider } from "./ui/foundation/TokenFormatProvider.jsx";
 import App from "./App.jsx";
 import { initAnalytics } from "./lib/analytics.js";
 import "@fontsource/geist-mono/400.css";
@@ -22,13 +23,15 @@ const router = createBrowserRouter([
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <LocaleProvider>
-      <CurrencyProvider>
-        <InsforgeAuthProvider>
-          <AccountViewProvider>
-            <RouterProvider router={router} />
-          </AccountViewProvider>
-        </InsforgeAuthProvider>
-      </CurrencyProvider>
+      <TokenFormatProvider>
+        <CurrencyProvider>
+          <InsforgeAuthProvider>
+            <AccountViewProvider>
+              <RouterProvider router={router} />
+            </AccountViewProvider>
+          </InsforgeAuthProvider>
+        </CurrencyProvider>
+      </TokenFormatProvider>
     </LocaleProvider>
   </React.StrictMode>,
 );

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Laptop, Monitor, MonitorSmartphone, Pencil, Check, X } from "lucide-react";
 import { Card } from "../../components";
 import { copy } from "../../../lib/copy";
-import { formatCompactNumber } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { formatDeviceLabel } from "../../../lib/device-label";
 import { formatProviderDisplayName } from "../../../lib/provider-display";
 import { ProviderIcon } from "./ProviderIcon";
@@ -21,6 +21,7 @@ function PlatformIcon({ platform, className }) {
 }
 
 export function DeviceUsageCard({ devices = [], accountSources = [], selectedDeviceId = "", onSelectDevice, onRenameDevice }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const [editingId, setEditingId] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -216,11 +217,12 @@ export function DeviceUsageCard({ devices = [], accountSources = [], selectedDev
                         </span>
                       </div>
                       <span
+                        title={formatTokensTooltip(tokens)}
                         className={`shrink-0 text-[13px] font-semibold tabular-nums text-oai-black dark:text-oai-white transition-opacity duration-150 ${
                           canRename ? "group-hover:opacity-0" : ""
                         }`}
                       >
-                        {formatCompactNumber(tokens)}
+                        {formatTokens(tokens)}
                         <span className="text-oai-gray-400 dark:text-oai-gray-500 font-normal">
                           {DOT_DIVIDER}
                           {percent}
@@ -288,8 +290,11 @@ export function DeviceUsageCard({ devices = [], accountSources = [], selectedDev
                     {copy("dashboard.device_card.account_scope")}
                   </span>
                 </div>
-                <span className="shrink-0 text-[13px] font-semibold tabular-nums text-oai-black dark:text-oai-white">
-                  {formatCompactNumber(tokens)}
+                <span
+                  title={formatTokensTooltip(tokens)}
+                  className="shrink-0 text-[13px] font-semibold tabular-nums text-oai-black dark:text-oai-white"
+                >
+                  {formatTokens(tokens)}
                   <span className="text-oai-gray-400 dark:text-oai-gray-500 font-normal">
                     {DOT_DIVIDER}
                     {percent}

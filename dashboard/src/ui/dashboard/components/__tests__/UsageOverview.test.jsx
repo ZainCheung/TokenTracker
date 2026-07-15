@@ -126,7 +126,8 @@ describe("UsageOverview", () => {
         period="month"
         periods={[]}
         summaryLabel="Total"
-        summaryValue="1,234,567,890"
+        summaryValue="1.23B"
+        summaryFullValue="1,234,567,890"
         fleetData={[]}
         from="2026-05-01"
         to="2026-05-31"
@@ -136,5 +137,6 @@ describe("UsageOverview", () => {
     expect(
       screen.queryByRole("button", { name: /toggle compact number format/i }),
     ).toBeNull();
+    expect(screen.getByTitle("1,234,567,890")).toHaveTextContent("1.23B");
   });
 });

@@ -6,6 +6,8 @@ import { copy } from "../../lib/copy";
 import { formatCompactNumber, formatUsdCurrency } from "../../lib/format";
 import { formatProviderDisplayName } from "../../lib/provider-display";
 import { useCurrency } from "../../hooks/useCurrency.js";
+import { useTokenFormat } from "../../hooks/useTokenFormat.js";
+import { TOKEN_FORMAT_MODES } from "../../lib/token-format.js";
 import { getLeaderboardProfile } from "../../lib/api";
 import { resolveAuthAccessTokenWithRetry } from "../../lib/auth-token";
 import { buildActivityHeatmap } from "../../lib/activity-heatmap";
@@ -22,6 +24,7 @@ import { AchievementsSection } from "../../ui/achievements/AchievementsSection.j
 import { AvatarWithBadge } from "../../ui/achievements/AvatarWithBadge.jsx";
 import { BadgeStrip } from "../../ui/achievements/BadgeStrip.jsx";
 import { highestBadge } from "../../ui/achievements/badge-catalog";
+import { TokenFormatModeOverride } from "../../ui/foundation/TokenFormatProvider.jsx";
 
 // Lazy: the 3D coin + dialog code ships only when a badge is clicked.
 const BadgeDetailModal = React.lazy(() => import("../../ui/achievements/BadgeDetailModal.jsx"));
@@ -48,12 +51,6 @@ function formatCostCompact(value, currency, rate) {
   const converted = currency === "USD" ? n : n * (rate || 1);
   const symbol = currency === "USD" ? "$" : "";
   return `${symbol}${formatCompactNumber(converted, { decimals: 1 })}`;
-}
-
-function formatTokens(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) return "0";
-  return formatCompactNumber(n, { decimals: 1 });
 }
 
 /**
@@ -209,10 +206,11 @@ function SectionLabel({ children }) {
 }
 
 /** Stat number stacked over caption label. */
-function Stat({ value, label }) {
+function Stat({ value, label, title }) {
   return (
     <div>
-      <div 
+      <div
+        title={title}
         className="text-2xl font-black tabular-nums tracking-tight leading-none text-oai-black dark:text-white"
         style={{ 
           fontFamily: '"DIN Alternate-Bold", "DIN Alternate", "DIN Condensed-Bold", "Impact", -apple-system, sans-serif',
@@ -361,6 +359,7 @@ function PageHero({ user, topBadge }) {
 }
 
 function ProviderList({ data }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const arr = Array.isArray(data) ? data : [];
   if (arr.length === 0) {
     return (
@@ -387,7 +386,7 @@ function ProviderList({ data }) {
                 style={{ width: `${(pct * 100).toFixed(1)}%` }}
               />
             </span>
-            <span className="shrink-0 w-14 text-right tabular-nums text-oai-gray-700 dark:text-oai-gray-300">
+            <span title={formatTokensTooltip(p.total_tokens)} className="shrink-0 w-14 text-right tabular-nums text-oai-gray-700 dark:text-oai-gray-300">
               {formatTokens(p.total_tokens)}
             </span>
             <span className="shrink-0 w-10 text-right tabular-nums text-oai-gray-500 dark:text-oai-gray-400">
@@ -438,6 +437,7 @@ function CopyAction({ icon: Icon, label, value }) {
  * header renders without a close button.
  */
 export function ProfileContent({ data, currency, rate, onClose, variant = "modal" }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const {
     user,
     totals,
@@ -480,6 +480,7 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
           <Stat
             value={formatTokens(totals?.total_tokens)}
+            title={formatTokensTooltip(totals?.total_tokens)}
             label={copy("leaderboard.profile_modal.stat.total_tokens")}
           />
           <Stat
@@ -509,7 +510,7 @@ export function ProfileContent({ data, currency, rate, onClose, variant = "modal
           <FactRow label={copy("leaderboard.profile_modal.best_day.title")}>
             {bestDay ? (
               <>
-                <span className="font-mono text-xs tracking-tight bg-oai-gray-100/60 dark:bg-oai-gray-900/50 px-1.5 py-0.5 rounded border border-oai-gray-200/30 dark:border-oai-gray-800/30">
+                <span title={formatTokensTooltip(bestDay.total_tokens)} className="font-mono text-xs tracking-tight bg-oai-gray-100/60 dark:bg-oai-gray-900/50 px-1.5 py-0.5 rounded border border-oai-gray-200/30 dark:border-oai-gray-800/30">
                   {formatTokens(bestDay.total_tokens)}
                 </span>
                 <span className="text-xs text-oai-gray-500 dark:text-oai-gray-400 font-mono">
@@ -712,7 +713,9 @@ export function LeaderboardProfileModal({ isOpen, onClose, userId, period, acces
               </div>
             )}
             {!state.loading && !state.error && state.data && (
-              <ProfileContent data={state.data} currency={currency} rate={rate} onClose={onClose} />
+              <TokenFormatModeOverride mode={TOKEN_FORMAT_MODES.COMPACT}>
+                <ProfileContent data={state.data} currency={currency} rate={rate} onClose={onClose} />
+              </TokenFormatModeOverride>
             )}
           </Dialog.Popup>
         </Dialog.Viewport>

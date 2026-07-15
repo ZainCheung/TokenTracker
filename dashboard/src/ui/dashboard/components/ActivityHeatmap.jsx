@@ -4,7 +4,8 @@ import { buildActivityHeatmap } from "../../../lib/activity-heatmap";
 import { copy } from "../../../lib/copy";
 import { useTheme } from "../../../hooks/useTheme.js";
 import { useCurrency } from "../../../hooks/useCurrency.js";
-import { formatCompactNumber, formatUsdCurrency } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
+import { formatUsdCurrency } from "../../../lib/format";
 import { ActivityHeatmap3D, PALETTES, getAITooltipMessage } from "./ActivityHeatmap3D";
 import { Maximize2, RotateCcw, X, Flame, Terminal, TrendingUp, Info, Play, Pause } from "lucide-react";
 
@@ -27,29 +28,6 @@ const HEATMAP_COLORS_DARK = [
   "#10b981", // level 3
   "#34d399", // level 4 - brightest
 ];
-
-function formatTokenValue(value) {
-  if (typeof value === "bigint") return value.toLocaleString();
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? Math.round(value).toLocaleString() : "0";
-  }
-  if (typeof value === "string") {
-    const n = Number(value);
-    return Number.isFinite(n) ? Math.round(n).toLocaleString() : value;
-  }
-  return "0";
-}
-
-// Compact heatmap display — defers to the project-wide formatter for
-// suffix/decimal consistency with StatsPanel / UsageOverview / etc., and
-// falls back to localized `toLocaleString()` for <1k so small daily totals
-// keep thousand separators ("999" stays "999", not "999.00").
-function formatCompactTokenValue(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "0";
-  if (num < 1000) return num.toLocaleString();
-  return formatCompactNumber(num, { decimals: 2 });
-}
 
 function parseUtcDate(value) {
   if (typeof value !== "string") return null;
@@ -113,6 +91,7 @@ export function ActivityHeatmap({
 }) {
   const { resolvedTheme } = useTheme();
   const { currency, rate } = useCurrency();
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const isDark = resolvedTheme === "dark";
   const heatmapColors = isDark ? HEATMAP_COLORS_DARK : HEATMAP_COLORS_LIGHT;
   const scrollRef = useRef(null);
@@ -660,7 +639,7 @@ export function ActivityHeatmap({
                     <div className="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 text-[10px] font-semibold font-mono rounded-lg px-2.5 py-1.5 shadow-xl border border-zinc-200 dark:border-zinc-800/80 whitespace-nowrap flex flex-col">
                       <span className="text-[9px] text-zinc-400 dark:text-zinc-500">{copy("heatmap.3d.modal.stats.precision_total_tokens")}</span>
                       <span className="mt-0.5 font-bold text-zinc-900 dark:text-zinc-50">
-                        {stats.totalTokens.toLocaleString()} Tokens
+                        {formatTokensTooltip(stats.totalTokens)} Tokens
                       </span>
                     </div>
                   </div>
@@ -670,7 +649,7 @@ export function ActivityHeatmap({
                   </span>
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight font-mono transition-transform duration-200 group-hover:-translate-y-[1px]">
-                      {formatCompactTokenValue(stats.totalTokens)}
+                      {formatTokens(stats.totalTokens, { decimals: 2 })}
                     </span>
                     
                     {/* Compact Trend Line */}
@@ -719,7 +698,7 @@ export function ActivityHeatmap({
                     <div className="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 text-[10px] font-semibold font-mono rounded-lg px-2.5 py-1.5 shadow-xl border border-zinc-200 dark:border-zinc-800/80 whitespace-nowrap flex flex-col">
                       <span className="text-[9px] text-zinc-400 dark:text-zinc-500">{copy("heatmap.3d.modal.stats.precision_peak_value")}</span>
                       <span className="mt-0.5 font-bold text-zinc-900 dark:text-zinc-50">
-                        {stats.maxSingleDay.value > 0 ? stats.maxSingleDay.value.toLocaleString() : copy("heatmap.3d.modal.stats.no_data")} Tokens
+                        {stats.maxSingleDay.value > 0 ? formatTokensTooltip(stats.maxSingleDay.value) : copy("heatmap.3d.modal.stats.no_data")} Tokens
                       </span>
                       <span className="text-[8px] text-zinc-400 dark:text-zinc-500 mt-0.5">{stats.maxSingleDay.day !== "无数据" ? stats.maxSingleDay.day : copy("heatmap.3d.modal.stats.no_data")}</span>
                     </div>
@@ -729,7 +708,7 @@ export function ActivityHeatmap({
                     {copy("heatmap.3d.modal.stats.peak_day")}
                   </span>
                   <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight font-mono transition-transform duration-200 group-hover:-translate-y-[1px]">
-                    {stats.maxSingleDay.value > 0 ? formatCompactTokenValue(stats.maxSingleDay.value) : copy("heatmap.3d.modal.stats.no_data")} <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 font-mono">({stats.maxSingleDay.day !== "无数据" ? stats.maxSingleDay.day : copy("heatmap.3d.modal.stats.no_data")})</span>
+                    {stats.maxSingleDay.value > 0 ? formatTokens(stats.maxSingleDay.value, { decimals: 2 }) : copy("heatmap.3d.modal.stats.no_data")} <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 font-mono">({stats.maxSingleDay.day !== "无数据" ? stats.maxSingleDay.day : copy("heatmap.3d.modal.stats.no_data")})</span>
                   </span>
                 </div>
 
@@ -912,8 +891,11 @@ export function ActivityHeatmap({
             {/* 内容 */}
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline gap-1">
-                <span className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none">
-                  {Number(hoveredCell.total_tokens ?? hoveredCell.value).toLocaleString()}
+                <span
+                  title={formatTokensTooltip(hoveredCell.total_tokens ?? hoveredCell.value)}
+                  className="text-lg font-bold text-oai-gray-900 dark:text-white leading-none"
+                >
+                  {formatTokens(hoveredCell.total_tokens ?? hoveredCell.value)}
                 </span>
                 <span className="text-[10px] text-oai-gray-400 uppercase tracking-wider font-semibold">
                   Tokens
@@ -939,8 +921,11 @@ export function ActivityHeatmap({
                                 {name}
                               </span>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold">
-                                  {val.toLocaleString()}
+                                <span
+                                  title={formatTokensTooltip(val)}
+                                  className="font-mono text-oai-gray-900 dark:text-oai-gray-100 font-semibold"
+                                >
+                                  {formatTokens(val)}
                                 </span>
                                 <span className="text-[9px] text-oai-gray-450 dark:text-oai-gray-500 min-w-[28px] text-right font-medium">
                                   {pct}%
@@ -964,7 +949,7 @@ export function ActivityHeatmap({
                 </div>
               ) : (
                 <p className="text-[11px] text-oai-gray-600 dark:text-oai-gray-300 leading-relaxed font-normal mt-1 border-t border-dashed border-oai-gray-100 dark:border-oai-gray-800/60 pt-1.5">
-                  {getAITooltipMessage(hoveredCell.level, hoveredCell.total_tokens ?? hoveredCell.value)}
+                  {getAITooltipMessage(hoveredCell.level, hoveredCell.total_tokens ?? hoveredCell.value, formatTokens)}
                 </p>
               )}
             </div>

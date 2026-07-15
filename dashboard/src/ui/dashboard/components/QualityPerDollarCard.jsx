@@ -3,18 +3,12 @@ import { Card } from "../../components";
 import { copy } from "../../../lib/copy";
 import { useQualityPerDollarPref } from "../../../hooks/use-quality-per-dollar-pref.js";
 import { useQualityPerDollar } from "../../../hooks/use-quality-per-dollar";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 
 function money(n) {
   if (n == null) return "—";
   if (n === 0) return "$0";
   return n < 1 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
-}
-
-function compactTokens(n) {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(Math.round(n));
 }
 
 function pct(rate) {
@@ -54,6 +48,7 @@ function Row({ row }) {
  * dashboard looks exactly as it does today. See GitHub issue 229.
  */
 export function QualityPerDollarCard({ from, to, deviceId = null }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const { enabled } = useQualityPerDollarPref();
   const { data, loading } = useQualityPerDollar({ enabled, from, to, deviceId });
 
@@ -104,9 +99,9 @@ export function QualityPerDollarCard({ from, to, deviceId = null }) {
             cost: money(totals.cost_usd),
           })}
         </span>
-        <span title={copy("qpd.card.et_tooltip")}>
+        <span title={`${copy("qpd.card.et_tooltip")} · ${formatTokensTooltip(totals.effective_tokens)}`}>
           {copy("qpd.card.et", {
-            tokens: compactTokens(totals.effective_tokens),
+            tokens: formatTokens(totals.effective_tokens),
             rate: pct(totals.acceptance_rate),
           })}
         </span>

@@ -5,7 +5,8 @@ import { copy } from "../../../lib/copy";
 import { cn } from "../../../lib/cn";
 import { DateRangePopover } from "./DateRangePopover.jsx";
 import { useCurrency } from "../../../hooks/useCurrency.js";
-import { formatCompactNumber, formatUsdCurrency } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
+import { formatUsdCurrency } from "../../../lib/format";
 import { useTrendData } from "../../../hooks/use-trend-data.js";
 import { getLocalDayKey } from "../../../lib/timezone";
 import { computeZoomStats, getTrendInsightKey } from "../../../lib/trend-stats";
@@ -80,13 +81,13 @@ function prettifyPeakLabel(label) {
   return label || "";
 }
 
-function StatCell({ label, value, sub }) {
+function StatCell({ label, value, sub, title }) {
   return (
     <div className="flex flex-col gap-1.5 group">
       <span className="text-[9px] font-bold uppercase tracking-widest font-mono text-zinc-400 dark:text-zinc-500">
         {label}
       </span>
-      <span className="text-xl font-black font-mono text-zinc-900 dark:text-zinc-50 tracking-tight leading-none tabular-nums transition-transform duration-200 group-hover:-translate-y-[1px]">
+      <span title={title} className="text-xl font-black font-mono text-zinc-900 dark:text-zinc-50 tracking-tight leading-none tabular-nums transition-transform duration-200 group-hover:-translate-y-[1px]">
         {value}
       </span>
       {sub ? (
@@ -106,6 +107,7 @@ export function TrendMonitorZoomModal({
   renderChart,
 }) {
   const { currency, rate } = useCurrency();
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
 
   // The 30-min view defaults to *today* (in the dashboard's timezone), not the
   // dashboard range end — opening it should land on the current day's activity.
@@ -265,7 +267,8 @@ export function TrendMonitorZoomModal({
           <div className="grid grid-cols-2 gap-x-5 gap-y-5 border-y border-zinc-200/50 dark:border-zinc-800/50 py-5 select-none">
             <StatCell
               label={copy("trend.zoom.stats.tokens")}
-              value={formatCompactNumber(stats.totalTokens)}
+              value={formatTokens(stats.totalTokens)}
+              title={formatTokensTooltip(stats.totalTokens)}
             />
             {costValue ? (
               <StatCell label={copy("trend.zoom.stats.cost")} value={costValue} />
@@ -277,7 +280,8 @@ export function TrendMonitorZoomModal({
             {stats.peak ? (
               <StatCell
                 label={copy("trend.zoom.stats.peak")}
-                value={formatCompactNumber(stats.peak.value)}
+                value={formatTokens(stats.peak.value)}
+                title={formatTokensTooltip(stats.peak.value)}
                 sub={prettifyPeakLabel(stats.peak.label)}
               />
             ) : null}
@@ -295,7 +299,7 @@ export function TrendMonitorZoomModal({
               <p className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400 font-normal">
                 {copy(getTrendInsightKey(stats), {
                   active: stats.activeBuckets,
-                  peak: formatCompactNumber(stats.peak?.value || 0),
+                  peak: formatTokens(stats.peak?.value || 0),
                 })}
               </p>
             </div>

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Card, Select } from "../../components";
-import { formatCompactNumber, toDisplayNumber, toFiniteNumber } from "../../../lib/format";
+import { toFiniteNumber } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProjectDetailModal } from "./ProjectDetailModal.jsx";
 import {
@@ -11,7 +12,7 @@ import {
 
 const PROJECT_SOURCE_ICON_LIMIT = 5;
 
-function ProjectRow({ entry, maxTokens, copy, tokenFormatOptions, onSelect }) {
+function ProjectRow({ entry, maxTokens, copy, formatTokens, formatTokensTooltip, onSelect }) {
   const projectKey = typeof entry?.project_key === "string" ? entry.project_key : "";
   const projectRef = typeof entry?.project_ref === "string" ? entry.project_ref : "";
   const { owner, repo } = splitProjectKey(projectKey);
@@ -67,9 +68,9 @@ function ProjectRow({ entry, maxTokens, copy, tokenFormatOptions, onSelect }) {
       <div className="flex w-24 flex-shrink-0 flex-col items-end gap-1">
         <span
           className="oai-text-body-sm font-medium text-oai-black dark:text-oai-white tabular-nums"
-          title={toDisplayNumber(tokensRaw)}
+          title={formatTokensTooltip(tokensRaw)}
         >
-          {formatCompactNumber(tokensRaw, tokenFormatOptions)}
+          {formatTokens(tokensRaw)}
         </span>
         <div className="h-1 w-full overflow-hidden rounded-full bg-oai-gray-100 dark:bg-oai-gray-800">
           <div
@@ -118,6 +119,7 @@ export function DataDetails({
 }) {
   const [activeTab, setActiveTab] = useState("daily");
   const [detailEntry, setDetailEntry] = useState(null);
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
 
   return (
     <Card>
@@ -177,12 +179,6 @@ export function DataDetails({
             </div>
           );
         }
-        const tokenFormatOptions = {
-          thousandSuffix: copy("shared.unit.thousand_abbrev"),
-          millionSuffix: copy("shared.unit.million_abbrev"),
-          billionSuffix: copy("shared.unit.billion_abbrev"),
-          decimals: 1,
-        };
         const maxTokens = visibleEntries.reduce((max, entry) => {
           const n = toFiniteNumber(entry?.billable_total_tokens ?? entry?.total_tokens) ?? 0;
           return n > max ? n : max;
@@ -195,7 +191,8 @@ export function DataDetails({
                 entry={entry}
                 maxTokens={maxTokens}
                 copy={copy}
-                tokenFormatOptions={tokenFormatOptions}
+                formatTokens={formatTokens}
+                formatTokensTooltip={formatTokensTooltip}
                 onSelect={setDetailEntry}
               />
             ))}

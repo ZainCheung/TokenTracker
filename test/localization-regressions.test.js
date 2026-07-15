@@ -221,3 +221,21 @@ test("language selector localizes the German option in every translated locale",
     assert.equal(core["settings.appearance.language.german"], expectedLabel);
   }
 });
+
+test("token number display setting is localized in every translated locale", () => {
+  const localeFiles = ["zh", "zh-TW", "ja", "ko", "de"];
+  const keys = [
+    "settings.appearance.token_format.label",
+    "settings.appearance.token_format.hint",
+    "settings.appearance.token_format.compact",
+    "settings.appearance.token_format.full",
+  ];
+
+  for (const locale of localeFiles) {
+    const core = JSON.parse(read(`dashboard/src/content/i18n/${locale}/core.json`));
+    for (const key of keys) {
+      assert.equal(typeof core[key], "string", `${locale} missing ${key}`);
+      assert.ok(core[key].trim().length > 0, `${locale} has empty ${key}`);
+    }
+  }
+});

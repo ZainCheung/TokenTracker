@@ -21,9 +21,10 @@ import { useLoginModal } from "../contexts/LoginModalContext.jsx";
 import { ProviderIcon } from "../ui/dashboard/components/ProviderIcon.jsx";
 import { isAccessTokenReady, resolveAuthAccessTokenWithRetry } from "../lib/auth-token";
 import { copy } from "../lib/copy";
-import { toDisplayNumber, formatCompactNumber } from "../lib/format";
+import { formatCompactNumber } from "../lib/format";
 import { cn } from "../lib/cn";
 import { useCurrency } from "../hooks/useCurrency.js";
+import { useTokenFormat } from "../hooks/useTokenFormat.js";
 import { CURRENCY_USD, getCurrencySymbol } from "../lib/currency";
 import {
   buildPageItems,
@@ -99,27 +100,13 @@ function formatCost(value, currency, rate) {
   return `${symbol}${converted.toFixed(2)}`;
 }
 
-function formatCommunityTokens(value) {
-  const n = Number(value);
-  if (Number.isFinite(n) && Math.abs(n) >= 1_000_000_000_000) {
-    const trillions = Number((n / 1_000_000_000_000).toFixed(1));
-    return `${trillions}T`;
-  }
-  return formatCompactNumber(value);
-}
-
-// Total-tokens value: compact ("79.6B") on phones where the column is tight,
-// full grouped digits at sm+ where the wide table has room.
 function TotalTokens({ value }) {
-  return (
-    <>
-      <span className="sm:hidden">{formatCompactNumber(value)}</span>
-      <span className="hidden sm:inline">{toDisplayNumber(value)}</span>
-    </>
-  );
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
+  return <span title={formatTokensTooltip(value)}>{formatTokens(value)}</span>;
 }
 
 function CommunityStatsChip({ communityStats, onClick }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   if (communityStats.status !== "ready") return null;
 
   return (
@@ -136,8 +123,9 @@ function CommunityStatsChip({ communityStats, onClick }) {
       
       <span className="flex items-center gap-1">
         <span className="font-semibold text-oai-black dark:text-white tabular-nums">
-          <span className="sm:hidden">{formatCommunityTokens(communityStats.tokenFloor)}</span>
-          <span className="hidden sm:inline">{Math.round(communityStats.tokenFloor).toLocaleString("en-US")}</span>
+          <span title={formatTokensTooltip(communityStats.tokenFloor)}>
+            {formatTokens(communityStats.tokenFloor)}
+          </span>
         </span>
         <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-500">
           {copy("leaderboard.community.tokens_chip")}
@@ -159,7 +147,8 @@ function CommunityStatsChip({ communityStats, onClick }) {
   );
 }
 
-function leaderboardTokenCells(entry, isMe, orderedColumns) {
+function LeaderboardTokenCells({ entry, isMe, orderedColumns }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const numCls = isMe
     ? "text-oai-gray-700 dark:text-oai-gray-300"
     : "text-oai-gray-500 dark:text-oai-gray-400";
@@ -170,9 +159,10 @@ function leaderboardTokenCells(entry, isMe, orderedColumns) {
     <td
       key={col.key}
       data-column-key={col.key}
+      title={formatTokensTooltip(entry?.[col.key])}
       className={cn("hidden sm:table-cell px-3 sm:px-4 py-4 whitespace-nowrap text-right tabular-nums", numCls, cellBg)}
     >
-      {toDisplayNumber(entry?.[col.key])}
+      {formatTokens(entry?.[col.key])}
     </td>
   ));
 }
@@ -235,6 +225,7 @@ function MobileGithubBadge({ githubUrl }) {
 }
 
 function MobileProviderStats({ entry, orderedColumns }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const activeColumns = orderedColumns.filter((column) => {
     const value = Number(entry?.[column.key]);
     return Number.isFinite(value) && value > 0;
@@ -250,7 +241,7 @@ function MobileProviderStats({ entry, orderedColumns }) {
           <span
             key={column.key}
             title={label}
-            aria-label={`${label}: ${toDisplayNumber(entry?.[column.key])}`}
+            aria-label={`${label}: ${formatTokensTooltip(entry?.[column.key])}`}
             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-oai-gray-50/80 dark:bg-oai-gray-900/60 px-2 py-0.5 border border-oai-gray-100/80 dark:border-oai-gray-800/40 text-[10px] font-medium text-oai-gray-600 dark:text-oai-gray-300 transition-colors"
           >
             <ProviderIcon
@@ -258,7 +249,7 @@ function MobileProviderStats({ entry, orderedColumns }) {
               size={12}
               className="shrink-0 opacity-90"
             />
-            <span className="tabular-nums">{formatCompactNumber(entry?.[column.key])}</span>
+            <span className="tabular-nums">{formatTokens(entry?.[column.key])}</span>
           </span>
         );
       })}
@@ -899,7 +890,7 @@ export function LeaderboardPage({
                     <td className="hidden sm:table-cell px-3 sm:px-4 py-4 font-medium text-oai-brand-600 dark:text-oai-brand-400 whitespace-nowrap text-right tabular-nums bg-oai-brand-50 dark:bg-oai-brand-900/10" title="Based on estimated API pricing, not actual billing">
                       {formatCost(entry?.estimated_cost_usd, currency, rate)}
                     </td>
-                    {leaderboardTokenCells(entry, true, orderedColumns)}
+                    <LeaderboardTokenCells entry={entry} isMe orderedColumns={orderedColumns} />
                   </tr>
                 );
               }
@@ -948,7 +939,7 @@ export function LeaderboardPage({
                   <td className="hidden sm:table-cell px-3 sm:px-4 py-4 text-oai-gray-500 dark:text-oai-gray-400 whitespace-nowrap text-right tabular-nums bg-white dark:bg-oai-gray-950 group-hover:bg-oai-gray-50 dark:group-hover:bg-oai-gray-900/60" title="Based on estimated API pricing, not actual billing">
                     {formatCost(entry?.estimated_cost_usd, currency, rate)}
                   </td>
-                  {leaderboardTokenCells(entry, false, orderedColumns)}
+                  <LeaderboardTokenCells entry={entry} isMe={false} orderedColumns={orderedColumns} />
                 </tr>
               );
             })}

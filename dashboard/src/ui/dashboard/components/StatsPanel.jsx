@@ -1,6 +1,7 @@
 import React from "react";
 import { copy } from "../../../lib/copy";
 import { formatCompactNumber } from "../../../lib/format";
+import { useTokenFormat } from "../../../hooks/useTokenFormat.js";
 import { Card, Badge } from "../../components";
 
 function normalizeBadgePart(value) {
@@ -42,6 +43,7 @@ export function StatsPanel({
   topModels = [],
   className = "",
 }) {
+  const { formatTokens, formatTokensTooltip } = useTokenFormat();
   const placeholder = copy("shared.placeholder.short");
   const percentSymbol = copy("shared.unit.percent");
 
@@ -57,7 +59,7 @@ export function StatsPanel({
     millionSuffix: copy("shared.unit.million_abbrev"),
     billionSuffix: copy("shared.unit.billion_abbrev"),
   };
-  const formatValue = (value) => {
+  const formatCountValue = (value) => {
     if (value == null) return placeholder;
     const formatted = formatCompactNumber(value, compactConfig);
     return formatted === "-" ? placeholder : formatted;
@@ -76,26 +78,35 @@ export function StatsPanel({
         {/* Rolling Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="flex flex-col items-center justify-center px-2 py-2 bg-oai-gray-50 dark:bg-oai-gray-800 rounded-lg">
-            <span className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums">
-              {formatValue(rolling?.last_7d?.totals?.billable_total_tokens)}
+            <span
+              title={formatTokensTooltip(rolling?.last_7d?.totals?.billable_total_tokens)}
+              className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
+            >
+              {formatTokens(rolling?.last_7d?.totals?.billable_total_tokens)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.last7d}</span>
           </div>
           <div className="flex flex-col items-center justify-center px-2 py-2 bg-oai-gray-50 dark:bg-oai-gray-800 rounded-lg">
-            <span className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums">
-              {formatValue(rolling?.last_30d?.totals?.billable_total_tokens)}
+            <span
+              title={formatTokensTooltip(rolling?.last_30d?.totals?.billable_total_tokens)}
+              className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
+            >
+              {formatTokens(rolling?.last_30d?.totals?.billable_total_tokens)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.last30d}</span>
           </div>
           <div className="flex flex-col items-center justify-center px-2 py-2 bg-oai-gray-50 dark:bg-oai-gray-800 rounded-lg">
-            <span className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums">
-              {formatValue(rolling?.last_30d?.avg_per_active_day)}
+            <span
+              title={formatTokensTooltip(rolling?.last_30d?.avg_per_active_day)}
+              className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
+            >
+              {formatTokens(rolling?.last_30d?.avg_per_active_day)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.avg}</span>
           </div>
           <div className="flex flex-col items-center justify-center px-2 py-2 bg-oai-gray-50 dark:bg-oai-gray-800 rounded-lg">
             <span className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums">
-              {formatValue(periodConversations)}
+              {formatCountValue(periodConversations)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.convs}</span>
           </div>
