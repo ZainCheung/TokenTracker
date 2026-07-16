@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { resolveAuthAccessToken } from "../lib/auth-token";
 import { fetchAccountDevices } from "../lib/api";
+import { useLatestRequestGuard } from "./use-latest-request-guard";
 
 /**
  * Lists the signed-in account's active devices with per-device usage totals
@@ -24,8 +25,18 @@ export function useAccountDevices({
   const [accountSources, setAccountSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const beginRequest = useLatestRequestGuard([
+    enabled,
+    from,
+    to,
+    timeZone,
+    tzOffsetMinutes,
+    accountAccessToken,
+    accountRevision,
+  ]);
 
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest();
     if (!enabled) {
       setDevices([]);
       setAccountSources([]);
@@ -37,21 +48,30 @@ export function useAccountDevices({
     setError(null);
     try {
       const token = await resolveAuthAccessToken(accountAccessToken);
+      if (!isCurrent()) return;
       const res = await fetchAccountDevices({ from, to, timeZone, tzOffsetMinutes, accessToken: token });
+      if (!isCurrent()) return;
       setDevices(Array.isArray(res?.devices) ? res.devices : []);
       setAccountSources(Array.isArray(res?.account_sources) ? res.account_sources : []);
     } catch (e: any) {
+      if (!isCurrent()) return;
       setError(e?.message || String(e));
       setDevices([]);
       setAccountSources([]);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [enabled, accountAccessToken, from, to, timeZone, tzOffsetMinutes, accountRevision]);
+  }, [enabled, accountAccessToken, from, to, timeZone, tzOffsetMinutes, accountRevision, beginRequest]);
 
   useEffect(() => {
+    // Device totals are range-bound; clear them before loading a new range so
+    // the selector cannot expose an old range under the current period.
+    setDevices([]);
+    setAccountSources([]);
+    setError(null);
+    if (enabled) setLoading(true);
     refresh();
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   return { devices, accountSources, loading, error, refresh };
 }

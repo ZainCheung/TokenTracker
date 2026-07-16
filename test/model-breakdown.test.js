@@ -49,7 +49,8 @@ test("buildFleetData keeps usage tokens for fleet rows", async () => {
   assert.equal(fleetData.length, 1);
   assert.equal(fleetData[0].label, "CLI");
   assert.equal(fleetData[0].usage, 1200);
-  assert.equal(fleetData[0].totalPercent, "100.0");
+  assert.equal(fleetData[0].totalPercent, "100.00");
+  assert.equal(fleetData[0].totalPercentValue, 100);
 });
 
 test("buildFleetData computes input-side cache hit rate per source", async () => {

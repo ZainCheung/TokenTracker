@@ -451,7 +451,7 @@ function Row({
   return (
     <li className="min-w-0 group/row">
       <div
-        className="relative grid grid-cols-[minmax(0,1fr)_64px_48px] items-center gap-2 text-xs py-1 px-1 rounded-sm transition-colors duration-150"
+        className="relative grid grid-cols-[minmax(0,1fr)_minmax(9rem,max-content)_4rem] items-center gap-x-3 text-xs py-1 px-1 rounded-sm transition-colors duration-150"
         style={
           hasFill
             ? {
@@ -468,17 +468,17 @@ function Row({
             type="button"
             onClick={onToggle}
             aria-expanded={open}
-            className="relative flex items-center gap-1.5 min-w-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-oai-brand/40 rounded-sm"
+            className="relative col-start-1 row-start-1 flex items-center gap-1.5 min-w-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-oai-brand/40 rounded-sm"
           >
             {labelInner}
           </button>
         ) : (
-          <div className="relative flex items-center gap-1.5 min-w-0">{labelInner}</div>
+          <div className="relative col-start-1 row-start-1 flex items-center gap-1.5 min-w-0">{labelInner}</div>
         )}
-        <span className="relative text-right tabular-nums text-oai-gray-500 dark:text-oai-gray-400">
+        <span className="relative col-start-2 row-start-1 text-right whitespace-nowrap tabular-nums text-oai-gray-500 dark:text-oai-gray-400">
           {tokens || ""}
         </span>
-        <span className="relative text-right tabular-nums text-[10px] text-oai-gray-400 dark:text-oai-gray-500 font-normal">
+        <span className="relative col-start-3 row-start-1 text-right whitespace-nowrap tabular-nums text-[10px] text-oai-gray-400 dark:text-oai-gray-500 font-normal">
           {percent || ""}
         </span>
       </div>

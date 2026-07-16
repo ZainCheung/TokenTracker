@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { setCopyLocale } from "../../../../lib/copy";
+import { TokenFormatContext } from "../../../foundation/TokenFormatProvider.jsx";
 import { StatsPanel } from "../StatsPanel.jsx";
 
 function renderPanel(props = {}) {
@@ -34,6 +35,38 @@ it("uses the same compact conversations label across periods", () => {
   expect(screen.getByText("7")).toBeInTheDocument();
   expect(screen.getByText("convs")).toBeInTheDocument();
   expect(screen.queryByText("today")).not.toBeInTheDocument();
+});
+
+it("keeps rolling card values compact when the global token format is full", () => {
+  render(
+    <TokenFormatContext.Provider
+      value={{
+        mode: "full",
+        setMode: () => {},
+        formatTokens: (value) => Number(value).toLocaleString("en-US"),
+        formatTokensTooltip: (value) => Number(value).toLocaleString("en-US"),
+      }}
+    >
+      <StatsPanel
+        rankLabel="2026-03-01"
+        streakDays={12}
+        periodConversations={30_500}
+        rolling={{
+          last_7d: { totals: { billable_total_tokens: 2_800_000_000 } },
+          last_30d: {
+            totals: { billable_total_tokens: 8_500_000_000 },
+            avg_per_active_day: 303_500_000,
+          },
+        }}
+      />
+    </TokenFormatContext.Provider>,
+  );
+
+  expect(screen.getByText("2.8B")).toBeInTheDocument();
+  expect(screen.getByText("8.5B")).toBeInTheDocument();
+  expect(screen.getByText("303.5M")).toBeInTheDocument();
+  expect(screen.getByText("30.5K")).toBeInTheDocument();
+  expect(screen.queryByText("2,800,000,000")).not.toBeInTheDocument();
 });
 
 it("localizes compact rolling stats labels", () => {

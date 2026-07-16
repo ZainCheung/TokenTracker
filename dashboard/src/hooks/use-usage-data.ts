@@ -9,6 +9,7 @@ import {
   getUsageDaily,
   getUsageSummary,
 } from "../lib/api";
+import { useLatestRequestGuard } from "./use-latest-request-guard";
 
 export function useUsageData({
   baseUrl,
@@ -108,9 +109,26 @@ export function useUsageData({
   const isLocalMode = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
+  const beginRequest = useLatestRequestGuard([
+    baseUrl,
+    from,
+    to,
+    includeDaily,
+    includeSummary,
+    scopeKey,
+    accessToken,
+    accountAccessToken,
+    accountRevision,
+    deviceId,
+    timeZone,
+    tzOffsetMinutes,
+  ]);
+
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest();
     const resolvedToken = await resolveAuthAccessToken(accessToken);
     const cloudToken = useCloud ? await resolveAuthAccessToken(accountAccessToken) : null;
+    if (!isCurrent()) return;
     // 本地模式允许空 token；云端模式必须 resolve 到一个 JWT 字符串
     if (!resolvedToken && !mockEnabled && !isLocalMode && !useCloud) return;
     if (useCloud && !cloudToken) {
@@ -213,6 +231,8 @@ export function useUsageData({
       }
       const nowIso = new Date().toISOString();
 
+      if (!isCurrent()) return;
+
       setDaily(nextDaily);
       setSummary(nextSummary);
       setRolling(nextRolling);
@@ -234,6 +254,7 @@ export function useUsageData({
         clearCache();
       }
     } catch (e) {
+      if (!isCurrent()) return;
       if (cacheAllowed) {
         const cached = readCache();
         if (cached?.summary || (!includeSummary && Array.isArray(cached?.daily))) {
@@ -270,7 +291,7 @@ export function useUsageData({
         setFetchedAt(null);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [
     accessToken,
@@ -294,6 +315,7 @@ export function useUsageData({
     accountAccessToken,
     accountRevision,
     deviceId,
+    beginRequest,
   ]);
 
   useEffect(() => {
@@ -342,8 +364,19 @@ export function useUsageData({
         setDaily(filledDaily);
         setSource("cache");
         setFetchedAt(cached.fetchedAt || null);
+        setError(null);
+      } else {
+        // The selected range has no matching cache. Remove the previous
+        // range immediately so its numbers never render under the new tab.
+        setDaily([]);
+        setSummary(null);
+        setRolling(null);
+        setSource("edge");
+        setFetchedAt(null);
+        setError(null);
       }
     }
+    setLoading(true);
     refresh();
   }, [
     accessToken,

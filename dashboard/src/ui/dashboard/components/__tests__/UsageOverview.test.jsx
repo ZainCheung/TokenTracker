@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { copy } from "../../../../lib/copy";
 import { UsageOverview } from "../UsageOverview.jsx";
 
 const breakdownProps = [];
@@ -17,6 +18,27 @@ vi.mock("../../../../hooks/useTheme.js", () => ({
 }));
 
 describe("UsageOverview", () => {
+  it("shows stable hero and provider skeletons while a new range has no matching data", () => {
+    render(
+      <UsageOverview
+        period="day"
+        periods={[]}
+        summaryLabel="Total"
+        summaryValue="0"
+        hasSummary={false}
+        summaryLoading
+        providersLoading
+        fleetData={[]}
+        from="2026-07-16"
+        to="2026-07-16"
+      />,
+    );
+
+    expect(screen.getByTestId("usage-summary-skeleton")).toBeTruthy();
+    expect(screen.getByTestId("usage-provider-skeleton")).toBeTruthy();
+    expect(screen.getByTestId("usage-summary-skeleton").closest('[aria-busy="true"]')).toBeTruthy();
+  });
+
   it("renders AnythingLLM with its official name, icon, and stable accent", () => {
     const { container } = render(
       <UsageOverview
@@ -44,9 +66,36 @@ describe("UsageOverview", () => {
       "brightness-0",
       "dark:brightness-100",
     );
-    expect(container.querySelector('[title="AnythingLLM: 100.0%"]')).toHaveStyle({
+    expect(container.querySelector('[title^="AnythingLLM:"]')).toHaveStyle({
       backgroundColor: "var(--provider-anythingllm)",
     });
+  });
+
+  it("shows a less-than label instead of zero for a tiny positive provider share", () => {
+    render(
+      <UsageOverview
+        period="all"
+        periods={[]}
+        summaryLabel="Total"
+        summaryValue="27.8B"
+        fleetData={[
+          {
+            source: "grok",
+            label: "GROK",
+            totalPercent: "0.00",
+            totalPercentValue: 0.0004,
+            usage: 111_200,
+            usd: 0,
+            models: [{ id: "grok-code", name: "grok-code", share: 100, usage: 111_200, cost: 0 }],
+          },
+        ]}
+        from="2025-01-01"
+        to="2026-07-16"
+      />,
+    );
+
+    expect(screen.getByText(`${copy("usage.overview.percent_below_threshold")}%`)).toBeTruthy();
+    expect(screen.queryByText("0.00%")).toBeNull();
   });
 
   it("passes the overview usage range to Codex context breakdown", async () => {
@@ -87,6 +136,48 @@ describe("UsageOverview", () => {
       to: "2026-05-31",
       referenceTotalTokens: 123,
     });
+  });
+
+  it("keeps large model tokens, cost, and share in independent responsive columns", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <UsageOverview
+        period="month"
+        periods={[]}
+        summaryLabel="Total"
+        summaryValue="4.5B"
+        fleetData={[
+          {
+            source: "claude",
+            label: "CLAUDE",
+            totalPercent: "100.0",
+            usage: 4_495_005_277,
+            usd: 8_207.43,
+            models: [
+              {
+                id: "claude-fable-5",
+                name: "claude-fable-5",
+                share: 34.1,
+                usage: 1_544_980_998,
+                cost: 8_207.43,
+              },
+            ],
+          },
+        ]}
+        from="2026-07-01"
+        to="2026-07-31"
+      />,
+    );
+
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /CLAUDE/i }));
+    });
+
+    const row = screen.getByText("claude-fable-5").parentElement;
+    expect(row).toHaveClass("grid", "grid-cols-[minmax(0,1fr)_minmax(8rem,max-content)_minmax(5.5rem,max-content)_4rem]");
+    expect(row.children[1]).toHaveClass("whitespace-nowrap");
+    expect(row.children[2]).toHaveClass("whitespace-nowrap");
   });
 
   it("toggles the summary number format when the hero total is clicked", async () => {

@@ -75,6 +75,21 @@ function resolveContextBreakdownSource(provider) {
   return null;
 }
 
+function hasProviderModels(provider) {
+  return Boolean(provider?.models?.length);
+}
+
+function getProviderPercentValue(provider) {
+  const rawValue = Number(provider?.totalPercentValue ?? provider?.totalPercent);
+  return Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+}
+
+function formatProviderPercent(provider) {
+  const value = getProviderPercentValue(provider);
+  if (value > 0 && !(value >= 0.01)) return copy("usage.overview.percent_below_threshold");
+  return value.toFixed(2);
+}
+
 const PERIOD_COPY_KEYS = {
   day: "usage.period.day",
   week: "usage.period.week",
@@ -117,6 +132,37 @@ function RefreshButton({ loading, onClick }) {
   );
 }
 
+function SummaryValueSkeleton() {
+  return (
+    <div
+      data-testid="usage-summary-skeleton"
+      aria-hidden="true"
+      className="mx-auto h-[58px] sm:h-[72px] w-[min(72vw,18rem)] rounded-2xl bg-oai-gray-100 dark:bg-oai-gray-800 animate-pulse motion-reduce:animate-none"
+    />
+  );
+}
+
+function ProviderDistributionSkeleton() {
+  return (
+    <div
+      data-testid="usage-provider-skeleton"
+      aria-hidden="true"
+      className="space-y-6"
+    >
+      <div className="h-1.5 w-full rounded-full bg-oai-gray-100 dark:bg-oai-gray-800 animate-pulse motion-reduce:animate-none" />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+        {[0, 1, 2, 3].map((index) => (
+          <div
+            key={index}
+            className="h-[92px] rounded-xl border border-oai-gray-100 dark:border-oai-gray-800 bg-oai-gray-50 dark:bg-oai-gray-800/60 animate-pulse motion-reduce:animate-none"
+            style={{ animationDelay: `${index * 70}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function UsageOverview({
   period,
   periods,
@@ -130,6 +176,9 @@ export function UsageOverview({
   fleetData = [],
   onRefresh,
   loading,
+  summaryLoading = false,
+  providersLoading = false,
+  hasSummary = true,
   className = "",
   customFrom,
   customTo,
@@ -180,6 +229,9 @@ export function UsageOverview({
   const gradientFrom = isDark ? "rgba(10,10,10,0.98)" : "rgba(255,255,255,0.96)";
   const gradientTo = isDark ? "rgba(10,10,10,0)" : "rgba(255,255,255,0)";
 
+  const showSummarySkeleton = summaryLoading && !hasSummary;
+  const showProviderSkeleton = providersLoading && !fleetData.some(hasProviderModels);
+
   const summaryContent = showAnimatedSummary ? (
     <Counter
       value={summaryCounterValue}
@@ -199,11 +251,12 @@ export function UsageOverview({
     summaryValue
   );
 
-  // FleetData is already grouped by provider
+  // FleetData is already grouped by provider.
   const providers = fleetData.filter((f) => f.models?.length > 0);
 
   return (
     <Card className={className}>
+      <div aria-busy={showSummarySkeleton || showProviderSkeleton}>
         {/* Header: Period Tabs + Refresh. Tabs are a single horizontal-scroll
             strip (never wrap into stacked rows); actions stay pinned right. */}
         <div className="flex items-center gap-2 mb-6">
@@ -303,20 +356,25 @@ export function UsageOverview({
         {/* Main Stats */}
         <div className="text-center mb-8">
           <div className="text-xs text-oai-gray-500 dark:text-oai-gray-300 uppercase tracking-wider mb-3">{summaryLabel}</div>
-          <div className="text-5xl sm:text-6xl md:text-7xl font-bold text-oai-black dark:text-oai-white tracking-tight tabular-nums">
-            {onToggleSummaryFormat ? (
-              <button
-                type="button"
-                onClick={onToggleSummaryFormat}
-                title={summaryFullValue || undefined}
-                aria-label={copy("usage.summary.toggle_aria")}
-                className="cursor-pointer rounded-lg leading-none transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-oai-brand"
-              >
-                {summaryContent}
-              </button>
-            ) : (
-              <span title={summaryFullValue || undefined}>{summaryContent}</span>
-            )}
+          <div className="relative text-5xl sm:text-6xl md:text-7xl font-bold text-oai-black dark:text-oai-white tracking-tight tabular-nums">
+            <div className={showSummarySkeleton ? "invisible" : undefined}>
+              {onToggleSummaryFormat ? (
+                <button
+                  type="button"
+                  onClick={onToggleSummaryFormat}
+                  title={summaryFullValue || undefined}
+                  aria-label={copy("usage.summary.toggle_aria")}
+                  className="cursor-pointer rounded-lg leading-none transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-oai-brand"
+                >
+                  {summaryContent}
+                </button>
+              ) : (
+                <span title={summaryFullValue || undefined}>{summaryContent}</span>
+              )}
+            </div>
+            <div className={`absolute inset-0 flex items-center justify-center ${showSummarySkeleton ? "" : "hidden"}`}>
+              <SummaryValueSkeleton />
+            </div>
           </div>
           {summaryCostValue && (
             <div className="flex items-center justify-center gap-2 mt-4">
@@ -338,6 +396,9 @@ export function UsageOverview({
         </div>
 
         {/* Provider Distribution */}
+        <div className={showProviderSkeleton ? undefined : "hidden"}>
+          <ProviderDistributionSkeleton />
+        </div>
         {providers.length > 0 && (
           <div className="space-y-6">
             {/* Distribution Bar */}
@@ -348,7 +409,7 @@ export function UsageOverview({
                   .map((provider) =>
                     copy("usage.overview.distribution_item", {
                       label: formatProviderDisplayName(provider.label),
-                      percent: provider.totalPercent,
+                      percent: formatProviderPercent(provider),
                     }),
                   )
                   .join("，"),
@@ -358,15 +419,16 @@ export function UsageOverview({
               {providers.map((provider, idx) => {
                 const color = getProviderColor(provider.label, idx);
                 const displayLabel = formatProviderDisplayName(provider.label);
+                const percentLabel = formatProviderPercent(provider);
                 return (
                   <motion.div
                     key={provider.label}
                     initial={{ width: 0 }}
-                    animate={{ width: `${provider.totalPercent}%` }}
+                    animate={{ width: `${getProviderPercentValue(provider)}%` }}
                     transition={{ duration: 0.5, delay: 0.45 + idx * 0.04, ease: [0.16, 1, 0.3, 1] }}
                     className="h-full"
                     style={{ backgroundColor: color }}
-                    title={`${displayLabel}: ${provider.totalPercent}%`}
+                    title={`${displayLabel}: ${percentLabel}%`}
                   />
                 );
               })}
@@ -379,6 +441,7 @@ export function UsageOverview({
                 const color = getProviderColor(provider.label, idx);
                 const isExpanded = expandedProvider === provider.label;
                 const displayLabel = formatProviderDisplayName(provider.label);
+                const percentLabel = formatProviderPercent(provider);
 
                 return (
                   <button
@@ -387,7 +450,7 @@ export function UsageOverview({
                     aria-controls={`provider-details-${provider.label}`}
                     aria-label={copy("usage.overview.provider_card_aria", {
                       provider: displayLabel,
-                      percent: provider.totalPercent,
+                      percent: percentLabel,
                       tokens: formatPositiveTokens(formatTokens, provider.usage) || String(0),
                       cost: formatCost(provider.usd, currency, rate) || `${getCurrencySymbol(currency)}0`,
                       action: copy(isExpanded ? "usage.overview.collapse" : "usage.overview.expand"),
@@ -404,7 +467,7 @@ export function UsageOverview({
                       <span className="text-sm font-medium text-oai-black dark:text-oai-white truncate" title={displayLabel}>{displayLabel}</span>
                     </div>
                     <div className="text-lg font-semibold text-oai-black dark:text-oai-white tabular-nums">
-                      {provider.totalPercent}%
+                      {percentLabel}%
                     </div>
                     <div className="mt-0.5 text-[11px] text-oai-gray-400 dark:text-oai-gray-400 tabular-nums">
                       {copy("usage.overview.model_count", { count: provider.models.length })}
@@ -454,6 +517,7 @@ export function UsageOverview({
 
           </div>
         )}
+      </div>
       </Card>
   );
 }
@@ -539,23 +603,23 @@ function ProviderExpandedSection({ provider, color, providerHeading, contextSour
                             const clampedShare = Math.max(0, Math.min(100, Number(model.share) || 0));
                             return (
                               <div key={model.id || model.name}>
-                                <div className="flex items-baseline gap-4 mb-1.5">
+                                <div className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,max-content)_minmax(5.5rem,max-content)_4rem] items-baseline gap-x-3 mb-1.5">
                                   <span
-                                    className="flex-1 min-w-0 text-sm text-oai-gray-700 dark:text-oai-gray-300 truncate"
+                                    className="col-start-1 row-start-1 min-w-0 text-sm text-oai-gray-700 dark:text-oai-gray-300 truncate"
                                     title={model.name}
                                   >
                                     {model.name}
                                   </span>
                                   <span
                                     title={formatTokensTooltip(model.usage)}
-                                    className="shrink-0 w-16 text-right text-sm text-oai-gray-500 dark:text-oai-gray-400 tabular-nums"
+                                    className="col-start-2 row-start-1 text-right whitespace-nowrap text-sm text-oai-gray-500 dark:text-oai-gray-400 tabular-nums"
                                   >
                                     {tokensLabel}
                                   </span>
-                                  <span className="shrink-0 w-16 text-right text-sm text-oai-gray-500 dark:text-oai-gray-400 tabular-nums">
+                                  <span className="col-start-3 row-start-1 text-right whitespace-nowrap text-sm text-oai-gray-500 dark:text-oai-gray-400 tabular-nums">
                                     {costLabel}
                                   </span>
-                                  <span className="shrink-0 w-12 text-right text-sm text-oai-black dark:text-oai-white tabular-nums">
+                                  <span className="col-start-4 row-start-1 text-right whitespace-nowrap text-sm text-oai-black dark:text-oai-white tabular-nums">
                                     {model.share}%
                                   </span>
                                 </div>

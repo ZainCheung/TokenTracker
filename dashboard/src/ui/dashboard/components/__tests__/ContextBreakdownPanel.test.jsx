@@ -135,6 +135,11 @@ describe("ContextBreakdownPanel", () => {
     const messagesRow = await screen.findByText(copy("dashboard.context_breakdown.category.messages"));
     expect(messagesRow.closest("li")).toHaveTextContent("100");
     expect(messagesRow.closest("li")).toHaveTextContent("100.0%");
+    const rowGrid = messagesRow.closest("li").querySelector(":scope > div");
+    expect(rowGrid).toHaveClass(
+      "grid-cols-[minmax(0,1fr)_minmax(9rem,max-content)_4rem]",
+    );
+    expect(rowGrid.children[1]).toHaveClass("whitespace-nowrap");
   });
 
   it("shows Codex queue fallback notice when tool details are unavailable", async () => {

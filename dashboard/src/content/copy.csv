@@ -175,7 +175,7 @@ dashboard.projects.detail.stat_conversations,ui,DataDetails,ProjectDetailModal,s
 dashboard.projects.detail.stat_active_days,ui,DataDetails,ProjectDetailModal,stat_active_days,"Active days",,active
 dashboard.projects.detail.stat_avg_day,ui,DataDetails,ProjectDetailModal,stat_avg_day,"Avg / active day",,active
 dashboard.projects.detail.stat_cache_hit,ui,DataDetails,ProjectDetailModal,stat_cache_hit,"Cache hit rate",,active
-dashboard.projects.detail.stat_share,ui,DataDetails,ProjectDetailModal,stat_share,"Share of all usage",,active
+dashboard.projects.detail.stat_share,ui,DataDetails,ProjectDetailModal,stat_share,"Usage share",,active
 dashboard.projects.detail.section_trend,ui,DataDetails,ProjectDetailModal,section_trend,"Daily activity",,active
 dashboard.projects.detail.section_composition,ui,DataDetails,ProjectDetailModal,section_composition,"Token composition",,active
 dashboard.projects.detail.section_sources,ui,DataDetails,ProjectDetailModal,section_sources,"By source",,active
@@ -597,6 +597,7 @@ usage.overview.cost_breakdown_aria,ui,DashboardPage,UsageOverview,cost_breakdown
 usage.overview.distribution_aria,ui,DashboardPage,UsageOverview,distribution_aria,"Provider distribution: {{items}}",,active
 usage.overview.distribution_item,ui,DashboardPage,UsageOverview,distribution_item,"{{label}} {{percent}}%",,active
 usage.overview.provider_card_aria,ui,DashboardPage,UsageOverview,provider_card_aria,"{{provider}}: {{percent}}%, {{tokens}} tokens, {{cost}}. Click to {{action}} details",,active
+usage.overview.percent_below_threshold,ui,DashboardPage,UsageOverview,percent_below_threshold,"<0.01",,active
 usage.overview.expand,ui,DashboardPage,UsageOverview,expand,"expand",,active
 usage.overview.collapse,ui,DashboardPage,UsageOverview,collapse,"collapse",,active
 usage.overview.model_count,ui,DashboardPage,UsageOverview,model_count,"{{count}} models",,active

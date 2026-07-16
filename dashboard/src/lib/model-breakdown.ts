@@ -63,7 +63,7 @@ export function buildFleetData(modelBreakdown: any, { copyFn }: AnyRecord = {}) 
         ? String(entry.source).toUpperCase()
         : safeCopy("shared.placeholder.short");
       const totalPercentRaw = grandTotal > 0 ? (entry.totalTokens / grandTotal) * 100 : 0;
-      const totalPercent = Number.isFinite(totalPercentRaw) ? totalPercentRaw.toFixed(1) : "0.0";
+      const totalPercent = Number.isFinite(totalPercentRaw) ? totalPercentRaw.toFixed(2) : "0.00";
       const models = entry.models
         .map((model: any) => {
           const modelTokens = resolveDisplayTokens(model?.totals);
@@ -97,6 +97,7 @@ export function buildFleetData(modelBreakdown: any, { copyFn }: AnyRecord = {}) 
         source: entry.source,
         label,
         totalPercent: String(totalPercent),
+        totalPercentValue: totalPercentRaw,
         usd: entry.totalCost,
         usage: entry.totalTokens,
         cacheHitRate,

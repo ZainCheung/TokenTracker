@@ -148,6 +148,9 @@ export function DashboardView(props) {
     summaryLabel,
     summaryValue,
     summaryFullValue,
+    hasSummary,
+    summaryLoading,
+    providersLoading,
     onToggleSummaryFormat,
     summaryTotalTokensRaw,
     summaryCostValue,
@@ -339,7 +342,10 @@ export function DashboardView(props) {
               summaryLabel={summaryLabel}
               summaryValue={summaryValue}
               summaryFullValue={summaryFullValue}
-              onToggleSummaryFormat={onToggleSummaryFormat}
+              hasSummary={hasSummary}
+              summaryLoading={summaryLoading}
+              providersLoading={providersLoading}
+              onToggleSummaryFormat={hasSummary ? onToggleSummaryFormat : null}
               summaryCostValue={summaryCostValue}
               onCostInfo={costInfoEnabled ? openCostModal : null}
               fleetData={fleetData}

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getUsageDaily, getUsageHourly, getUsageMonthly } from "../lib/api";
 import { useTrendData } from "./use-trend-data";
@@ -256,5 +256,52 @@ describe("useTrendData", () => {
     await waitFor(() => expect(result.current.rows.length).toBeGreaterThan(0));
 
     expect(findHour(result.current.rows, "2026-03-08T02:00:00")).toBeUndefined();
+  });
+
+  it("does not let a slower previous period overwrite the current trend", async () => {
+    let resolveMonth: (value: any) => void = () => {};
+    let resolveDay: (value: any) => void = () => {};
+    vi.mocked(getUsageMonthly).mockImplementation(() =>
+      new Promise((resolve) => { resolveMonth = resolve; }),
+    );
+    vi.mocked(getUsageHourly).mockImplementation(() =>
+      new Promise((resolve) => { resolveDay = resolve; }),
+    );
+
+    const now = new Date("2026-06-30T12:15:00Z");
+    const { result, rerender } = renderHook(
+      ({ period, from, to }) =>
+        useTrendData({
+          baseUrl: "http://localhost:7680",
+          accessToken: "test-token",
+          period,
+          from,
+          to,
+          timeZone: "UTC",
+          now,
+        }),
+      { initialProps: { period: "total", from: "2024-07-01", to: "2026-06-30" } },
+    );
+
+    await waitFor(() => expect(getUsageMonthly).toHaveBeenCalledTimes(1));
+    rerender({ period: "day", from: "2026-06-30", to: "2026-06-30" });
+    expect(result.current.rows).toEqual([]);
+    await waitFor(() => expect(getUsageHourly).toHaveBeenCalledTimes(1));
+
+    await act(async () => resolveDay({
+      day: "2026-06-30",
+      data: [{ hour: "2026-06-30T12:00:00", total_tokens: 100 }],
+    }));
+    await waitFor(() =>
+      expect(findHour(result.current.rows, "2026-06-30T12:00:00")?.total_tokens).toBe(100),
+    );
+
+    await act(async () => resolveMonth({
+      from: "2024-07",
+      to: "2026-06",
+      data: [{ month: "2026-06", total_tokens: 9_999 }],
+    }));
+    expect(findHour(result.current.rows, "2026-06-30T12:00:00")?.total_tokens).toBe(100);
+    expect(result.current.rows.some((row) => row.month === "2026-06")).toBe(false);
   });
 });

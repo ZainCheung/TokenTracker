@@ -29,6 +29,7 @@ declare module "react" {
   export type DependencyList = ReadonlyArray<unknown>;
   export function useState<T>(initial: T | (() => T)): [T, Dispatch<SetStateAction<T>>];
   export function useEffect(effect: () => void | (() => void), deps?: DependencyList): void;
+  export function useLayoutEffect(effect: () => void | (() => void), deps?: DependencyList): void;
   export function useMemo<T>(factory: () => T, deps: DependencyList): T;
   export function useCallback<T extends (...args: any[]) => any>(
     callback: T,

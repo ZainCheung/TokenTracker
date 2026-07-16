@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAccessTokenReady, resolveAuthAccessToken } from "../lib/auth-token";
 import { isMockEnabled } from "../lib/mock-data";
 import { getProjectUsageSummary } from "../lib/api";
+import { useLatestRequestGuard } from "./use-latest-request-guard";
 
 // Always fetch the max the UI can show (TOP 10); the TOP 3/6/10 selector
 // slices client-side so toggling it never refetches.
@@ -25,8 +26,20 @@ export function useProjectUsageSummary({
   const isLocalMode = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
+  const beginRequest = useLatestRequestGuard([
+    baseUrl,
+    accessToken,
+    from,
+    to,
+    source,
+    timeZone,
+    tzOffsetMinutes,
+  ]);
+
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest();
     const resolvedToken = await resolveAuthAccessToken(accessToken);
+    if (!isCurrent()) return;
     // 本地模式允许空 token
     if (!resolvedToken && !mockEnabled && !isLocalMode) {
       setEntries([]);
@@ -47,15 +60,17 @@ export function useProjectUsageSummary({
         timeZone,
         tzOffsetMinutes,
       });
+      if (!isCurrent()) return;
       setEntries(Array.isArray(res?.entries) ? res.entries : []);
     } catch (err) {
+      if (!isCurrent()) return;
       const message = (err as any)?.message || String(err);
       setError(message);
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [accessToken, baseUrl, from, mockEnabled, source, timeZone, to, tzOffsetMinutes, isLocalMode]);
+  }, [accessToken, baseUrl, from, mockEnabled, source, timeZone, to, tzOffsetMinutes, isLocalMode, beginRequest]);
 
   useEffect(() => {
     // 本地模式跳过 token 检查
@@ -65,6 +80,9 @@ export function useProjectUsageSummary({
       setLoading(false);
       return;
     }
+    setEntries([]);
+    setError(null);
+    setLoading(true);
     refresh();
   }, [mockEnabled, refresh, tokenReady, isLocalMode]);
 

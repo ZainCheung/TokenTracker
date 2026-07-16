@@ -11,6 +11,7 @@ import {
   getUsageHourly,
   getUsageMonthly,
 } from "../lib/api";
+import { useLatestRequestGuard } from "./use-latest-request-guard";
 
 const DEFAULT_MONTHS = 24;
 type AnyRecord = Record<string, any>;
@@ -110,6 +111,25 @@ export function useTrendData({
   const isLocalMode = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
+  const beginRequest = useLatestRequestGuard([
+    baseUrl,
+    mode,
+    from,
+    to,
+    months,
+    scopeKey,
+    accessToken,
+    accountAccessToken,
+    accountRevision,
+    deviceId,
+    timeZone,
+    tzOffsetMinutes,
+    sharedEnabled,
+    sharedRows,
+    sharedFrom,
+    sharedTo,
+  ]);
+
   // Wipe state when the scope flips so the previously-rendered local data
   // doesn't visually persist while the cloud fetch is in flight (and vice
   // versa). Covers all three trend grains (daily/hourly/monthly) since rows
@@ -127,6 +147,7 @@ export function useTrendData({
   }, [scopeKey]);
 
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest();
     if (sharedEnabled) {
       setRows(Array.isArray(sharedRows) ? sharedRows : []);
       setRange({ from: sharedFrom, to: sharedTo });
@@ -138,6 +159,7 @@ export function useTrendData({
     }
     const resolvedToken = await resolveAuthAccessToken(accessToken);
     const cloudToken = useCloud ? await resolveAuthAccessToken(accountAccessToken) : null;
+    if (!isCurrent()) return;
     if (!resolvedToken && !mockEnabled && !isLocalMode && !useCloud) return;
     if (useCloud && !cloudToken) {
       setError("Your session expired. Please sign in again to view account data.");
@@ -213,6 +235,8 @@ export function useTrendData({
       }
       const nowIso = new Date().toISOString();
 
+      if (!isCurrent()) return;
+
       setRows(nextRows);
       setRange({ from: nextFrom, to: nextTo });
       setSource("edge");
@@ -230,6 +254,7 @@ export function useTrendData({
         clearCache();
       }
     } catch (e) {
+      if (!isCurrent()) return;
       if (cacheAllowed) {
         const cached = readCache();
         if (cached?.rows) {
@@ -284,7 +309,7 @@ export function useTrendData({
         setError(err?.message || String(err));
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [
     accessToken,
@@ -312,6 +337,7 @@ export function useTrendData({
     accountAccessToken,
     accountRevision,
     deviceId,
+    beginRequest,
   ]);
 
   useEffect(() => {
@@ -382,8 +408,17 @@ export function useTrendData({
         setRange({ from: cached.from || from, to: cached.to || to });
         setSource("cache");
         setFetchedAt(cached.fetchedAt || null);
+        setError(null);
+      } else {
+        // Do not carry rows from another period into the newly-selected tab.
+        setRows([]);
+        setRange({ from, to });
+        setSource("edge");
+        setFetchedAt(null);
+        setError(null);
       }
     }
+    setLoading(true);
     refresh();
   }, [
     accessToken,

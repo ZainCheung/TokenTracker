@@ -43,7 +43,7 @@ export function StatsPanel({
   topModels = [],
   className = "",
 }) {
-  const { formatTokens, formatTokensTooltip } = useTokenFormat();
+  const { formatTokensTooltip } = useTokenFormat();
   const placeholder = copy("shared.placeholder.short");
   const percentSymbol = copy("shared.unit.percent");
 
@@ -82,7 +82,7 @@ export function StatsPanel({
               title={formatTokensTooltip(rolling?.last_7d?.totals?.billable_total_tokens)}
               className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
             >
-              {formatTokens(rolling?.last_7d?.totals?.billable_total_tokens)}
+              {formatCountValue(rolling?.last_7d?.totals?.billable_total_tokens)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.last7d}</span>
           </div>
@@ -91,7 +91,7 @@ export function StatsPanel({
               title={formatTokensTooltip(rolling?.last_30d?.totals?.billable_total_tokens)}
               className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
             >
-              {formatTokens(rolling?.last_30d?.totals?.billable_total_tokens)}
+              {formatCountValue(rolling?.last_30d?.totals?.billable_total_tokens)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.last30d}</span>
           </div>
@@ -100,7 +100,7 @@ export function StatsPanel({
               title={formatTokensTooltip(rolling?.last_30d?.avg_per_active_day)}
               className="text-sm font-semibold text-oai-black dark:text-oai-white tabular-nums"
             >
-              {formatTokens(rolling?.last_30d?.avg_per_active_day)}
+              {formatCountValue(rolling?.last_30d?.avg_per_active_day)}
             </span>
             <span className="text-[10px] text-oai-gray-400 dark:text-oai-gray-400 mt-0.5 whitespace-nowrap">{rollingLabels.avg}</span>
           </div>

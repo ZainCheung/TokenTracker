@@ -1060,7 +1060,8 @@ export function DashboardPage({
   }, [from, period, to]);
 
   const summaryLabel = copy("usage.summary.total");
-  const summaryTotalTokens = getBillableTotal(summary);
+  const hasSummary = summary != null;
+  const summaryTotalTokens = hasSummary ? getBillableTotal(summary) : 0;
   const summaryValue = formatTokens(summaryTotalTokens);
   const toggleSummaryFormat = useCallback(() => {
     setTokenFormatMode(
@@ -1127,29 +1128,29 @@ export function DashboardPage({
     () => [
       {
         label: copy("usage.metric.total"),
-        value: formatTokens(summaryTotalTokens),
-        title: formatTokensTooltip(summaryTotalTokens),
+        value: hasSummary ? formatTokens(summaryTotalTokens) : "—",
+        title: hasSummary ? formatTokensTooltip(summaryTotalTokens) : undefined,
         valueClassName: "text-white",
       },
       {
         label: copy("usage.metric.input"),
-        value: formatTokens(summary?.input_tokens),
-        title: formatTokensTooltip(summary?.input_tokens),
+        value: hasSummary ? formatTokens(summary?.input_tokens) : "—",
+        title: hasSummary ? formatTokensTooltip(summary?.input_tokens) : undefined,
       },
       {
         label: copy("usage.metric.output"),
-        value: formatTokens(summary?.output_tokens),
-        title: formatTokensTooltip(summary?.output_tokens),
+        value: hasSummary ? formatTokens(summary?.output_tokens) : "—",
+        title: hasSummary ? formatTokensTooltip(summary?.output_tokens) : undefined,
       },
       {
         label: copy("usage.metric.cached_input"),
-        value: formatTokens(summary?.cached_input_tokens),
-        title: formatTokensTooltip(summary?.cached_input_tokens),
+        value: hasSummary ? formatTokens(summary?.cached_input_tokens) : "—",
+        title: hasSummary ? formatTokensTooltip(summary?.cached_input_tokens) : undefined,
       },
       {
         label: copy("usage.metric.reasoning_output"),
-        value: formatTokens(summary?.reasoning_output_tokens),
-        title: formatTokensTooltip(summary?.reasoning_output_tokens),
+        value: hasSummary ? formatTokens(summary?.reasoning_output_tokens) : "—",
+        title: hasSummary ? formatTokensTooltip(summary?.reasoning_output_tokens) : undefined,
       },
     ],
     [
@@ -1158,6 +1159,7 @@ export function DashboardPage({
       summary?.output_tokens,
       summary?.reasoning_output_tokens,
       summaryTotalTokens,
+      hasSummary,
       formatTokens,
       formatTokensTooltip,
     ],
@@ -1331,6 +1333,9 @@ export function DashboardPage({
       metricsRows={metricsRows}
       summaryLabel={summaryLabel}
       summaryValue={summaryValue}
+      hasSummary={hasSummary}
+      summaryLoading={usageLoading}
+      providersLoading={modelBreakdownLoading}
       summaryFullValue={displayTotalTokens}
       onToggleSummaryFormat={toggleSummaryFormat}
       summaryTotalTokensRaw={toFiniteNumber(summaryTotalTokens) || 0}

@@ -3,6 +3,7 @@ import { isAccessTokenReady, resolveAuthAccessToken } from "../lib/auth-token";
 import { isMockEnabled } from "../lib/mock-data";
 import { getTimeZoneCacheKey } from "../lib/timezone";
 import { fetchCloudUsageModelBreakdown, getUsageModelBreakdown } from "../lib/api";
+import { useLatestRequestGuard } from "./use-latest-request-guard";
 
 export function useUsageModelBreakdown({
   baseUrl,
@@ -73,6 +74,19 @@ export function useUsageModelBreakdown({
   const isLocalMode = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
+  const beginRequest = useLatestRequestGuard([
+    baseUrl,
+    from,
+    to,
+    scopeKey,
+    accessToken,
+    accountAccessToken,
+    accountRevision,
+    deviceId,
+    timeZone,
+    tzOffsetMinutes,
+  ]);
+
   // Wipe state when the scope flips so the prior buckets don't render
   // while the new fetch is in flight.
   const lastScopeRef = useRef(scopeKey);
@@ -86,8 +100,10 @@ export function useUsageModelBreakdown({
   }, [scopeKey]);
 
   const refresh = useCallback(async () => {
+    const isCurrent = beginRequest();
     const resolvedToken = await resolveAuthAccessToken(accessToken);
     const cloudToken = useCloud ? await resolveAuthAccessToken(accountAccessToken) : null;
+    if (!isCurrent()) return;
     if (!resolvedToken && !mockEnabled && !isLocalMode && !useCloud) return;
     if (useCloud && !cloudToken) {
       setError("Your session expired. Please sign in again to view account data.");
@@ -108,6 +124,7 @@ export function useUsageModelBreakdown({
         timeZone,
         tzOffsetMinutes,
       });
+      if (!isCurrent()) return;
       setBreakdown(res || null);
       setSource("edge");
       if (res && cacheAllowed) {
@@ -116,6 +133,7 @@ export function useUsageModelBreakdown({
         clearCache();
       }
     } catch (e) {
+      if (!isCurrent()) return;
       if (cacheAllowed) {
         const cached = readCache();
         if (cached?.breakdown) {
@@ -135,7 +153,7 @@ export function useUsageModelBreakdown({
         setError(err?.message || String(err));
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [
     accessToken,
@@ -156,6 +174,7 @@ export function useUsageModelBreakdown({
     accountAccessToken,
     accountRevision,
     deviceId,
+    beginRequest,
   ]);
 
   useEffect(() => {
@@ -180,8 +199,15 @@ export function useUsageModelBreakdown({
       if (cached?.breakdown) {
         setBreakdown(cached.breakdown);
         setSource("cache");
+        setError(null);
+      } else {
+        // Provider cards must never keep the previous range's breakdown.
+        setBreakdown(null);
+        setSource("edge");
+        setError(null);
       }
     }
+    setLoading(true);
     refresh();
   }, [
     accessToken,
