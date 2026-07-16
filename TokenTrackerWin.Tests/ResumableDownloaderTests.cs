@@ -141,8 +141,12 @@ public sealed class ResumableDownloaderTests : IDisposable
         Assert.Equal(["bytes=0-3", "bytes=4-7", "bytes=0-3", "bytes=4-7", "bytes=8-11"], ranges);
     }
 
-    private static HttpResponseMessage Partial(byte[] data, long from, long to)
-        => Partial(new ByteArrayContent(data), from, to);
+    private static HttpResponseMessage Partial(
+        byte[] data,
+        long from,
+        long to,
+        string etag = "\"asset-v1\"")
+        => Partial(new ByteArrayContent(data), from, to, etag);
 
     private static HttpResponseMessage Partial(
         HttpContent content,
