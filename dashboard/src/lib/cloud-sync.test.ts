@@ -76,6 +76,8 @@ describe("cloud usage sync", () => {
 
   it("sends drain for manual sync", async () => {
     const fetchMock = installFetchMock();
+    const onSynced = vi.fn();
+    window.addEventListener("tt.cloudUsageSynced", onSynced);
 
     await runCloudUsageSyncNow(async () => "access-token");
 
@@ -84,10 +86,14 @@ describe("cloud usage sync", () => {
       drain: true,
       insforgeBaseUrl: "https://cloud.example",
     });
+    expect(onSynced).toHaveBeenCalledTimes(1);
+    window.removeEventListener("tt.cloudUsageSynced", onSynced);
   });
 
   it("does not send drain for scheduled sync", async () => {
     const fetchMock = installFetchMock();
+    const onSynced = vi.fn();
+    window.addEventListener("tt.cloudUsageSynced", onSynced);
 
     await runCloudUsageSyncIfDue(async () => "access-token");
 
@@ -95,5 +101,7 @@ describe("cloud usage sync", () => {
       deviceToken: "device-token",
       insforgeBaseUrl: "https://cloud.example",
     });
+    expect(onSynced).toHaveBeenCalledTimes(1);
+    window.removeEventListener("tt.cloudUsageSynced", onSynced);
   });
 });

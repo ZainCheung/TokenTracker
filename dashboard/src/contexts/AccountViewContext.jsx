@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useInsforgeAuth } from "./InsforgeAuthContext.jsx";
-import { getCloudSyncEnabled, isLocalDashboardHost, syncCloudSyncPrefToLocalServer } from "../lib/cloud-sync-prefs";
+import {
+  CLOUD_USAGE_SYNCED_EVENT,
+  getCloudSyncEnabled,
+  isLocalDashboardHost,
+  syncCloudSyncPrefToLocalServer,
+} from "../lib/cloud-sync-prefs";
 
 /**
  * AccountViewContext decides whether the dashboard reads aggregated cloud
@@ -22,7 +27,6 @@ import { getCloudSyncEnabled, isLocalDashboardHost, syncCloudSyncPrefToLocalServ
 const AccountViewContext = createContext(null);
 
 export const CLOUD_SYNC_CHANGE_EVENT = "tt.cloudSyncChanged";
-
 export function emitCloudSyncChange() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CLOUD_SYNC_CHANGE_EVENT));
@@ -60,6 +64,13 @@ export function AccountViewProvider({ children }) {
       window.removeEventListener(CLOUD_SYNC_CHANGE_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const invalidateAccountUsage = () => setRevision((n) => n + 1);
+    window.addEventListener(CLOUD_USAGE_SYNCED_EVENT, invalidateAccountUsage);
+    return () => window.removeEventListener(CLOUD_USAGE_SYNCED_EVENT, invalidateAccountUsage);
   }, []);
 
   // Public host: cloud is mandatory for signed-in users; signed-out users

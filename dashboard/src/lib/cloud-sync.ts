@@ -1,6 +1,7 @@
 import { getInsforgeAnonKey, getInsforgeRemoteUrl } from "./insforge-config";
 import {
   clearCloudDeviceSession,
+  emitCloudUsageSynced,
   getLastCloudSyncTs,
   getStoredDeviceSession,
   setLastCloudSyncTs,
@@ -189,6 +190,7 @@ async function syncCloudUsageWithRecovery(
       insforgeBaseUrl: getInsforgeRemoteUrl(),
       drain: options.drain === true,
     });
+    emitCloudUsageSynced();
     return accessToken;
   } catch (error) {
     if (!getStoredDeviceSession()) throw error;
@@ -202,6 +204,7 @@ async function syncCloudUsageWithRecovery(
       insforgeBaseUrl: getInsforgeRemoteUrl(),
       drain: options.drain === true,
     });
+    emitCloudUsageSynced();
     return accessToken;
   }
 }

@@ -1,6 +1,7 @@
 const KEY_ENABLED = "tokentracker_cloud_sync_enabled";
 const KEY_DEVICE = "tokentracker_cloud_device_session_v1";
 const KEY_LAST_SYNC = "tokentracker_cloud_last_sync_ts";
+export const CLOUD_USAGE_SYNCED_EVENT = "tt.cloudUsageSynced";
 let memoryDeviceSession: CloudDeviceSession | null = null;
 
 export type CloudDeviceSession = {
@@ -111,6 +112,16 @@ export function clearCloudDeviceSession(): void {
     /* ignore */
   }
   clearLegacyStoredDeviceSession();
+}
+
+export function emitCloudUsageSynced(): void {
+  try {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(CLOUD_USAGE_SYNCED_EVENT));
+    }
+  } catch {
+    /* best-effort invalidation for the active dashboard */
+  }
 }
 
 export function getLastCloudSyncTs(): number {

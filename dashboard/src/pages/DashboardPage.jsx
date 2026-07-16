@@ -18,7 +18,7 @@ import { useCurrency } from "../hooks/useCurrency.js";
 import { useTokenFormat } from "../hooks/useTokenFormat.js";
 import { TOKEN_FORMAT_MODES } from "../lib/token-format.js";
 import { getDetailsSortColumns, sortDailyRows } from "../lib/daily";
-import { formatDateUTC, getRangeForPeriod } from "../lib/date-range";
+import { getRangeForPeriod } from "../lib/date-range";
 import { DETAILS_PAGE_SIZE, paginateRows, trimLeadingZeroMonths } from "../lib/details";
 import {
   formatUsdCurrency,
@@ -29,6 +29,7 @@ import { shouldShowInstallCard } from "../lib/install-status";
 import { getMockNow, isMockEnabled } from "../lib/mock-data";
 import { publishUsageLimitsPreloadState } from "../lib/dashboard-preload.js";
 import { startLocalUsageAutoRefresh } from "../lib/local-usage-auto-refresh";
+import { buildDailyBreakdownRange, selectDailyBreakdownRows } from "../lib/daily-breakdown";
 import { buildFleetData, buildTopModels, resolveDisplayTokens } from "../lib/model-breakdown";
 import { safeWriteClipboard } from "../lib/safe-browser";
 import { isScreenshotModeEnabled } from "../lib/screenshot-mode";
@@ -97,22 +98,6 @@ function getBillableTotal(row) {
 function getHeatmapValue(cell) {
   if (!cell) return null;
   return cell?.billable_total_tokens ?? cell?.value ?? cell?.total_tokens;
-}
-
-function parseUtcDateKey(yyyyMmDd) {
-  if (typeof yyyyMmDd !== "string" || !yyyyMmDd) return null;
-  const parts = yyyyMmDd.split("-");
-  if (parts.length !== 3) return null;
-  const year = Number(parts[0]);
-  const month = Number(parts[1]) - 1;
-  const day = Number(parts[2]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-  const date = new Date(Date.UTC(year, month, day));
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-
-function addUtcDays(date, days) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
 }
 
 function isProductionHost(hostname) {
@@ -457,13 +442,13 @@ export function DashboardPage({
     [mockNow, timeZone, tzOffsetMinutes],
   );
   const dailyBreakdownRange = useMemo(() => {
-    const end = parseUtcDateKey(todayKey) || new Date();
-    const start = addUtcDays(end, -29);
-    return {
-      from: formatDateUTC(start),
-      to: formatDateUTC(end),
-    };
-  }, [todayKey]);
+    return buildDailyBreakdownRange({
+      period,
+      selectedFrom: from,
+      selectedTo: to,
+      todayKey,
+    });
+  }, [from, period, to, todayKey]);
 
   const {
     daily,
@@ -717,12 +702,12 @@ export function DashboardPage({
     return paginateRows(sortedDetails, detailsPage, DETAILS_PAGE_SIZE);
   }, [detailsPage, period, sortedDetails]);
 
-  // Daily Breakdown 始终显示最近30天的日数据
+  // Regular periods show the last 30 calendar days. Total view uses the
+  // selected history range and keeps the latest 30 observed days, so an idle
+  // account does not look erased behind a screenful of missing rows.
   const dailyBreakdownRows = useMemo(() => {
-    return dailyBreakdownDaily
-      .filter((row) => !row?.future && row?.day)
-      .slice(-30);
-  }, [dailyBreakdownDaily]);
+    return selectDailyBreakdownRows(dailyBreakdownDaily, { period });
+  }, [dailyBreakdownDaily, period]);
   const dailyBreakdownSort = useMemo(() => {
     if (DETAILS_DATE_KEYS.has(sort.key)) {
       return { ...sort, key: dailyBreakdownDateKey };
