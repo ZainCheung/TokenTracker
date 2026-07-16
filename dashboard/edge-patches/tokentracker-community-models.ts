@@ -1,8 +1,8 @@
 /**
  * InsForge Edge: public community model-level token breakdown.
  *
- * Aggregates per-model token usage across all users for the full lifetime
- * via the same `leaderboard_usage_grouped` RPC used by the refresh function.
+ * Reads the singleton snapshot maintained by the database-native hourly
+ * refresh_tokentracker_community_stats job.
  * Public endpoint (no auth required) — data is anonymous aggregate stats.
  *
  * Response:
@@ -33,6 +33,7 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
 export default async function (req: Request): Promise<Response> {
   if (req.method === "OPTIONS")
     return new Response(null, { status: 204, headers: cors });
+  if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
 
   const baseUrl = Deno.env.get("INSFORGE_BASE_URL")!;
   const incomingApiKey =
@@ -55,66 +56,39 @@ export default async function (req: Request): Promise<Response> {
     ...(anonKey ? { headers: { apikey: anonKey } } : {}),
   });
 
-  // Full lifetime — matches refresh function's "total" period (1970-01-01 to today).
-  const now = new Date();
-  const from_day = "1970-01-01";
-  const end = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const to_day = end.toISOString().slice(0, 10);
-
-  const rangeStart = `${from_day}T00:00:00Z`;
-  const nextDay = new Date(to_day + "T00:00:00Z");
-  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-  const rangeEnd = nextDay.toISOString();
-
   try {
-    const { data: grouped, error } = await client.database.rpc(
-      "leaderboard_usage_grouped",
-      { p_from: rangeStart, p_to: rangeEnd },
-    );
+    const { data, error } = await client.database
+      .from("tokentracker_community_stats")
+      .select("total_tokens, top_models, from_day, to_day, generated_at")
+      .eq("id", "total")
+      .limit(1);
     if (error) return json({ error: error.message }, 500);
 
-    // Aggregate by model name across all users.
-    const modelMap = new Map<string, number>();
-    for (const row of (grouped || []) as Array<{
-      model: string;
-      total_tokens: number;
-    }>) {
-      const m = (row.model || "").trim();
-      if (!m || m.toLowerCase() === "auto") continue;
-      modelMap.set(
-        m,
-        (modelMap.get(m) || 0) + (Number(row.total_tokens) || 0),
+    const row = Array.isArray(data) ? data[0] : null;
+    if (!row) {
+      return json(
+        { error: "community stats snapshot is not ready" },
+        503,
+        { "Cache-Control": "no-store", "Retry-After": "30" },
       );
     }
 
-    const totalTokens = [...modelMap.values()].reduce((s, v) => s + v, 0);
-    const topModels = [...modelMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 15)
-      .map(([name, tokens]) => ({
-        name,
-        tokens,
-        share:
-          totalTokens > 0
-            ? Math.round((tokens / totalTokens) * 1000) / 10
-            : 0,
-      }));
+    const cacheHeaders = {
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=86400",
+      "X-Community-Stats-Source": "snapshot",
+    };
 
     return json(
       {
-        top_models: topModels,
-        total_tokens: totalTokens,
+        top_models: Array.isArray(row.top_models) ? row.top_models : [],
+        total_tokens: Number(row.total_tokens) || 0,
         period: "total",
-        from: from_day,
-        to: to_day,
-        generated_at: new Date().toISOString(),
+        from: row.from_day,
+        to: row.to_day,
+        generated_at: row.generated_at,
       },
       200,
-      // All-time cumulative stats move slowly; don't rerun the full-lifetime
-      // aggregation for every anonymous landing-page hit.
-      { "Cache-Control": "public, max-age=300" },
+      cacheHeaders,
     );
   } catch (e) {
     return json({ error: String((e as Error).message || e) }, 500);

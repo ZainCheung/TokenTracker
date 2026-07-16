@@ -117,5 +117,8 @@ jobs:
           npm ci
           node --test test/openclaw-parser.test.js
 
+      - name: Test Windows updater
+        run: dotnet test TokenTrackerWin.Tests/TokenTrackerWin.Tests.csproj --configuration Release
+
       - name: Build TokenTrackerWin
         run: dotnet build TokenTrackerWin/TokenTrackerWin.csproj --configuration Release

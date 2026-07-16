@@ -19,7 +19,7 @@ final class UpdateChecker {
     }
 
     /// Retain delegate until download completes (URLSession holds weak ref only)
-    private var activeDownloadDelegate: DownloadProgressDelegate?
+    private var activeDownloadDelegate: ResumableDownloader?
 
     /// Native progress panel, present only during user-initiated (non-silent) updates
     private var progressPanel: UpdateProgressPanelController?
@@ -285,10 +285,22 @@ final class UpdateChecker {
         if !FileManager.default.fileExists(atPath: supportDir.path) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         }
-        let destURL = supportDir.appendingPathComponent(asset.name)
-
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            try? FileManager.default.removeItem(at: destURL)
+        let safeVersion = targetVersion.map { character -> Character in
+            character.isLetter || character.isNumber || character == "." || character == "-" ? character : "_"
+        }
+        let destURL = supportDir.appendingPathComponent("\(String(safeVersion))-\(asset.name)")
+        let retainedNames = Set([
+            destURL.lastPathComponent,
+            destURL.appendingPathExtension("part").lastPathComponent,
+            destURL.appendingPathExtension("resume.json").lastPathComponent,
+        ])
+        if let staleFiles = try? FileManager.default.contentsOfDirectory(
+            at: supportDir,
+            includingPropertiesForKeys: nil
+        ) {
+            for staleFile in staleFiles where !retainedNames.contains(staleFile.lastPathComponent) {
+                try? FileManager.default.removeItem(at: staleFile)
+            }
         }
 
         guard let url = URL(string: asset.browser_download_url) else {
@@ -306,8 +318,10 @@ final class UpdateChecker {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 900
 
-        let delegate = DownloadProgressDelegate(
-            destURL: destURL,
+        let delegate = ResumableDownloader(
+            destinationURL: destURL,
+            expectedSize: totalSize,
+            configuration: config,
             onProgress: { [weak self] received, expected in
                 guard let self else { return }
                 let denom = expected > 0 ? expected : totalSize
@@ -326,6 +340,9 @@ final class UpdateChecker {
                 )
                 self.statusText = progressText
                 self.progressPanel?.setProgress(percent: fraction, detail: progressText)
+            },
+            onRetry: { attempt, error in
+                Swift.print("[UpdateChecker] Download retry \(attempt): \(error.localizedDescription)")
             },
             onComplete: { [weak self] result in
                 guard let self else { return }
@@ -348,8 +365,7 @@ final class UpdateChecker {
         )
         activeDownloadDelegate = delegate
 
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: OperationQueue.main)
-        delegate.startDownload(session: session, url: url)
+        delegate.start(url: url)
     }
 
     private func performInstallAsync(_ dmgURL: URL, targetVersion: String) {
@@ -508,82 +524,9 @@ final class UpdateChecker {
         var count = 0
     }
 
-    /// Uses `URLSessionDownloadDelegate` so progress reflects bytes written to the temp file.
-    /// The previous implementation polled the final destination path, but `URLSession.download`
-    /// only writes there after completion, so the percentage stayed at 0%.
-    private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-        private let destURL: URL
-        private let onProgress: (Int64, Int64) -> Void
-        private let onComplete: (Result<URL, Error>) -> Void
-        private var session: URLSession?
-        private var completionCalled = false
-
-        init(
-            destURL: URL,
-            onProgress: @escaping (Int64, Int64) -> Void,
-            onComplete: @escaping (Result<URL, Error>) -> Void
-        ) {
-            self.destURL = destURL
-            self.onProgress = onProgress
-            self.onComplete = onComplete
-        }
-
-        func startDownload(session: URLSession, url: URL) {
-            self.session = session
-            session.downloadTask(with: url).resume()
-        }
-
-        func urlSession(
-            _ session: URLSession,
-            downloadTask: URLSessionDownloadTask,
-            didWriteData bytesWritten: Int64,
-            totalBytesWritten: Int64,
-            totalBytesExpectedToWrite: Int64
-        ) {
-            onProgress(totalBytesWritten, totalBytesExpectedToWrite)
-        }
-
-        func urlSession(
-            _ session: URLSession,
-            downloadTask: URLSessionDownloadTask,
-            didFinishDownloadingTo location: URL
-        ) {
-            guard let http = downloadTask.response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                completeOnce(.failure(UpdateError.downloadFailed))
-                return
-            }
-            do {
-                if FileManager.default.fileExists(atPath: destURL.path) {
-                    try FileManager.default.removeItem(at: destURL)
-                }
-                try FileManager.default.moveItem(at: location, to: destURL)
-                completeOnce(.success(destURL))
-            } catch {
-                completeOnce(.failure(error))
-            }
-        }
-
-        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-            if let error {
-                if !completionCalled {
-                    completeOnce(.failure(error))
-                }
-            }
-        }
-
-        private func completeOnce(_ result: Result<URL, Error>) {
-            guard !completionCalled else { return }
-            completionCalled = true
-            session?.finishTasksAndInvalidate()
-            session = nil
-            onComplete(result)
-        }
-    }
-
     private enum UpdateError: LocalizedError {
         case curlFailed(Int)
         case emptyResponse
-        case downloadFailed
         case installFailed(String)
         case noRelease
 
@@ -591,7 +534,6 @@ final class UpdateChecker {
             switch self {
             case .curlFailed(let code): return Strings.networkRequestFailed(code: code)
             case .emptyResponse: return Strings.emptyServerResponse
-            case .downloadFailed: return Strings.fileDownloadFailed
             case .installFailed(let reason): return Strings.installFailed(reason)
             case .noRelease: return Strings.noReleaseAvailable
             }

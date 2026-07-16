@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getLeaderboard, getCommunityModels } from "../lib/api";
 
 const FETCH_TIMEOUT_MS = 6000;
+const MODEL_FETCH_TIMEOUT_MS = 2500;
 // One page of 100 gives a strong lower bound on the global total without a
 // dedicated stats endpoint (the leaderboard is heavily top-weighted).
 const SAMPLE_LIMIT = 100;
@@ -19,16 +20,60 @@ function withTimeout(promise, ms) {
 // The stats are global and slow-moving, but the hook mounts on both the
 // landing page and the leaderboard — share one in-flight/recent fetch so an
 // SPA navigation between them doesn't refire the identical request pair.
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 5 * 60_000;
+const PERSISTED_MAX_AGE_MS = 24 * 60 * 60_000;
+export const COMMUNITY_STATS_STORAGE_KEY = "tokentracker:community-stats:v1";
 let cachedFetch = null;
+
+function normalizeCachedData(value) {
+  const tokenFloor = Number(value?.tokenFloor) || 0;
+  const totalEntries = Number(value?.totalEntries) || 0;
+  if (!(tokenFloor > 0) || !(totalEntries > 0)) return null;
+  return {
+    tokenFloor,
+    totalEntries,
+    top: Array.isArray(value?.top) ? value.top : [],
+    topModels: Array.isArray(value?.topModels) ? value.topModels : [],
+  };
+}
+
+function readPersistentCache() {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COMMUNITY_STATS_STORAGE_KEY) || "null");
+    const cachedAt = Number(parsed?.cachedAt) || 0;
+    const data = normalizeCachedData(parsed?.data);
+    const age = Date.now() - cachedAt;
+    if (!data || age < 0 || age > PERSISTED_MAX_AGE_MS) return null;
+    return { data, isFresh: age < CACHE_TTL_MS };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistentCache(data) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(COMMUNITY_STATS_STORAGE_KEY, JSON.stringify({
+      cachedAt: Date.now(),
+      data,
+    }));
+  } catch {
+    // Storage can be unavailable in private mode or at quota; memory state is
+    // still enough for the current page.
+  }
+}
 
 function fetchCommunityData() {
   if (cachedFetch && Date.now() - cachedFetch.at < CACHE_TTL_MS) {
     return cachedFetch.promise;
   }
   const promise = Promise.all([
-    getLeaderboard({ period: "total", limit: SAMPLE_LIMIT, offset: 0 }),
-    getCommunityModels().catch(() => null),
+    withTimeout(
+      getLeaderboard({ period: "total", limit: SAMPLE_LIMIT, offset: 0 }),
+      FETCH_TIMEOUT_MS,
+    ),
+    withTimeout(getCommunityModels(), MODEL_FETCH_TIMEOUT_MS).catch(() => null),
   ]);
   cachedFetch = { at: Date.now(), promise };
   // Never cache a failure: the next consumer should retry.
@@ -47,19 +92,23 @@ export function resetCommunityStatsCacheForTests() {
  * community's live numbers: a floor for total tokens synced, the number of
  * syncing developers, and the top-3 podium slice. Also fetches real
  * model-level token breakdown from the community-models endpoint.
- * Never throws: on any failure `status` becomes "error" and consumers
- * fall back to static copy.
+ * Never throws: cached data stays visible through transient failures; only an
+ * uncached leaderboard failure becomes "error" and falls back to static copy.
  */
 export function useCommunityStats({ enabled = true } = {}) {
-  const [state, setState] = useState({
-    status: "loading",
-    tokenFloor: null,
-    totalEntries: null,
-    top: [],
-  });
+  const [persistentCache] = useState(() => readPersistentCache());
+  const [state, setState] = useState(() => persistentCache
+    ? { status: "ready", ...persistentCache.data }
+    : {
+        status: "loading",
+        tokenFloor: null,
+        totalEntries: null,
+        top: [],
+      });
 
   useEffect(() => {
     if (!enabled) return undefined;
+    if (persistentCache?.isFresh) return undefined;
     let cancelled = false;
     let idleId = null;
     let timerId = null;
@@ -69,10 +118,7 @@ export function useCommunityStats({ enabled = true } = {}) {
         // Fetch leaderboard + model breakdown in parallel.
         // Model breakdown is best-effort: if it fails we still show
         // provider-level data from the snapshot.
-        const [data, modelsData] = await withTimeout(
-          fetchCommunityData(),
-          FETCH_TIMEOUT_MS,
-        );
+        const [data, modelsData] = await fetchCommunityData();
         if (cancelled) return;
         const entries = Array.isArray(data?.entries) ? data.entries : [];
         const sampledTokenFloor = entries.reduce(
@@ -80,25 +126,47 @@ export function useCommunityStats({ enabled = true } = {}) {
           0,
         );
         const communityTotalTokens = Number(modelsData?.total_tokens) || 0;
-        const tokenFloor = communityTotalTokens > 0 ? communityTotalTokens : sampledTokenFloor;
+        if (!(communityTotalTokens > 0)) {
+          // The leaderboard sum is only a lower-bound fallback. Do not let a
+          // successful lightweight request make a failed authoritative model
+          // request look fresh to the next consumer.
+          cachedFetch = null;
+        }
+        const cachedTokenFloor = Number(persistentCache?.data?.tokenFloor) || 0;
+        const tokenFloor = communityTotalTokens > 0
+          ? communityTotalTokens
+          : (cachedTokenFloor > 0 ? cachedTokenFloor : sampledTokenFloor);
         if (!entries.length || !(tokenFloor > 0)) {
           setState((prev) => ({ ...prev, status: "error" }));
           return;
         }
 
         // Real model-level breakdown from the dedicated endpoint
-        const topModels = Array.isArray(modelsData?.top_models) ? modelsData.top_models : [];
+        const topModels = Array.isArray(modelsData?.top_models)
+          ? modelsData.top_models
+          : (persistentCache?.data?.topModels || []);
 
-        setState({
-          status: "ready",
+        const readyData = {
           tokenFloor,
           totalEntries: Number(data?.total_entries) || entries.length,
           top: entries.slice(0, 3),
           topModels,
-        });
+        };
+        setState({ status: "ready", ...readyData });
+        // Do not make an old authoritative total look fresh when only the
+        // lightweight leaderboard request recovered. Keeping the old storage
+        // timestamp makes the next mount retry model revalidation.
+        if (communityTotalTokens > 0) {
+          writePersistentCache(readyData);
+        }
       } catch (_e) {
-        // Public stats are decorative: fall back to static copy silently.
-        if (!cancelled) setState((prev) => ({ ...prev, status: "error" }));
+        // Keep the last successful snapshot visible during transient backend
+        // failures. Only first-time visitors with no cache fall back to copy.
+        if (!cancelled) {
+          setState((prev) => prev.status === "ready"
+            ? prev
+            : { ...prev, status: "error" });
+        }
       }
     };
 
@@ -116,7 +184,7 @@ export function useCommunityStats({ enabled = true } = {}) {
       }
       if (timerId != null) clearTimeout(timerId);
     };
-  }, [enabled]);
+  }, [enabled, persistentCache]);
 
   return state;
 }

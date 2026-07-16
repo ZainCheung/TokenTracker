@@ -125,7 +125,7 @@ internal sealed class UpdateChecker
         string setupPath;
         try
         {
-            setupPath = await DownloadSetupAsync(_setupUrl, _setupSize);
+            setupPath = await DownloadSetupAsync(_setupUrl, _setupSize, LatestVersion ?? "unknown");
         }
         catch (Exception ex)
         {
@@ -198,44 +198,40 @@ internal sealed class UpdateChecker
 
     // ── Download ───────────────────────────────────────────────────────
 
-    private async Task<string> DownloadSetupAsync(string url, long expectedSize)
+    private async Task<string> DownloadSetupAsync(string url, long expectedSize, string version)
     {
         var dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TokenTracker", "updates");
         Directory.CreateDirectory(dir);
-        var dest = Path.Combine(dir, "TokenTracker-Setup.exe");
-
-        // A leftover from a previous (interrupted) attempt would be locked/partial; replace it.
-        if (File.Exists(dest)) { try { File.Delete(dest); } catch { /* will overwrite below */ } }
-
-        using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        resp.EnsureSuccessStatusCode();
-        var total = resp.Content.Headers.ContentLength ?? expectedSize;
-
-        await using (var src = await resp.Content.ReadAsStreamAsync())
-        await using (var dst = File.Create(dest))
+        var safeVersion = string.Concat(version.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' ? c : '_'));
+        var dest = Path.Combine(dir, $"TokenTracker-Setup-{safeVersion}.exe");
+        try { File.Delete(Path.Combine(dir, "TokenTracker-Setup.exe")); } catch { }
+        foreach (var stalePath in Directory.EnumerateFiles(dir, "TokenTracker-Setup-*"))
         {
-            var buffer = new byte[81920];
-            long received = 0;
-            int read;
-            int lastPct = -1;
-            while ((read = await src.ReadAsync(buffer)) > 0)
-            {
-                await dst.WriteAsync(buffer.AsMemory(0, read));
-                received += read;
-                if (total > 0)
-                {
-                    var pct = (int)Math.Min(99, received * 100 / total);
-                    if (pct != lastPct)
-                    {
-                        lastPct = pct;
-                        ProgressPercent = pct;
-                        Changed?.Invoke();
-                    }
-                }
-            }
+            if (string.Equals(stalePath, dest, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(stalePath, dest + ".part", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(stalePath, dest + ".resume.json", StringComparison.OrdinalIgnoreCase))
+                continue;
+            try { File.Delete(stalePath); } catch { }
         }
+        var lastPct = -1;
+        var downloader = new ResumableDownloader(Http);
+        await downloader.DownloadAsync(
+            new Uri(url),
+            dest,
+            expectedSize,
+            onProgress: (received, total) =>
+            {
+                if (total <= 0) return;
+                var pct = (int)Math.Min(99, received * 100 / total);
+                if (pct == lastPct) return;
+                lastPct = pct;
+                ProgressPercent = pct;
+                Changed?.Invoke();
+            },
+            onRetry: (attempt, error) =>
+                Diag.Log("update", $"download retry {attempt}: {error.Message}"));
 
         Diag.Log("update", $"downloaded setup -> {dest}");
         return dest;
