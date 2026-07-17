@@ -1,0 +1,81 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const ROOT = path.resolve(__dirname, "..");
+const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), "utf8");
+
+const ACCOUNT_FUNCTIONS = [
+  "tokentracker-account-summary.ts",
+  "tokentracker-account-daily.ts",
+  "tokentracker-account-hourly.ts",
+  "tokentracker-account-monthly.ts",
+  "tokentracker-account-heatmap.ts",
+  "tokentracker-account-model-breakdown.ts",
+];
+
+test("cloud account reads use one database RPC instead of a device lookup plus aggregation", () => {
+  for (const file of ACCOUNT_FUNCTIONS) {
+    const source = read(`dashboard/edge-patches/${file}`);
+    assert.match(source, /rpc\("account_usage_grouped_v2"/u, `${file} must use the one-call RPC`);
+    assert.doesNotMatch(
+      source,
+      /\.from\("tokentracker_devices"\)/u,
+      `${file} must not spend a second PostgREST connection resolving devices`,
+    );
+  }
+});
+
+test("leaderboard refresh fetches all user metadata with one RPC", () => {
+  const source = read("dashboard/edge-patches/tokentracker-leaderboard-refresh.ts");
+  assert.match(source, /rpc\("leaderboard_user_metadata"/u);
+  assert.doesNotMatch(source, /const settingsResults = await Promise\.all/u);
+  assert.doesNotMatch(source, /const profilesResults = await Promise\.all/u);
+  assert.doesNotMatch(source, /const fallbackResults = await Promise\.all/u);
+});
+
+test("telemetry heartbeat uses one atomic database upsert RPC", () => {
+  const source = read("dashboard/edge-patches/tokentracker-telemetry.ts");
+  assert.match(source, /rpc\("upsert_tokentracker_telemetry_daily"/u);
+  assert.doesNotMatch(source, /const \{ data: existingRows/u);
+  assert.doesNotMatch(source, /\.from\(TABLE\)\.insert/u);
+});
+
+test("device creation absorbs concurrent unique-key races without database errors", () => {
+  for (const file of ["tokentracker-device-token-issue.ts", "tokentracker-device-flow-poll.ts"]) {
+    const source = read(`dashboard/edge-patches/${file}`);
+    assert.match(
+      source,
+      /\.upsert\([\s\S]{0,180}machine_id: machineId[\s\S]{0,80}\{ ignoreDuplicates: true \}/u,
+      `${file} must use INSERT ON CONFLICT DO NOTHING before selecting the winner`,
+    );
+    assert.doesNotMatch(source, /\.insert\([\s\S]{0,180}ignoreDuplicates/u);
+  }
+});
+
+test("desktop auto refresh does not poll cloud account aggregates every 30 seconds", () => {
+  const source = read("dashboard/src/pages/DashboardPage.jsx");
+  assert.match(source, /if \(!isLocalMode \|\| mockEnabled \|\| accountView\) return undefined;/u);
+});
+
+test("backend hardening migration adds hot-path RPCs, index, and execute ACLs", () => {
+  const source = read("migrations/20260717013000_harden-backend-hot-paths.sql");
+  assert.match(source, /CREATE OR REPLACE FUNCTION public\.account_usage_grouped_v2/u);
+  assert.match(source, /CREATE OR REPLACE FUNCTION public\.leaderboard_user_metadata/u);
+  assert.match(source, /CREATE OR REPLACE FUNCTION public\.upsert_tokentracker_telemetry_daily/u);
+  assert.match(source, /CREATE INDEX IF NOT EXISTS tokentracker_user_badges_badge_id_idx/u);
+  assert.match(source, /REVOKE ALL ON FUNCTION public\.account_usage_grouped_v2/u);
+  assert.match(source, /REVOKE ALL ON FUNCTION public\.leaderboard_user_metadata/u);
+  assert.match(source, /REVOKE ALL ON FUNCTION public\.upsert_tokentracker_telemetry_daily/u);
+});
+
+test("unused direct profile-like table grants stay revoked", () => {
+  const source = read("migrations/20260717015500_revoke-unused-profile-like-grants.sql");
+  assert.match(
+    source,
+    /REVOKE ALL ON public\.tokentracker_profile_likes FROM anon, authenticated;/u,
+  );
+});

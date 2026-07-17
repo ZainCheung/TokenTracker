@@ -22,6 +22,9 @@ type AnyRecord = Record<string, any>;
 // same GET while the first request is still in flight. Coalesce only that
 // overlap (no result TTL), so manual refreshes still fetch fresh data.
 const inFlightJsonGets = new Map<string, Promise<any>>();
+const accountResponseCache = new Map<string, { fetchedAt: number; value: any }>();
+const ACCOUNT_RESPONSE_TTL_MS = 30_000;
+const ACCOUNT_RESPONSE_STALE_IF_ERROR_MS = 5 * 60_000;
 
 function coalesceJsonGet(key: string, request: () => Promise<any>) {
   const existing = inFlightJsonGets.get(key);
@@ -34,6 +37,43 @@ function coalesceJsonGet(key: string, request: () => Promise<any>) {
   };
   pending.then(cleanup, cleanup);
   return pending;
+}
+
+function cachedAccountJsonGet(key: string, request: () => Promise<any>) {
+  const now = Date.now();
+  const cached = accountResponseCache.get(key);
+  if (cached && now - cached.fetchedAt < ACCOUNT_RESPONSE_TTL_MS) {
+    return Promise.resolve(cached.value);
+  }
+
+  return coalesceJsonGet(key, async () => {
+    try {
+      const value = await request();
+      accountResponseCache.set(key, { fetchedAt: Date.now(), value });
+      // A dashboard normally uses fewer than 20 keys. Keep a hard ceiling so
+      // long-running desktop WebViews cannot retain old ranges indefinitely.
+      if (accountResponseCache.size > 64) {
+        const oldest = accountResponseCache.keys().next().value;
+        if (oldest) accountResponseCache.delete(oldest);
+      }
+      return value;
+    } catch (error) {
+      const status = Number((error as any)?.status) || 0;
+      const stale = accountResponseCache.get(key);
+      if (
+        stale &&
+        Date.now() - stale.fetchedAt < ACCOUNT_RESPONSE_STALE_IF_ERROR_MS &&
+        (status === 0 || status >= 500)
+      ) {
+        return stale.value;
+      }
+      throw error;
+    }
+  });
+}
+
+export function invalidateAccountResponseCache() {
+  accountResponseCache.clear();
 }
 
 const PATHS = {
@@ -96,7 +136,7 @@ async function fetchLocalJson(slug: string, params?: AnyRecord, options?: AnyRec
     const anonKey = getInsforgeAnonKey();
     if (anonKey) headers.apikey = anonKey;
     if (isValidJwtShape(accessToken)) headers.Authorization = `Bearer ${accessToken}`;
-    return coalesceJsonGet(`${url.toString()}\0${accessToken}`, async () => {
+    return cachedAccountJsonGet(`${url.toString()}\0${accessToken}`, async () => {
       const response = await fetch(url.toString(), { headers, cache: "no-store" });
       if (!response.ok) {
         const err: any = new Error(`Request failed with HTTP ${response.status}`);
@@ -711,7 +751,7 @@ async function fetchAccountFunction(
   };
   const anonKey = getInsforgeAnonKey();
   if (anonKey) headers.apikey = anonKey;
-  return coalesceJsonGet(`${url.toString()}\0${accessToken}`, async () => {
+  return cachedAccountJsonGet(`${url.toString()}\0${accessToken}`, async () => {
     const response = await fetch(url.toString(), {
       method: "GET",
       headers,

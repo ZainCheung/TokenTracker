@@ -1,10 +1,10 @@
 "use strict";
 
 // The six account-* edge endpoints must each honor an optional ?device_id=
-// query param by narrowing activeDeviceIds to that one device — but ONLY when
-// the id belongs to the JWT-verified user (the includes() guard). This is a
-// static source check (the endpoints are Deno + InsForge SDK and can't run
-// under node --test); it guarantees all six got the identical guarded narrow.
+// query param. UUID syntax is checked at the edge; ownership and active-device
+// scoping are resolved atomically inside account_usage_grouped_v2. This avoids
+// the old per-request devices SELECT while keeping another user's device from
+// ever narrowing the result.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -27,26 +27,33 @@ function readEdge(name) {
   return fs.readFileSync(path.join(ROOT, EDGE_DIR, name), "utf8");
 }
 
-test("every account-* endpoint reads device_id and guards it with includes()", () => {
+test("every account-* endpoint delegates guarded device scoping to the v2 RPC", () => {
   for (const name of ENDPOINTS) {
     const src = readEdge(name);
     assert.ok(
       src.includes('url.searchParams.get("device_id")'),
       `${name}: does not read the device_id query param`,
     );
-    assert.ok(
-      /activeDeviceIds\.includes\(\s*requestedDeviceId\s*\)/.test(src),
-      `${name}: missing the includes(requestedDeviceId) ownership guard`,
-    );
-    assert.ok(
-      /activeDeviceIds\s*=\s*\[\s*requestedDeviceId\s*\]/.test(src),
-      `${name}: does not narrow activeDeviceIds to [requestedDeviceId]`,
-    );
-    assert.ok(
-      src.includes("let activeDeviceIds"),
-      `${name}: activeDeviceIds must be declared 'let' (not const) so the narrow can re-assign it`,
-    );
+    assert.match(src, /const requestedDeviceId\s*=\s*rawDeviceId\s*&&\s*\/\^\[0-9a-f\]/u,
+      `${name}: must reject malformed device UUIDs before the RPC`);
+    assert.ok(src.includes('rpc("account_usage_grouped_v2"'),
+      `${name}: must use the atomic device-scoping RPC`);
+    assert.match(src, /p_device_id:\s*requestedDeviceId/u,
+      `${name}: must pass the requested device to the RPC`);
+    assert.ok(!src.includes('.from("tokentracker_devices")'),
+      `${name}: must not restore the extra devices SELECT`);
   }
+});
+
+test("v2 RPC narrows only to an active device owned by the requested user", () => {
+  const migration = fs.readFileSync(
+    path.join(ROOT, "migrations/20260717013000_harden-backend-hot-paths.sql"),
+    "utf8",
+  );
+  assert.match(migration, /d\.user_id\s*=\s*p_user_id/u, "RPC must scope devices to the user");
+  assert.match(migration, /d\.revoked_at\s+IS\s+NULL/u, "RPC must exclude revoked devices");
+  assert.match(migration, /p_device_id\s*=\s*ANY\(ids\)/u,
+    "RPC must narrow only when the requested device belongs to the active set");
 });
 
 test("account-devices endpoint exists, verifies JWT, queries devices, sums per-device", () => {

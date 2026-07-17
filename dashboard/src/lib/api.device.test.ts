@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchCloudUsageSummary, fetchAccountDevices } from "./api";
+import {
+  fetchCloudUsageSummary,
+  fetchAccountDevices,
+  invalidateAccountResponseCache,
+} from "./api";
 
 vi.mock("./insforge-config", () => ({
   getInsforgeRemoteUrl: () => "https://edge.example.test",
@@ -21,6 +25,7 @@ function lastFetchUrl() {
 
 describe("api device filter", () => {
   beforeEach(() => {
+    invalidateAccountResponseCache();
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({}), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -41,5 +46,16 @@ describe("api device filter", () => {
   it("fetchAccountDevices hits the account-devices slug", async () => {
     await fetchAccountDevices({ from: "2026-06-01", to: "2026-06-30", accessToken: JWT });
     expect(lastFetchUrl().pathname).toContain("tokentracker-account-devices");
+  });
+
+  it("reuses a fresh account response and supports explicit invalidation", async () => {
+    const args = { from: "2026-06-01", to: "2026-06-30", accessToken: JWT };
+    await fetchCloudUsageSummary(args);
+    await fetchCloudUsageSummary(args);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    invalidateAccountResponseCache();
+    await fetchCloudUsageSummary(args);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });

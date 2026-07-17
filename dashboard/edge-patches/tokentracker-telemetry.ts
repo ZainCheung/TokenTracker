@@ -22,7 +22,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
 };
 
-const TABLE = "tokentracker_telemetry_daily";
 const MACHINE_HASH_RE = /^[0-9a-f]{64}$/;
 const APP_VERSION_RE = /^[0-9A-Za-z.+-]{1,32}$/;
 const PLATFORM_RE = /^[a-z0-9]{1,16}$/;
@@ -70,50 +69,15 @@ export default async function (req: Request): Promise<Response> {
   });
 
   try {
-    const { data: existingRows, error: readError } = await client.database
-      .from(TABLE)
-      .select("machine_hash, shell")
-      .eq("machine_hash", machineHash)
-      .eq("day", day)
-      .limit(1);
-    if (readError) return json({ error: readError.message || "read failed" }, 500);
-
-    const existing = Array.isArray(existingRows) && existingRows.length > 0
-      ? (existingRows[0] as Record<string, unknown>)
-      : null;
-
-    if (existing) {
-      const keptShell =
-        shell === "cli" && typeof existing.shell === "string" && existing.shell !== "cli"
-          ? existing.shell
-          : shell;
-      const { error: updateError } = await client.database
-        .from(TABLE)
-        .update({ last_seen_at: nowIso, app_version: appVersion, platform, shell: keptShell })
-        .eq("machine_hash", machineHash)
-        .eq("day", day);
-      if (updateError) return json({ error: updateError.message || "update failed" }, 500);
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
-
-    const { error: insertError } = await client.database.from(TABLE).insert([
-      {
-        machine_hash: machineHash,
-        day,
-        app_version: appVersion,
-        platform,
-        shell,
-        first_seen_at: nowIso,
-        last_seen_at: nowIso,
-      },
-    ]);
-    if (insertError) {
-      // PK race with a concurrent same-day heartbeat — the row exists now,
-      // which is all this endpoint guarantees.
-      if (/unique|duplicate|conflict/i.test(insertError.message || ""))
-        return new Response(null, { status: 204, headers: corsHeaders });
-      return json({ error: insertError.message || "insert failed" }, 500);
-    }
+    const { error } = await client.database.rpc("upsert_tokentracker_telemetry_daily", {
+      p_machine_hash: machineHash,
+      p_day: day,
+      p_app_version: appVersion,
+      p_platform: platform,
+      p_shell: shell,
+      p_seen_at: nowIso,
+    });
+    if (error) return json({ error: error.message || "upsert failed" }, 500);
     return new Response(null, { status: 204, headers: corsHeaders });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);

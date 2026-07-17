@@ -17,7 +17,7 @@ function json(data: unknown, status = 200) {
   });
 }
 
-function b64urlToBytes(s: string): Uint8Array {
+function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (b64.length % 4)) % 4;
   const raw = atob(b64 + "=".repeat(pad));
@@ -219,7 +219,10 @@ export default async function (req: Request): Promise<Response> {
       const newDeviceId = crypto.randomUUID();
       const { data: inserted, error: insErr } = await dbClient.database
         .from("tokentracker_devices")
-        .insert([{ id: newDeviceId, user_id: userId, device_name: deviceName, platform, machine_id: machineId }])
+        .upsert(
+          [{ id: newDeviceId, user_id: userId, device_name: deviceName, platform, machine_id: machineId }],
+          { ignoreDuplicates: true },
+        )
         .select("id");
       if (!insErr && Array.isArray(inserted) && inserted.length > 0) {
         deviceId = (inserted[0] as { id: string }).id;
@@ -251,8 +254,7 @@ export default async function (req: Request): Promise<Response> {
     const newDeviceId = crypto.randomUUID();
     const { data: insertedDevice } = await dbClient.database
       .from("tokentracker_devices")
-      .insert([{ id: newDeviceId, user_id: userId, device_name: deviceName, platform }], {
-        onConflict: "user_id,platform,device_name",
+      .upsert([{ id: newDeviceId, user_id: userId, device_name: deviceName, platform }], {
         ignoreDuplicates: true,
       })
       .select("id");

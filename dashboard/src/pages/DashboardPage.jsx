@@ -42,6 +42,7 @@ import {
 } from "../lib/timezone";
 import {
   getUserStatus,
+  invalidateAccountResponseCache,
   triggerLocalSync,
   renameAccountDevice,
 } from "../lib/api";
@@ -853,6 +854,7 @@ export function DashboardPage({
   }, [selectedPeriod, customFrom, prevPeriod]);
 
   const refreshUsageStats = useCallback(async () => {
+    if (accountView) invalidateAccountResponseCache();
     await Promise.all([
       refreshUsage(),
       refreshHeatmap(),
@@ -862,6 +864,7 @@ export function DashboardPage({
       refreshDailyBreakdown(),
     ]);
   }, [
+    accountView,
     refreshDailyBreakdown,
     refreshHeatmap,
     refreshModelBreakdown,
@@ -888,7 +891,7 @@ export function DashboardPage({
   // request instead of starting a duplicate sync.
   const localReloadSyncPromiseRef = useRef(null);
   useEffect(() => {
-    if (!isLocalMode || mockEnabled) return undefined;
+    if (!isLocalMode || mockEnabled || accountView) return undefined;
     if (!localReloadSyncPromiseRef.current) {
       localReloadSyncPromiseRef.current = triggerLocalSync({
         auto: true,
@@ -908,21 +911,21 @@ export function DashboardPage({
     return () => {
       active = false;
     };
-  }, [isLocalMode, mockEnabled, refreshUsageStats]);
+  }, [isLocalMode, mockEnabled, accountView, refreshUsageStats]);
 
   // Provider hooks update the queue quickly, while the native server also
   // performs a once-per-minute all-source fallback scan. Re-read the local
   // aggregates while this dashboard remains visible so those queue updates
   // appear without requiring a click or a page reload.
   useEffect(() => {
-    if (!isLocalMode || mockEnabled) return undefined;
+    if (!isLocalMode || mockEnabled || accountView) return undefined;
     const autoRefresh = startLocalUsageAutoRefresh({
       refresh: refreshUsageStats,
       onError: (error) =>
         console.warn("[DashboardPage] Automatic usage refresh failed:", error),
     });
     return () => autoRefresh.stop();
-  }, [isLocalMode, mockEnabled, refreshUsageStats]);
+  }, [isLocalMode, mockEnabled, accountView, refreshUsageStats]);
 
   const handleUsageRefresh = useCallback(async () => {
     setManualSyncLoading(true);

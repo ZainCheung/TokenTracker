@@ -126,14 +126,20 @@ describe("runCommand (async)", () => {
 
   it("runs commands concurrently without blocking the event loop", async () => {
     const sleeper = () =>
-      runCommand(null, process.execPath, ["-e", "setTimeout(() => {}, 400);"], { timeout: 10_000 });
-    const started = Date.now();
+      runCommand(
+        null,
+        process.execPath,
+        ["-e", "process.stdout.write(String(Date.now())); setTimeout(() => {}, 400);"],
+        { timeout: 10_000 },
+      );
     const [a, b] = await Promise.all([sleeper(), sleeper()]);
-    const elapsed = Date.now() - started;
     assert.equal(a.status, 0);
     assert.equal(b.status, 0);
-    // Two 400ms commands run serially (spawnSync behavior) would take >= 800ms.
-    assert.ok(elapsed < 780, `expected parallel execution, took ${elapsed}ms`);
+    // With spawnSync, the second process cannot start until the first one's
+    // 400ms timer completes. Comparing child start times proves overlap without
+    // making the assertion sensitive to overall test-run CPU contention.
+    const startDelta = Math.abs(Number(a.stdout) - Number(b.stdout));
+    assert.ok(startDelta < 300, `expected overlapping child processes, starts differed by ${startDelta}ms`);
   });
 
   it("kills the child and reports ETIMEDOUT when the timeout elapses", async () => {

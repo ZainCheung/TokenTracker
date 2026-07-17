@@ -626,111 +626,33 @@ export default async function (req: Request): Promise<Response> {
       continue;
     }
 
-    // --- Fetch user settings for public/anonymous flags ---
+    // Fetch settings, profile and snapshot fallback in one database call.
+    // This replaces three waves of concurrent 25-user HTTP batches that could
+    // occupy nearly every PostgREST connection during a total refresh.
     const userIds = Array.from(aggMap.keys());
-    type UserSettingsRow = {
+    type UserMetadataRow = {
       user_id: string;
       leaderboard_public: boolean;
       leaderboard_anonymous: boolean;
       github_url: string | null;
       show_github_url: boolean;
+      display_name: string | null;
+      avatar_url: string | null;
     };
-    const settingsMap = new Map<string, UserSettingsRow>();
-
-    // Fetch in batches of 25. PostgREST .in() encodes user_ids into the URL
-    // (~42 bytes per UUID after URL-encoding); a batch of 100 produces a
-    // ~4 KB URL that the InsForge gateway silently truncates, returning
-    // {data: null, error}. The bug surfaced once the all-time leaderboard
-    // crossed ~80 users and produced an entirely Anonymous snapshot. 25
-    // keeps the URL well under 1.5 KB regardless of user count.
-    //
-    // The 25-batches run CONCURRENTLY (Promise.all): for the 'total' period
-    // (hundreds of users → ~16 batches) the old serial await-per-batch loop
-    // cost ~16 × ~450ms ≈ 7s for THIS loop alone, and three such loops plus the
-    // RPC blew past the edge's 30s execution budget (the total-period refresh
-    // had been timing out, leaving the public all-time board on a stale,
-    // pre-dedup snapshot). Firing the batches at once drops each loop to ~1
-    // round-trip of wall time.
-    const idBatches: string[][] = [];
-    for (let i = 0; i < userIds.length; i += 25) idBatches.push(userIds.slice(i, i + 25));
-    const settingsResults = await Promise.all(
-      idBatches.map((batch) =>
-        client.database
-          .from("tokentracker_user_settings")
-          .select("user_id, leaderboard_public, leaderboard_anonymous, github_url, show_github_url")
-          .in("user_id", batch),
-      ),
+    const { data: metadataRows, error: metadataError } = await client.database.rpc("leaderboard_user_metadata",
+      { p_user_ids: userIds },
     );
-    for (const { data: settings, error: settingsErr } of settingsResults) {
-      if (settingsErr) {
-        logRefreshEvent({
-          event: "user_settings_fetch_error",
-          period,
-          error: settingsErr.message,
-        });
-      }
-      if (settings) {
-        for (const s of settings as UserSettingsRow[]) {
-          settingsMap.set(s.user_id, s);
-        }
-      }
+    if (metadataError) {
+      logRefreshEvent({
+        event: "user_metadata_fetch_error",
+        period,
+        error: metadataError.message,
+      });
+      return json({ error: "Failed to fetch leaderboard user metadata" }, 500);
     }
-
-    // --- Fetch display_name/avatar_url from auth.users (concurrent batches) ---
-    const userProfiles = new Map<string, { display_name: string | null; avatar_url: string | null }>();
-    const profilesResults = await Promise.all(
-      idBatches.map((batch) =>
-        client.database
-          .from("tokentracker_user_profiles")
-          .select("user_id, display_name, avatar_url")
-          .in("user_id", batch),
-      ),
-    );
-    for (const { data: users, error: profilesErr } of profilesResults) {
-      if (profilesErr) {
-        logRefreshEvent({
-          event: "user_profiles_fetch_error",
-          period,
-          error: profilesErr.message,
-        });
-      }
-      if (users) {
-        for (const u of users as { user_id: string; display_name: string | null; avatar_url: string | null }[]) {
-          userProfiles.set(u.user_id, { display_name: u.display_name, avatar_url: u.avatar_url });
-        }
-      }
-    }
-
-    // Fallback: existing snapshots for users not in auth.users (concurrent).
-    const missingBatches: string[][] = [];
-    for (let i = 0; i < userIds.length; i += 25) {
-      const missing = userIds.slice(i, i + 25).filter((id) => !userProfiles.has(id));
-      if (missing.length > 0) missingBatches.push(missing);
-    }
-    const fallbackResults = await Promise.all(
-      missingBatches.map((missing) =>
-        client.database
-          .from("tokentracker_leaderboard_snapshots")
-          .select("user_id, display_name, avatar_url")
-          .in("user_id", missing)
-          .order("generated_at", { ascending: false }),
-      ),
-    );
-    for (const { data: existing, error: fallbackErr } of fallbackResults) {
-      if (fallbackErr) {
-        logRefreshEvent({
-          event: "snapshot_fallback_fetch_error",
-          period,
-          error: fallbackErr.message,
-        });
-      }
-      if (existing) {
-        for (const e of existing as { user_id: string; display_name: string | null; avatar_url: string | null }[]) {
-          if (!userProfiles.has(e.user_id)) {
-            userProfiles.set(e.user_id, { display_name: e.display_name, avatar_url: e.avatar_url });
-          }
-        }
-      }
+    const metadataMap = new Map<string, UserMetadataRow>();
+    for (const metadata of (Array.isArray(metadataRows) ? metadataRows : []) as UserMetadataRow[]) {
+      metadataMap.set(metadata.user_id, metadata);
     }
 
     const __tAfterFetch = Date.now();
@@ -740,17 +662,16 @@ export default async function (req: Request): Promise<Response> {
 
     const generatedAt = new Date().toISOString();
     const upsertRows = sorted.map(([userId, agg], idx) => {
-      const settings = settingsMap.get(userId);
-      const isPublic = settings?.leaderboard_public ?? false;
-      const isAnonymous = settings?.leaderboard_anonymous ?? false;
-      const profile = userProfiles.get(userId);
-      const displayName = isAnonymous ? "Anonymous" : (profile?.display_name ?? "Anonymous");
-      const avatarUrl = isAnonymous ? null : (profile?.avatar_url ?? null);
+      const metadata = metadataMap.get(userId);
+      const isPublic = metadata?.leaderboard_public ?? false;
+      const isAnonymous = metadata?.leaderboard_anonymous ?? false;
+      const displayName = isAnonymous ? "Anonymous" : (metadata?.display_name ?? "Anonymous");
+      const avatarUrl = isAnonymous ? null : (metadata?.avatar_url ?? null);
       // Only surface github_url on the public snapshot when the user opted in
       // AND isn't in anonymous mode — anonymous takes precedence over any
       // identifying link.
-      const githubUrl = !isAnonymous && settings?.show_github_url && settings?.github_url
-        ? settings.github_url
+      const githubUrl = !isAnonymous && metadata?.show_github_url && metadata?.github_url
+        ? metadata.github_url
         : null;
 
       return {

@@ -44,7 +44,7 @@ function zonedDayKey(hourStart: string, tz: string | null, offsetMinutes: number
   return hourStart.slice(0, 10);
 }
 
-function b64urlToBytes(s: string): Uint8Array {
+function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (b64.length % 4)) % 4;
   const raw = atob(b64 + "=".repeat(pad));
@@ -88,20 +88,6 @@ async function verifiedUserIdFromJwt(authHeader: string | null): Promise<string 
     if (typeof uid === "string" && uid.length > 0) return uid;
   } catch { /* ignore */ }
   return null;
-}
-
-async function fetchActiveDeviceIds(
-  client: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<string[]> {
-  const { data, error } = await client.database
-    .from("tokentracker_devices")
-    .select("id")
-    .eq("user_id", userId)
-    .is("revoked_at", null);
-  if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Array<{ id: string }>;
-  return rows.map((r) => r.id).filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
 
@@ -397,17 +383,16 @@ interface GroupedRow {
 async function fetchGroupedRows(
   client: ReturnType<typeof createClient>,
   userId: string,
-  activeDeviceIds: string[],
+  requestedDeviceId: string | null,
   fromIso: string,
   toIso: string,
   trunc: "hour" | "day" | "month" | "none",
   tz: string | null,
   tzOffsetMinutes: number | null,
 ): Promise<GroupedRow[]> {
-  if (activeDeviceIds.length === 0) return [];
-  const { data, error } = await client.database.rpc("account_usage_grouped", {
+  const { data, error } = await client.database.rpc("account_usage_grouped_v2", {
     p_user_id: userId,
-    p_device_ids: activeDeviceIds,
+    p_device_id: requestedDeviceId,
     p_from: fromIso,
     p_to: toIso,
     p_trunc: trunc,
@@ -449,22 +434,10 @@ export default async function (req: Request): Promise<Response> {
   const userId = await verifiedUserIdFromJwt(req.headers.get("Authorization"));
   if (!userId) return json({ error: "Unauthorized" }, 401);
 
-  let activeDeviceIds: string[];
-  try {
-    activeDeviceIds = await fetchActiveDeviceIds(client, userId);
-  } catch (e) {
-    return json({ error: (e as Error).message }, 500);
-  }
-
-  // Optional single-device scope. The dashboard device filter passes
-  // ?device_id=<uuid>; narrow the active set to just that device. The
-  // includes() check is a security boundary: activeDeviceIds is already
-  // filtered to this JWT-verified user, so an id outside it (another user's
-  // device, or a revoked one) is ignored and we fall back to all devices.
-  const requestedDeviceId = url.searchParams.get("device_id");
-  if (requestedDeviceId && activeDeviceIds.includes(requestedDeviceId)) {
-    activeDeviceIds = [requestedDeviceId];
-  }
+  const rawDeviceId = url.searchParams.get("device_id");
+  const requestedDeviceId = rawDeviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawDeviceId)
+    ? rawDeviceId
+    : null;
 
   // Widen the UTC query window by ±1 day so a caller in a non-UTC zone (e.g.
   // Asia/Shanghai for Day=2026-05-18, which spans UTC 2026-05-17T16:00 to
@@ -479,7 +452,7 @@ export default async function (req: Request): Promise<Response> {
 
   let rows: GroupedRow[];
   try {
-    rows = await fetchGroupedRows(client, userId, activeDeviceIds, rangeStart, rangeEnd, "day", tz, tzOffsetMinutes);
+    rows = await fetchGroupedRows(client, userId, requestedDeviceId, rangeStart, rangeEnd, "day", tz, tzOffsetMinutes);
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
