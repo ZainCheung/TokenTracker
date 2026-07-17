@@ -94,6 +94,7 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
         lookTimer?.invalidate()
         lookTimer = nil
         uiState.lookDirectionIndex = nil
+        uiState.isDragging = false
         panel?.orderOut(nil)
         uiState.isWindowVisible = false
         UserDefaults.standard.set(false, forKey: Self.showDefaultsKey)
@@ -223,8 +224,16 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
         // Closed-hand "grab" cursor while dragging the pet; restore the open hand on drop.
         dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged]) { [weak self, weak panel] event in
             if event.window === panel {
+                let deltaX = event.deltaX
                 Task { @MainActor [weak self] in
-                    self?.didDrag = true
+                    guard let self else { return }
+                    self.didDrag = true
+                    self.uiState.isDragging = true
+                    if deltaX < 0 {
+                        self.uiState.dragDirection = .left
+                    } else if deltaX > 0 {
+                        self.uiState.dragDirection = .right
+                    }
                     NSCursor.closedHand.set()
                 }
             }
@@ -239,6 +248,7 @@ final class DesktopPetWindowController: NSObject, NSWindowDelegate {
                         NSCursor.openHand.set()
                         self.snapToEdgeIfNeeded()
                     }
+                    self.uiState.isDragging = false
                     self.didDrag = false
                 }
             }
@@ -478,13 +488,13 @@ enum PetSizePreset: String, CaseIterable {
         }
     }
 
-    /// Panel height — must clear the scaled sprite (16 * px(4) * scale) plus the bubble
-    /// slot above it, or the sprite/bubble clips against the panel edge.
+    /// Panel height — must clear the scaled sprite (16 * px(4) * scale) plus the
+    /// multi-row active-limit bubble slot above it, or the sprite/bubble clips.
     var panelHeight: CGFloat {
         switch self {
-        case .small:  return 130
-        case .medium: return 150
-        case .large:  return 188
+        case .small:  return 230
+        case .medium: return 250
+        case .large:  return 288
         }
     }
 
@@ -659,6 +669,8 @@ private struct DesktopPetHost: View {
 /// shown when enough of the pet is on-screen (set by DesktopPetWindowController).
 @MainActor
 final class PetWindowState: ObservableObject {
+    enum DragDirection { case left, right }
+
     static let alwaysAllowed = PetWindowState()
     @Published var bubbleAllowed = true
     @Published var isWindowVisible = true
@@ -666,6 +678,8 @@ final class PetWindowState: ObservableObject {
     @Published var isHovered = false
     @Published var isRightEdge = true
     @Published var isSnapped = false
+    @Published var isDragging = false
+    @Published var dragDirection: DragDirection = .right
     @Published var sleepState: ClawdCompanionView.ClawdState? = nil
     @Published var lookDirectionIndex: Int? = nil
     /// Sprite scale for the floating pet — driven by the chosen PetSizePreset.

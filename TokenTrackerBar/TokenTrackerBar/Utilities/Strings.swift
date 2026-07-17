@@ -185,6 +185,22 @@ enum Strings {
     static var limitDisplayModeRemaining: String { t("Remaining", "剩余", "剩餘", "残り", "남음") }
     static var limitSuffixUsed: String { t("used", "已用", "已用", "使用済み", "사용됨") }
     static var limitSuffixRemaining: String { t("remaining", "剩余", "剩餘", "残り", "남음") }
+    // Compact desktop-pet statuses. The full Limits surface keeps the exact
+    // percentage; the floating bubble uses a human state so it reads like a
+    // conversation rather than a raw monitor.
+    static var petLimitAtLimit: String { t("at limit", "已达上限", "已達上限", "上限到達", "한도 도달") }
+    static var petLimitNearLimit: String { t("near limit", "接近上限", "接近上限", "上限間近", "한도 임박") }
+    static var petLimitWatch: String { t("watch", "注意", "注意", "注意", "주의") }
+    static var petLimitAvailable: String { t("available", "充足", "充足", "余裕あり", "여유 있음") }
+    static var petLimitDepleted: String { t("depleted", "已用尽", "已用盡", "使い切り", "소진됨") }
+    static var petLimitLow: String { t("low", "余量偏低", "餘量偏低", "残りわずか", "얼마 안 남음") }
+    static var petLimitSomeLeft: String { t("some left", "还有余量", "還有餘量", "残りあり", "남아 있음") }
+    static func petLimitReset(_ value: String) -> String {
+        t("in (value)", "(value)后重置", "(value)後重置", "(value)でリセット", "(value) 후 초기화")
+    }
+    static func petCostToday(_ cost: String) -> String {
+        t("(cost) today", "今日 (cost)", "今日 (cost)", "今日 (cost)", "오늘 (cost)")
+    }
 
 
     static var menuSyncNow: String { t("Sync Now", "立即同步", "立即同步", "今すぐ同期", "지금 동기화") }

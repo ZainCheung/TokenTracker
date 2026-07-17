@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-07-14T15:43:00.403Z",
+  "generatedAt": "2026-07-17T11:08:03.160Z",
   "root": "dashboard/src",
   "rules": {
     "colors": "hex/rgb(a) literals",
     "rawText": "JSX text nodes containing letters or digits"
   },
   "totals": {
-    "colors": 370,
+    "colors": 385,
     "rawText": 186
   },
   "files": {
@@ -186,7 +186,7 @@
       ]
     },
     "dashboard/src/pet.jsx": {
-      "colors": 3,
+      "colors": 18,
       "rawText": 2,
       "rawTextTokens": [
         "/@keyframes // so the animations still run. const result = raw.replace(/",

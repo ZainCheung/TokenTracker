@@ -54,10 +54,12 @@ internal sealed class PetWindow : Window
     private decimal _curRate = 1m;
     private string _locale = "en";
     private bool _syncing;
+    private JsonNode? _limits;
     private string _character = CurrentCharacter;
     private UsagePoller.UsageStats _stats;
     private bool _connected = true;
     private bool _isDragging;
+    private double _lastDragLeft;
     private bool _isAnimating;
     private EventHandler? _renderHandler;
     private System.Diagnostics.Stopwatch? _animStopwatch;
@@ -120,7 +122,12 @@ internal sealed class PetWindow : Window
             Interval = TimeSpan.FromMilliseconds(500),
         };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SavePlacement(); };
-        LocationChanged += (_, _) => { _saveTimer.Stop(); _saveTimer.Start(); };
+        LocationChanged += (_, _) =>
+        {
+            UpdateDragDirectionFromWindowMove();
+            _saveTimer.Stop();
+            _saveTimer.Start();
+        };
 
         // WebView2 does not reliably deliver mouse-leave to this transparent, never-
         // activated topmost window, so the page's own hover detection sticks. Poll the
@@ -255,11 +262,16 @@ internal sealed class PetWindow : Window
             switch (msg)
             {
                 case "pet:drag":
+                case "pet:drag-left":
+                case "pet:drag-right":
+                {
                     // Hand the press off to the OS so the borderless window moves natively.
                     // finally guarantees _isDragging resets even if the modal move loop
                     // throws; a stuck true would permanently disable hover/click-through
                     // ticks and placement saves.
                     _isDragging = true;
+                    _lastDragLeft = Left;
+                    PushDragState(msg == "pet:drag-left" ? "running-left" : "running-right");
                     try
                     {
                         StopEdgeAnimation();
@@ -269,6 +281,7 @@ internal sealed class PetWindow : Window
                     finally
                     {
                         _isDragging = false;
+                        PushDragState(null);
                     }
                     // Settle placement synchronously, right here on the UI thread, before
                     // any DispatcherTimer tick can run. Deferring to the 500ms _saveTimer
@@ -280,6 +293,7 @@ internal sealed class PetWindow : Window
                     _saveTimer.Stop();
                     SavePlacement();
                     break;
+                }
                 case "pet:context-menu":
                     ContextMenuRequested?.Invoke();
                     break;
@@ -319,6 +333,8 @@ internal sealed class PetWindow : Window
 
     public void HidePet()
     {
+        _isDragging = false;
+        PushDragState(null);
         _clickThroughTimer.Stop();
         StopEdgeAnimation();
         SetClickThrough(false);
@@ -439,6 +455,29 @@ internal sealed class PetWindow : Window
         catch { /* page mid-navigation */ }
     }
 
+    private void UpdateDragDirectionFromWindowMove()
+    {
+        if (!_isDragging || double.IsNaN(Left)) return;
+        var deltaX = Left - _lastDragLeft;
+        if (Math.Abs(deltaX) < 0.5) return;
+        _lastDragLeft = Left;
+        PushDragState(deltaX < 0 ? "running-left" : "running-right");
+    }
+
+    private void PushDragState(string? state)
+    {
+        if (!_coreReady) return;
+        try
+        {
+            var value = System.Text.Json.JsonSerializer.Serialize(state);
+            _ = _webView.CoreWebView2.ExecuteScriptAsync(
+                $"window.__ttPetDragState={value};" +
+                "window.dispatchEvent(new Event('pet:drag-state'));" +
+                (state is null ? "window.dispatchEvent(new Event('pet:drag-end'));" : ""));
+        }
+        catch { /* page mid-navigation */ }
+    }
+
     // ── Typing activity (global, count-only) ───────────────────────────────
     //
     // Drives the "typing" animation while the user is actually typing — anywhere. We
@@ -544,6 +583,21 @@ internal sealed class PetWindow : Window
         PushContext();
     }
 
+    /// <summary>Push the native usage-limits snapshot without letting raw JSON become executable script.</summary>
+    public void ApplyLimits(string? json)
+    {
+        try
+        {
+            _limits = string.IsNullOrWhiteSpace(json) ? null : JsonNode.Parse(json);
+        }
+        catch
+        {
+            // Keep the last good snapshot if a provider returns malformed data.
+            return;
+        }
+        PushContext();
+    }
+
     /// <summary>
     /// Push the usage stats (the SAME numbers the tray's UsagePoller fetched) so the
     /// pet's bubble + animation tier + data-rich quip pool always match the tray exactly
@@ -588,6 +642,7 @@ internal sealed class PetWindow : Window
         var character = System.Text.Json.JsonSerializer.Serialize(_character);
         var syncing = _syncing ? "true" : "false";
         var cost = _stats.TodayCostUsd.ToString(inv);
+        var limitsJson = _limits?.ToJsonString() ?? "null";
         var connected = _connected ? "true" : "false";
         var statsJson = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -616,6 +671,7 @@ internal sealed class PetWindow : Window
                 $"window.__ttPetTokens={_stats.TodayTokens};" +
                 $"window.__ttPetCostUsd={cost};" +
                 $"window.__ttPetStats={statsJson};" +
+                $"window.__ttPetLimits={limitsJson};" +
                 $"window.__ttPetConnected={connected};" +
                 $"window.__ttPetMiniMode={mini};" +
                 "window.dispatchEvent(new Event('pet:currency'));" +
@@ -624,6 +680,7 @@ internal sealed class PetWindow : Window
                 "window.dispatchEvent(new Event('pet:look'));" +
                 "window.dispatchEvent(new Event('pet:syncing'));" +
                 "window.dispatchEvent(new Event('pet:usage'));" +
+                "window.dispatchEvent(new Event('pet:limits'));" +
                 "window.dispatchEvent(new Event('pet:connected'));" +
                 "window.dispatchEvent(new Event('pet:minimode'));");
         }
@@ -756,13 +813,10 @@ internal sealed class PetWindow : Window
         };
     }
 
-    // Height includes a ~46px top band reserved for the hover/quip bubble (pet.jsx
-    // BUBBLE_BAND) so the bubble floats above Clawd instead of overlapping it. The band
-    // is sized for a two-line bubble (the data-rich quips wrap), and the widths are a
-    // little roomier than the sprite needs so longer lines have horizontal space. The
-    // sprite tracks (height − band), so these heights keep it the same visual size as
-    // before the taller band.
-    private const double BubbleBand = 46;
+    // Height includes the top band reserved for the hover bubble (pet.jsx BUBBLE_BAND).
+    // The band is tall enough for the compact list of active, non-full limits; the
+    // sprite tracks (height − band), so adding the band does not change sprite scale.
+    private const double BubbleBand = 138;
 
     // Keep the native edge geometry in lockstep with pet.jsx:sizeFor(). The window is
     // wider than the sprite so the bubble has room; hiding the window by a fixed number
@@ -778,9 +832,9 @@ internal sealed class PetWindow : Window
 
     private static (double Width, double Height) SizeDimensions(string size) => size switch
     {
-        SizeSmall => (150, 138),
-        SizeLarge => (210, 194),
-        _ => (180, 162),
+        SizeSmall => (150, 230),
+        SizeLarge => (210, 286),
+        _ => (180, 254),
     };
 
     /// <summary>The persisted size choice (defaults to medium).</summary>

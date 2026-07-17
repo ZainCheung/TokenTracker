@@ -26,6 +26,10 @@ const atlasSwiftSource = fs.readFileSync(
   path.join(repoRoot, "TokenTrackerBar/TokenTrackerBar/Views/PetAtlasSpriteView.swift"),
   "utf8",
 );
+const petPageSource = fs.readFileSync(
+  path.join(repoRoot, "dashboard/src/pet.jsx"),
+  "utf8",
+);
 const windowsPetSource = fs.readFileSync(
   path.join(repoRoot, "TokenTrackerWin/PetWindow.cs"),
   "utf8",
@@ -194,4 +198,44 @@ test("macOS edge tuck keeps a visible handle and restores every preset", () => {
   for (const spriteWidth of [60, 84, 111]) {
     assert.ok(48 < spriteWidth, `edge handle must fit inside ${spriteWidth}pt sprite`);
   }
+});
+
+test("desktop dragging selects directional running rows for imported pets", () => {
+  assert.match(petPageSource, /const \[dragState, setDragState\] = useState\(null\)/);
+  assert.match(petPageSource, /setDragState\(deltaX < 0 \? "running-left" : "running-right"\)/);
+  assert.match(petPageSource, /addEventListener\("pet:drag-end"/);
+  assert.match(petPageSource, /dragState \|\| state/);
+  assert.match(windowsPetSource, /case "pet:drag-left":/);
+  assert.match(windowsPetSource, /case "pet:drag-right":/);
+  assert.match(windowsPetSource, /pet:drag-end/);
+  assert.match(macControllerSource, /uiState\.isDragging = true/);
+  assert.match(macControllerSource, /uiState\.dragDirection/);
+  assert.match(atlasSwiftSource, /if isDragging/);
+  assert.match(atlasSwiftSource, /row: dragDirection == \.left \? 2 : 1/);
+});
+
+test("desktop pet tooltips stay readable and use native macOS glass when available", () => {
+  assert.match(petPageSource, /maxWidth: "min\(92%, 340px\)"/);
+  assert.match(petPageSource, /borderRadius: 999/);
+  assert.match(petPageSource, /rgba\(255,255,255,0\.18\)/);
+  assert.match(petPageSource, /WebkitLineClamp: 2/);
+  assert.match(petPageSource, /getPetLimitDisplay/);
+  assert.match(petPageSource, /hoverUsage/);
+  assert.match(petPageSource, /buildPetLimitSummaries/);
+  assert.match(petPageSource, /limitItems/);
+  assert.match(petPageSource, /BUBBLE_BAND = 138/);
+  assert.doesNotMatch(petPageSource, /↻ \{limit\.resetText\}/);
+  assert.match(petPageSource, /pet:limits/);
+  assert.match(companionSource, /lineLimit\(layout == \.floating \? 2 : 3\)/);
+  assert.match(companionSource, /PetBubbleGlassBackground/);
+  assert.match(companionSource, /NSGlassEffectView/);
+  assert.match(companionSource, /#available\(macOS 26/);
+  assert.match(companionSource, /activePetLimits/);
+  assert.match(companionSource, /petLimitAtLimit/);
+  assert.match(companionSource, /floatingUsageContent/);
+  assert.match(companionSource, /minHeight: 138/);
+  assert.doesNotMatch(companionSource, /Text\(display\.resetText\.map \{ "↻/);
+  assert.match(companionSource, /joined\(separator: "\\n"\)/);
+  assert.match(windowsPetSource, /ApplyLimits/);
+  assert.match(windowsPetSource, /__ttPetLimits/);
 });

@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   buildQuipPool,
+  buildPetLimitSummaries,
   formatCompactTokens as formatTokens,
+  getPetLimitDisplay,
+  formatPetLimitSummary,
   normalizePetLocale,
   petLabels,
 } from "./lib/pet-quips.js";
@@ -42,12 +45,9 @@ const TAP_HOLD_MS = 2500;
 // so too small a value makes every click nudge the pet's position.
 const DRAG_THRESHOLD = 10;
 // Top band reserved for the bubble so it never overlaps Clawd (the host sizes the
-// window height to include this — keep in sync with PetWindow.SizeDimensions). Tall
-// enough for a two-line bubble: the data-rich macOS-parity quips (top model, 30-day
-// total, etc.) are longer than today's single line, and this layered window clips
-// content at its edges (unlike macOS, where the bubble can overflow the frame), so the
-// bubble wraps to a second line here instead of being truncated.
-const BUBBLE_BAND = 46;
+// window height to include this — keep in sync with PetWindow.SizeDimensions). The
+// hover card can show several active, non-full limits as compact progress rows.
+const BUBBLE_BAND = 138;
 
 // Hover lean (macOS parity): while the cursor is over the pet, Clawd leans toward it
 // (ClawdCompanionView shifts the body ±1.2px and the eyes a touch more, ≈7% of width).
@@ -106,6 +106,11 @@ function readPetStats() {
     activeDaysAllTime: num(s?.activeDaysAllTime),
     topModels: Array.isArray(s?.topModels) ? s.topModels : [],
   };
+}
+
+function readPetLimitSummaries() {
+  const limits = typeof window !== "undefined" ? window.__ttPetLimits : null;
+  return buildPetLimitSummaries(limits);
 }
 
 function readPetConnected() {
@@ -183,6 +188,8 @@ const PET_STATE_TO_PATH = {
   "mini-enter": "mini/enter.svg",
   "mini-enter-sleep": "mini/enter-sleep.svg",
   "mini-crabwalk": "mini/crabwalk.svg",
+  "running-left": "mini/crabwalk.svg",
+  "running-right": "mini/crabwalk.svg",
 };
 
 const petSvgCache = new Map();
@@ -278,48 +285,197 @@ function PetClawd({ state, size, leanX }) {
   );
 }
 
-function PetCharacterSprite({ state, size, leanX, character, pet, lookDirectionIndex }) {
+function PetCharacterSprite({ state, dragState, size, leanX, character, pet, lookDirectionIndex }) {
   if (character !== "clawd") {
     return (
       <PetAtlasAnimated
         character={character}
         pet={pet}
         state={state}
+        dragState={dragState}
         size={size}
         lookDirectionIndex={lookDirectionIndex}
       />
     );
   }
-  return <PetClawd state={state} size={size * petVisualScale(character)} leanX={leanX} />;
+  return <PetClawd state={dragState || state} size={size * petVisualScale(character)} leanX={leanX} />;
 }
 
-/** Compact translucent pill shown in the top band (usage on hover, or a tap quip).
-    Wraps to at most two lines (clamped with an ellipsis) so the longer data-rich quips
-    show in full within this fixed, content-clipping window instead of truncating. */
-function Bubble({ text }) {
+const PET_STATUS_COLORS = {
+  good: "rgba(116, 235, 174, 0.96)",
+  warning: "rgba(255, 203, 105, 0.98)",
+  danger: "rgba(255, 116, 126, 0.98)",
+};
+
+/** Transparent glass speech bubble shown in the top band. Hover usage gets a
+    compact token row plus one progress row for every active, non-full limit. */
+function Bubble({ text, usage = null }) {
   return (
     <div
       style={{
-        maxWidth: "98%",
-        padding: "3px 9px",
-        borderRadius: 10,
-        display: "-webkit-box",
-        WebkitBoxOrient: "vertical",
-        WebkitLineClamp: 2,
-        overflow: "hidden",
-        wordBreak: "break-word",
-        textAlign: "center",
-        fontSize: 11,
-        fontWeight: 600,
-        lineHeight: 1.3,
-        color: "#fff",
-        background: "rgba(20,20,22,0.86)",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
-        pointerEvents: "none",
-        userSelect: "none",
+        position: "relative",
+        width: "fit-content",
+        maxWidth: "min(92%, 340px)",
       }}
     >
-      {text}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={usage?.ariaLabel || text}
+        style={{
+          width: "fit-content",
+          maxWidth: "100%",
+          boxSizing: "border-box",
+          padding: usage ? "9px 13px 10px" : "5px 11px 6px",
+          borderRadius: 22,
+          color: "rgba(255,255,255,0.94)",
+          background: "linear-gradient(145deg, rgba(255,255,255,0.15), rgba(255,255,255,0.045))",
+          border: "1px solid rgba(255,255,255,0.24)",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.16)",
+          backdropFilter: "blur(18px) saturate(145%)",
+          WebkitBackdropFilter: "blur(18px) saturate(145%)",
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      >
+        {usage ? (
+          <div style={{ display: "grid", gap: 0, minWidth: 0, textAlign: "left" }}>
+            {usage.tokenText && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  whiteSpace: "nowrap",
+                  fontVariantNumeric: "tabular-nums",
+                  paddingBottom: 6,
+                  marginBottom: 4,
+                  borderBottom: "1px solid rgba(255,255,255,0.13)",
+                }}
+              >
+                <span style={{ fontSize: 11.5, fontWeight: 750, lineHeight: 1.1, letterSpacing: "0.01em" }}>
+                  {usage.tokenText} tokens
+                </span>
+                {usage.costText && (
+                  <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.68)", fontSize: 9.5, lineHeight: 1.1 }}>
+                    {usage.costText}
+                  </span>
+                )}
+              </div>
+            )}
+            {usage.limits?.map((limit, index) => {
+              const toneColor = PET_STATUS_COLORS[limit.tone] || PET_STATUS_COLORS.good;
+              const progress = Math.max(2, Math.min(100, Number(limit.value) || 0));
+              const rowTop = index !== 0 || Boolean(usage.tokenText) ? 3 : 0;
+              return (
+                <div
+                  key={`${limit.provider}-${limit.window}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) 50px 42px",
+                    alignItems: "center",
+                    gap: 7,
+                    minWidth: 0,
+                    paddingTop: rowTop,
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", fontSize: 9.5, fontWeight: 650, lineHeight: 1.15 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-block",
+                        width: 5,
+                        height: 5,
+                        marginRight: 6,
+                        borderRadius: "50%",
+                        background: toneColor,
+                        boxShadow: `0 0 0 3px ${toneColor.replace("0.96", "0.12").replace("0.98", "0.12")}`,
+                      }}
+                    />
+                    {limit.provider} {limit.window}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "block",
+                      width: 50,
+                      height: 4,
+                      overflow: "hidden",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.16)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "block",
+                        width: `${progress}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: toneColor,
+                        boxShadow: `0 0 6px ${toneColor}`,
+                      }}
+                    />
+                  </span>
+                  <span style={{ width: 42, color: "rgba(255,255,255,0.58)", fontSize: 8.5, fontWeight: 500, lineHeight: 1, textAlign: "right", letterSpacing: "0.01em" }}>
+                    {limit.resetText || ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 5,
+                height: 5,
+                flex: "0 0 auto",
+                marginTop: 4,
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.9)",
+                boxShadow: "0 0 0 3px rgba(255,255,255,0.08)",
+              }}
+            />
+            <span
+              style={{
+                minWidth: 0,
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 2,
+                overflow: "hidden",
+                wordBreak: "break-word",
+                textAlign: "left",
+                fontSize: 11,
+                fontWeight: 600,
+                lineHeight: 1.25,
+                letterSpacing: "0.01em",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {text}
+            </span>
+          </div>
+        )}
+      </div>
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: -4,
+          width: 8,
+          height: 8,
+          transform: "translateX(-50%) rotate(45deg)",
+          background: "rgba(255,255,255,0.06)",
+          borderRight: "1px solid rgba(255,255,255,0.18)",
+          borderBottom: "1px solid rgba(255,255,255,0.18)",
+          backdropFilter: "blur(18px) saturate(145%)",
+          WebkitBackdropFilter: "blur(18px) saturate(145%)",
+        }}
+      />
     </div>
   );
 }
@@ -327,6 +483,7 @@ function Bubble({ text }) {
 function Pet() {
   const { pets, refresh: refreshPetCatalog } = usePetCatalog();
   const [today, setToday] = useState(readPetUsage);
+  const [limitSummaries, setLimitSummaries] = useState(readPetLimitSummaries);
   const [connected, setConnected] = useState(readPetConnected);
   const [currency, setCurrency] = useState(readPetCurrency);
   const [locale, setLocale] = useState(readPetLocale);
@@ -337,6 +494,7 @@ function Pet() {
   const [idleVariant, setIdleVariant] = useState("idle-living");
   const [tapState, setTapState] = useState(null);
   const [speech, setSpeech] = useState(null);
+  const [dragState, setDragState] = useState(null);
   const [hovering, setHovering] = useState(false);
   const [leanX, setLeanX] = useState(0); // −1..+1, cursor offset from center while hovering
   const [lookDirectionIndex, setLookDirectionIndex] = useState(null);
@@ -401,6 +559,12 @@ function Pet() {
     update();
     window.addEventListener("pet:usage", update);
     return () => window.removeEventListener("pet:usage", update);
+  }, []);
+  useEffect(() => {
+    const update = () => setLimitSummaries(readPetLimitSummaries());
+    update();
+    window.addEventListener("pet:limits", update);
+    return () => window.removeEventListener("pet:limits", update);
   }, []);
   useEffect(() => {
     const update = () => setConnected(readPetConnected());
@@ -495,6 +659,23 @@ function Pet() {
     return () => window.removeEventListener("pet:look", update);
   }, [selectedPet?.spriteVersionNumber]);
 
+  // The native host owns the modal window move loop. Keep the visual run cycle alive
+  // until that loop ends, then return to the state that was active before dragging.
+  useEffect(() => {
+    const update = () => {
+      const next = window.__ttPetDragState;
+      setDragState(next === "running-left" || next === "running-right" ? next : null);
+    };
+    const end = () => setDragState(null);
+    update();
+    window.addEventListener("pet:drag-state", update);
+    window.addEventListener("pet:drag-end", end);
+    return () => {
+      window.removeEventListener("pet:drag-state", update);
+      window.removeEventListener("pet:drag-end", end);
+    };
+  }, []);
+
   // Ambient rotation: real usage context unlocks short scenes, while calm poses remain
   // heavily weighted to avoid an always-busy pet and unnecessary continuous animation.
   useEffect(() => {
@@ -579,6 +760,7 @@ function Pet() {
       tokensText: formatTokens(s.todayTokens),
       costText: `${currency.symbol}${costValue.toFixed(2)}`,
       costValue,
+      limitText: formatPetLimitSummary(locale, limitSummaries[0] || null),
       isSyncing,
     });
     setSpeech(pool[quipIndexRef.current % pool.length] || null);
@@ -588,7 +770,7 @@ function Pet() {
       setTapState(null);
       setSpeech(null);
     }, TAP_HOLD_MS);
-  }, [locale, currency.symbol, currency.rate, isSyncing]);
+  }, [locale, currency.symbol, currency.rate, isSyncing, limitSummaries]);
 
   // Distinguish a tap (→ cycle animation) from a drag (→ native window move):
   // only hand the move to the OS once the pointer travels past a small threshold.
@@ -608,11 +790,13 @@ function Pet() {
     }
     if (!d || d.dragging) return;
     if (Math.abs(e.clientX - d.x) > DRAG_THRESHOLD || Math.abs(e.clientY - d.y) > DRAG_THRESHOLD) {
+      const deltaX = e.clientX - d.x;
       d.dragging = true;
+      setDragState(deltaX < 0 ? "running-left" : "running-right");
       // The native move loop swallows the matching mouseup, so clear the drag ref now —
       // otherwise `dragging` stays true and suppresses hover lean + taps until the next click.
       dragRef.current = null;
-      post("pet:drag"); // native move loop takes over from here
+      post(deltaX < 0 ? "pet:drag-left" : "pet:drag-right"); // native move loop takes over
     }
   }, []);
   const onMouseUp = useCallback(() => {
@@ -627,13 +811,31 @@ function Pet() {
 
   // Speech quip (on tap) takes priority over the hover usage readout.
   const L = petLabels(locale);
+  const limitText = limitSummaries
+    .map((reading) => formatPetLimitSummary(locale, reading))
+    .filter(Boolean)
+    .join(" · ");
+  const limitItems = limitSummaries.map((reading) => {
+    const display = getPetLimitDisplay(locale, reading);
+    if (!display) return null;
+    return {
+      provider: reading.provider,
+      window: reading.window,
+      label: display.label,
+      tone: display.tone,
+      resetText: display.resetText,
+      value: display.value,
+      ariaLabel: formatPetLimitSummary(locale, reading),
+    };
+  }).filter(Boolean);
+  const tokenUsageText = today.tokens > 0
+    ? `${L.today} ${formatTokens(today.tokens)} · ${currency.symbol}${(today.costUsd * currency.rate).toFixed(2)}`
+    : "";
   const usageText = isDisconnected
     ? L.offline
     : isSyncing
       ? L.syncing
-      : today.tokens > 0
-        ? `${L.today} ${formatTokens(today.tokens)} · ${currency.symbol}${(today.costUsd * currency.rate).toFixed(2)}`
-        : L.noUsage;
+      : [tokenUsageText, limitText].filter(Boolean).join("\n") || L.noUsage;
 
   let bubbleText = speech;
   if (!bubbleText) {
@@ -644,6 +846,20 @@ function Pet() {
       bubbleText = usageText;
     }
   }
+
+  // Hover gets a small visual hierarchy instead of two equal-weight sentences.
+  // Keep the raw summary as the accessible label and for the no-data fallback.
+  const hoverUsage = hovering && !speech && !modelStatus && !isDisconnected && !isSyncing
+    && (today.tokens > 0 || limitItems.length > 0)
+    ? {
+      tokenText: today.tokens > 0 ? formatTokens(today.tokens) : "",
+      costText: today.tokens > 0
+        ? `${currency.symbol}${(today.costUsd * currency.rate).toFixed(2)} · ${L.today}`
+        : "",
+      limits: limitItems,
+      ariaLabel: [tokenUsageText, limitText].filter(Boolean).join(" · "),
+    }
+    : null;
 
   return (
     <div
@@ -670,7 +886,7 @@ function Pet() {
           justifyContent: "center",
         }}
       >
-        {bubbleText && <Bubble text={bubbleText} />}
+        {bubbleText && <Bubble text={bubbleText} usage={hoverUsage} />}
       </div>
       <div
         style={{
@@ -694,6 +910,7 @@ function Pet() {
         >
           <PetCharacterSprite
             state={state}
+            dragState={dragState}
             size={size}
             leanX={leanX}
             character={character}

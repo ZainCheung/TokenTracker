@@ -60,6 +60,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _quitItem;
 
     private UsagePoller.UsageStats? _lastStats;
+    private string? _lastLimitsJson;
     private string _localePreference = NativeLocalization.CurrentPreference;
     private string _themePreference = NativeTheme.CurrentPreference;
     private TrayStrings _strings = TrayStrings.For(NativeLocalization.CurrentResolvedLocale);
@@ -211,6 +212,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _server.SyncStarted += OnSyncStarted;
         _server.SyncCompleted += OnSyncCompleted;
         _poller.StatsUpdated += OnStatsUpdated;
+        _poller.LimitsUpdated += OnLimitsUpdated;
         _refreshTimer.Tick += (_, _) => RefreshSummary();
         _syncTimer.Tick += (_, _) => TriggerBackgroundSync();
         _refreshTimer.Start();
@@ -233,6 +235,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 EnsurePet();
                 _petWindow!.ShowPet();
                 _poller.IncludeRichStats = true;   // gather the pet's quip-pool stats
+                _poller.IncludeLimits = true;
                 UpdatePetMenuText();
                 RefreshSummary();
             }));
@@ -416,6 +419,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // The pet's quip pool needs the heatmap + model-breakdown stats; only gather them
         // (two extra calls per poll) while the pet is actually on screen.
         _poller.IncludeRichStats = _petWindow.IsVisible;
+        _poller.IncludeLimits = _petWindow.IsVisible;
         if (_petWindow.IsVisible)
         {
             RefreshSummary();      // push the current numbers right away
@@ -564,6 +568,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _petWindow.HidePet();
         _petWindow.StoreVisible(false);
         _poller.IncludeRichStats = false;   // stop gathering the pet-only stats
+        _poller.IncludeLimits = false;
         UpdatePetMenuText();
         PushDashboardPetSettings();
     }
@@ -595,6 +600,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                     _petWindow!.ShowPet();
                     _petWindow.StoreVisible(true);
                     _poller.IncludeRichStats = true;
+                    _poller.IncludeLimits = true;
                     _poller.RefreshNow();
                 }
                 else
@@ -602,6 +608,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                     _petWindow!.HidePet();
                     _petWindow.StoreVisible(false);
                     _poller.IncludeRichStats = false;
+                    _poller.IncludeLimits = false;
                 }
                 UpdatePetMenuText();
                 // Echo the applied state back; the size/character cases push inside
@@ -808,6 +815,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         PostToUi(RefreshSummary);
     }
 
+    private void OnLimitsUpdated(string limitsJson)
+    {
+        // The JSON is parsed and safely re-serialized by PetWindow before it is
+        // sent into WebView2; this callback only crosses the thread boundary.
+        PostToUi(() =>
+        {
+            _lastLimitsJson = limitsJson;
+            _petWindow?.ApplyLimits(limitsJson);
+        });
+    }
+
     /// <summary>Render the today summary into the menu + tooltip, in the user's currency.</summary>
     private async void RefreshSummary()
     {
@@ -823,6 +841,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // (connection state is owned by OnServerStatusChanged).
         _petWindow?.ApplyCurrency(symbol, rate);
         _petWindow?.ApplyLocale(NativeLocalization.ResolveLocale(_localePreference));
+        _petWindow?.ApplyLimits(_lastLimitsJson);
 
         if (_lastStats is not { } s)
         {
