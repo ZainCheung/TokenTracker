@@ -43,6 +43,17 @@ test("leaderboard refresh fetches all user metadata with one RPC", () => {
   assert.doesNotMatch(source, /const fallbackResults = await Promise\.all/u);
 });
 
+test("signed-in users cannot trigger expensive month, total, or all-period leaderboard refreshes", () => {
+  const source = read("dashboard/edge-patches/tokentracker-leaderboard-refresh.ts");
+  const clientSource = read("dashboard/src/lib/cloud-sync.ts");
+  assert.match(source, /type RefreshAuthorization = "privileged" \| "signed-in";/u);
+  assert.match(
+    source,
+    /if \(authorization === "signed-in" && body\.period !== "week"\)\s*return json\(\{ error: "signed-in users may only refresh week" \}, 403\);/u,
+  );
+  assert.match(clientSource, /body: JSON\.stringify\(\{ period: "week", source \}\)/u);
+});
+
 test("telemetry heartbeat uses one atomic database upsert RPC", () => {
   const source = read("dashboard/edge-patches/tokentracker-telemetry.ts");
   assert.match(source, /rpc\("upsert_tokentracker_telemetry_daily"/u);

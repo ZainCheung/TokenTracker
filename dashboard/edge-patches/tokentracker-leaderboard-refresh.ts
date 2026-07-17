@@ -83,20 +83,22 @@ async function verifiedClaimsFromJwt(
 // (LEADERBOARD_REFRESH_SECRET, sent by the pg_cron schedule), the service-role
 // key (manual ops), or a SIGNED-IN user (the dashboard's per-sync week refresh).
 // The public anon key is a validly-signed JWT with role="anon" and must NOT pass.
-async function authorizeRefresh(req: Request): Promise<boolean> {
+type RefreshAuthorization = "privileged" | "signed-in";
+
+async function authorizeRefresh(req: Request): Promise<RefreshAuthorization | null> {
   const secret = Deno.env.get("LEADERBOARD_REFRESH_SECRET");
   const provided = req.headers.get("x-refresh-secret");
-  if (secret && provided && timingSafeEqualStr(provided, secret)) return true;
+  if (secret && provided && timingSafeEqualStr(provided, secret)) return "privileged";
 
   const auth = req.headers.get("Authorization");
   const bearer = auth ? auth.replace(/^Bearer\s+/i, "").trim() : "";
   const serviceKey = Deno.env.get("INSFORGE_SERVICE_ROLE_KEY");
-  if (bearer && serviceKey && timingSafeEqualStr(bearer, serviceKey)) return true;
+  if (bearer && serviceKey && timingSafeEqualStr(bearer, serviceKey)) return "privileged";
 
   const claims = await verifiedClaimsFromJwt(auth);
-  if (claims && claims.role !== "anon" && claims.sub) return true;
+  if (claims && claims.role !== "anon" && claims.sub) return "signed-in";
 
-  return false;
+  return null;
 }
 
 type Period = "week" | "month" | "total";
@@ -478,7 +480,8 @@ export default async function (req: Request): Promise<Response> {
   if (req.method === "OPTIONS")
     return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  if (!(await authorizeRefresh(req))) return json({ error: "unauthorized" }, 401);
+  const authorization = await authorizeRefresh(req);
+  if (!authorization) return json({ error: "unauthorized" }, 401);
   const requestStartedAt = Date.now();
 
   const baseUrl = Deno.env.get("INSFORGE_BASE_URL")!;
@@ -498,6 +501,8 @@ export default async function (req: Request): Promise<Response> {
 
   // Parse requested periods
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  if (authorization === "signed-in" && body.period !== "week")
+    return json({ error: "signed-in users may only refresh week" }, 403);
   const requestSource =
     typeof body.source === "string" && body.source.trim().length > 0
       ? body.source.trim().slice(0, 80)
