@@ -60,7 +60,9 @@ enum MenuBarDisplayMetric: String, CaseIterable {
         case .kimiTotal: return "Km Tot"
         case .kiroMonth: return "Kr Mo"
         case .kiroBonus: return "Kr Bn"
-        case .grokMonth: return "Gk Mo"
+        // Preference id stays `grokMonth` for storage stability; label is period-agnostic
+        // because SuperGrok accounts use a weekly pool while legacy is monthly.
+        case .grokMonth: return "Gk"
         case .grokOndemand: return "Gk OD"
         case .copilotPremium: return "Co Prem"
         case .copilotChat: return "Co Chat"
@@ -98,7 +100,7 @@ enum MenuBarDisplayMetric: String, CaseIterable {
         case .kimiTotal: return "Kimi Total Limit"
         case .kiroMonth: return "Kiro Monthly Limit"
         case .kiroBonus: return "Kiro Bonus Limit"
-        case .grokMonth: return "Grok Build Monthly Limit"
+        case .grokMonth: return "Grok Build Limit"
         case .grokOndemand: return "Grok Build On-demand Limit"
         case .copilotPremium: return "Copilot Premium Limit"
         case .copilotChat: return "Copilot Chat Limit"

@@ -1497,7 +1497,7 @@ struct ClawdCompanionView: View {
         ])
         if let grok = limits.grok {
             generic("grok", configured: grok.configured, error: grok.error, windows: [
-                (Strings.grokMonthLabel, grok.primaryWindow), (Strings.grokOndemandLabel, grok.secondaryWindow)
+                (Strings.grokPrimaryLabel(periodType: grok.periodType), grok.primaryWindow), (Strings.grokOndemandLabel, grok.secondaryWindow)
             ])
         }
         if let copilot = limits.copilot {

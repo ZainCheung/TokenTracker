@@ -6,13 +6,56 @@ const path = require("node:path");
 
 const {
   normalizeGrokBillingResponse,
+  normalizeGrokPeriodType,
   fetchGrokLimits,
   readGrokAccessToken,
   isGrokInstalled,
 } = require("../src/lib/grok-limits");
 
+describe("normalizeGrokPeriodType", () => {
+  it("maps USAGE_PERIOD_TYPE_* enums", () => {
+    assert.equal(normalizeGrokPeriodType("USAGE_PERIOD_TYPE_WEEKLY"), "weekly");
+    assert.equal(normalizeGrokPeriodType("USAGE_PERIOD_TYPE_MONTHLY"), "monthly");
+    assert.equal(normalizeGrokPeriodType("weekly"), "weekly");
+    assert.equal(normalizeGrokPeriodType(""), null);
+    assert.equal(normalizeGrokPeriodType(null), null);
+  });
+});
+
 describe("normalizeGrokBillingResponse", () => {
-  it("maps monthly credits and billing period reset", () => {
+  it("maps unified format=credits weekly pool", () => {
+    const result = normalizeGrokBillingResponse({
+      config: {
+        currentPeriod: {
+          type: "USAGE_PERIOD_TYPE_WEEKLY",
+          start: "2026-07-13T09:23:37.846092+00:00",
+          end: "2026-07-20T09:23:37.846092+00:00",
+        },
+        creditUsagePercent: 18.0,
+        onDemandCap: { val: 0 },
+        onDemandUsed: { val: 0 },
+        productUsage: [
+          { product: "GrokBuild", usagePercent: 17.0 },
+          { product: "GrokChat", usagePercent: 1.0 },
+        ],
+        isUnifiedBillingUser: true,
+        billingPeriodStart: "2026-07-13T09:23:37.846092+00:00",
+        billingPeriodEnd: "2026-07-20T09:23:37.846092+00:00",
+      },
+    });
+
+    assert.equal(result.period_type, "weekly");
+    assert.equal(result.credit_usage_percent, 18);
+    // Overall pool percent (not GrokBuild-only attribution) is the quota bar.
+    assert.deepEqual(result.primary_window, {
+      used_percent: 18,
+      reset_at: "2026-07-20T09:23:37.846Z",
+    });
+    assert.equal(result.secondary_window, null);
+    assert.equal(result.billing_period_start, "2026-07-13T09:23:37.846Z");
+  });
+
+  it("maps legacy monthly credits and billing period reset", () => {
     const result = normalizeGrokBillingResponse({
       config: {
         monthlyLimit: { val: 150_000 },
@@ -24,6 +67,7 @@ describe("normalizeGrokBillingResponse", () => {
       },
     });
 
+    assert.equal(result.period_type, "monthly");
     assert.equal(result.monthly_credits_limit, 150_000);
     assert.equal(result.monthly_credits_used, 4_625);
     assert.deepEqual(result.primary_window, {
@@ -49,6 +93,34 @@ describe("normalizeGrokBillingResponse", () => {
       reset_at: "2026-07-01T00:00:00.000Z",
     });
   });
+
+  it("falls back to GrokBuild productUsage when creditUsagePercent is missing", () => {
+    const result = normalizeGrokBillingResponse({
+      config: {
+        currentPeriod: {
+          type: "USAGE_PERIOD_TYPE_WEEKLY",
+          start: "2026-07-13T00:00:00Z",
+          end: "2026-07-20T00:00:00Z",
+        },
+        productUsage: [{ product: "GrokBuild", usagePercent: 42 }],
+        billingPeriodEnd: "2026-07-20T00:00:00Z",
+      },
+    });
+
+    assert.equal(result.period_type, "weekly");
+    assert.equal(result.primary_window.used_percent, 42);
+  });
+
+  it("infers weekly from period length when type is omitted", () => {
+    const result = normalizeGrokBillingResponse({
+      config: {
+        creditUsagePercent: 5,
+        billingPeriodStart: "2026-07-13T00:00:00Z",
+        billingPeriodEnd: "2026-07-20T00:00:00Z",
+      },
+    });
+    assert.equal(result.period_type, "weekly");
+  });
 });
 
 describe("fetchGrokLimits", () => {
@@ -62,7 +134,7 @@ describe("fetchGrokLimits", () => {
     }
   });
 
-  it("fetches billing via cli-chat-proxy with stored token", async () => {
+  it("fetches format=credits billing via cli-chat-proxy with stored token", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-grok-limits-fetch-"));
     try {
       const grokHome = path.join(tmp, ".grok");
@@ -77,12 +149,67 @@ describe("fetchGrokLimits", () => {
 
       assert.equal(readGrokAccessToken({ home: tmp, env: { GROK_HOME: grokHome } }), "test-token");
 
+      const urls = [];
       const result = await fetchGrokLimits({
         home: tmp,
         env: { GROK_HOME: grokHome },
         fetchImpl: async (url, options) => {
-          assert.equal(url, "https://cli-chat-proxy.grok.com/v1/billing");
+          urls.push(url);
           assert.equal(options.headers.Authorization, "Bearer test-token");
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return {
+                config: {
+                  currentPeriod: {
+                    type: "USAGE_PERIOD_TYPE_WEEKLY",
+                    start: "2026-07-13T09:23:37.846092+00:00",
+                    end: "2026-07-20T09:23:37.846092+00:00",
+                  },
+                  creditUsagePercent: 25,
+                  onDemandCap: { val: 0 },
+                  billingPeriodEnd: "2026-07-20T09:23:37.846092+00:00",
+                },
+              };
+            },
+          };
+        },
+      });
+
+      assert.equal(urls[0], "https://cli-chat-proxy.grok.com/v1/billing?format=credits");
+      assert.equal(result.configured, true);
+      assert.equal(result.error, null);
+      assert.equal(result.period_type, "weekly");
+      assert.equal(result.primary_window.used_percent, 25);
+      assert.equal(result.primary_window.reset_at, "2026-07-20T09:23:37.846Z");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to legacy /v1/billing when format=credits fails", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tt-grok-limits-fallback-"));
+    try {
+      const grokHome = path.join(tmp, ".grok");
+      fs.mkdirSync(grokHome, { recursive: true });
+      fs.writeFileSync(
+        path.join(grokHome, "auth.json"),
+        JSON.stringify({
+          "https://auth.x.ai::test": { key: "test-token" },
+        }),
+        "utf8",
+      );
+
+      const urls = [];
+      const result = await fetchGrokLimits({
+        home: tmp,
+        env: { GROK_HOME: grokHome },
+        fetchImpl: async (url) => {
+          urls.push(url);
+          if (String(url).includes("format=credits")) {
+            return { ok: false, status: 500, async json() { return {}; } };
+          }
           return {
             ok: true,
             status: 200,
@@ -92,7 +219,8 @@ describe("fetchGrokLimits", () => {
                   monthlyLimit: { val: 1000 },
                   used: { val: 250 },
                   onDemandCap: { val: 0 },
-                  billingPeriodEnd: "2026-07-01T00:00:00Z",
+                  billingPeriodStart: "2026-07-01T00:00:00Z",
+                  billingPeriodEnd: "2026-08-01T00:00:00Z",
                 },
               };
             },
@@ -100,8 +228,12 @@ describe("fetchGrokLimits", () => {
         },
       });
 
+      assert.deepEqual(urls, [
+        "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+        "https://cli-chat-proxy.grok.com/v1/billing",
+      ]);
       assert.equal(result.configured, true);
-      assert.equal(result.error, null);
+      assert.equal(result.period_type, "monthly");
       assert.equal(result.primary_window.used_percent, 25);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

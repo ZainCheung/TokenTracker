@@ -58,6 +58,35 @@ function buildWindow({ usedPercent, resetAt }) {
   };
 }
 
+/**
+ * Map Grok's USAGE_PERIOD_TYPE_* enum (or a bare "weekly"/"monthly" string)
+ * into a short period key the UI can switch labels on.
+ */
+function normalizeGrokPeriodType(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const upper = value.trim().toUpperCase();
+  if (upper.includes("WEEK")) return "weekly";
+  if (upper.includes("MONTH")) return "monthly";
+  if (upper.includes("DAY") || upper.includes("DAILY")) return "daily";
+  if (upper.includes("HOUR")) return "hourly";
+  return null;
+}
+
+/**
+ * Infer weekly vs monthly from period length when the API omits `currentPeriod.type`
+ * (legacy monthly payloads only expose start/end dates).
+ */
+function inferGrokPeriodTypeFromDates(startIso, endIso) {
+  if (!startIso || !endIso) return null;
+  const startMs = Date.parse(startIso);
+  const endMs = Date.parse(endIso);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+  const days = (endMs - startMs) / 86_400_000;
+  if (days <= 8) return "weekly";
+  if (days >= 25 && days <= 35) return "monthly";
+  return null;
+}
+
 function isGrokInstalled({ home, env } = {}) {
   const grokHome = resolveGrokHome({ home, env });
   const authPath = path.join(grokHome, "auth.json");
@@ -88,25 +117,53 @@ function readGrokAccessToken({ home, env } = {}) {
   return key || null;
 }
 
+/**
+ * Parse either:
+ *   - Unified billing (`?format=credits`): weekly/monthly period + creditUsagePercent
+ *   - Legacy monthly credits: monthlyLimit / used + calendar-month billingPeriod*
+ *
+ * Prefer the unified shape; legacy remains as a fallback for older accounts.
+ */
 function normalizeGrokBillingResponse(body) {
   const config = body?.config;
   if (!config || typeof config !== "object") {
     throw new Error("Could not parse Grok billing: missing config");
   }
 
+  const currentPeriod =
+    config.currentPeriod && typeof config.currentPeriod === "object" ? config.currentPeriod : null;
+
+  const periodStart =
+    grokIsoReset(currentPeriod?.start) || grokIsoReset(config.billingPeriodStart);
+  const resetAt = grokIsoReset(currentPeriod?.end) || grokIsoReset(config.billingPeriodEnd);
+
+  let periodType = normalizeGrokPeriodType(currentPeriod?.type);
+  if (!periodType) {
+    periodType = inferGrokPeriodTypeFromDates(periodStart, resetAt);
+  }
+
+  // Unified billing: overall pool percent is what gates "You hit your weekly limit".
+  // productUsage is attribution only (GrokBuild vs GrokChat), not a separate cap.
+  let usedPercent = clampPercent(config.creditUsagePercent);
+  if (usedPercent === null && Array.isArray(config.productUsage)) {
+    const buildEntry = config.productUsage.find(
+      (entry) => entry && typeof entry === "object" && entry.product === "GrokBuild",
+    );
+    if (buildEntry) usedPercent = clampPercent(buildEntry.usagePercent);
+  }
+
+  // Legacy monthly credit counters (pre-unified / non-format=credits responses).
   const monthlyLimit = grokValNumber(config.monthlyLimit);
   const used = grokValNumber(config.used);
+  if (usedPercent === null && Number.isFinite(monthlyLimit) && monthlyLimit > 0 && Number.isFinite(used)) {
+    usedPercent = (used / monthlyLimit) * 100;
+    if (!periodType) periodType = "monthly";
+  }
+
   const onDemandCap = grokValNumber(config.onDemandCap);
   const onDemandUsed = grokValNumber(config.onDemandUsed);
-  const resetAt = grokIsoReset(config.billingPeriodEnd);
 
-  let primaryWindow = null;
-  if (Number.isFinite(monthlyLimit) && monthlyLimit > 0 && Number.isFinite(used)) {
-    primaryWindow = buildWindow({
-      usedPercent: (used / monthlyLimit) * 100,
-      resetAt,
-    });
-  }
+  const primaryWindow = buildWindow({ usedPercent, resetAt });
 
   let secondaryWindow = null;
   if (Number.isFinite(onDemandCap) && onDemandCap > 0 && Number.isFinite(onDemandUsed)) {
@@ -121,32 +178,50 @@ function normalizeGrokBillingResponse(body) {
   }
 
   return {
+    period_type: periodType,
     monthly_credits_limit: monthlyLimit,
     monthly_credits_used: used,
+    credit_usage_percent: clampPercent(config.creditUsagePercent),
     on_demand_cap: onDemandCap,
     on_demand_used: onDemandUsed,
-    billing_period_start: grokIsoReset(config.billingPeriodStart),
+    billing_period_start: periodStart,
     primary_window: primaryWindow,
     secondary_window: secondaryWindow,
   };
 }
 
+/**
+ * Fetch Grok billing. Prefer `?format=credits` (unified weekly/monthly pool
+ * used by the Grok Build TUI). Fall back to the bare `/v1/billing` payload for
+ * older accounts that only expose monthlyLimit/used.
+ */
 async function fetchGrokBilling(accessToken, { fetchImpl = fetch, baseUrl, env } = {}) {
   const root = (baseUrl || resolveGrokBillingBaseUrl(env)).replace(/\/$/, "");
-  const res = await fetchImpl(`${root}/v1/billing`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-  });
-  if (res.status === 401 || res.status === 403) {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+  };
+
+  const creditsUrl = `${root}/v1/billing?format=credits`;
+  const creditsRes = await fetchImpl(creditsUrl, { method: "GET", headers });
+  if (creditsRes.status === 401 || creditsRes.status === 403) {
     throw new Error("Not logged in to Grok Build. Run `grok login` in Terminal to authenticate.");
   }
-  if (!res.ok) {
-    throw new Error(`Grok billing API returned ${res.status}`);
+  if (creditsRes.ok) {
+    return creditsRes.json();
   }
-  return res.json();
+
+  // Non-auth failure on format=credits → try the legacy shape once.
+  const legacyRes = await fetchImpl(`${root}/v1/billing`, { method: "GET", headers });
+  if (legacyRes.status === 401 || legacyRes.status === 403) {
+    throw new Error("Not logged in to Grok Build. Run `grok login` in Terminal to authenticate.");
+  }
+  if (!legacyRes.ok) {
+    throw new Error(
+      `Grok billing API returned ${legacyRes.status} (format=credits: ${creditsRes.status})`,
+    );
+  }
+  return legacyRes.json();
 }
 
 async function fetchGrokLimits({ home, env, fetchImpl = fetch } = {}) {
@@ -178,6 +253,7 @@ module.exports = {
   isGrokInstalled,
   loadGrokAuthEntry,
   readGrokAccessToken,
+  normalizeGrokPeriodType,
   normalizeGrokBillingResponse,
   fetchGrokBilling,
   fetchGrokLimits,

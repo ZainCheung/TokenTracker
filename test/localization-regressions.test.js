@@ -70,10 +70,18 @@ test("native macOS strings are wired through the Swift localization helpers", ()
   assert.ok(!dateHelpers.includes('NativeLocalization.usesChinese ? "日" : "Day"'));
 
   assert.ok(usageLimitsView.includes("Strings.kiroBonusLabel"));
-  assert.ok(usageLimitsView.includes("Strings.grokMonthLabel"));
+  assert.ok(usageLimitsView.includes("Strings.grokPrimaryLabel"));
   assert.ok(usageLimitsView.includes('case "grok"'));
   assert.ok(usageLimitsView.includes("Strings.limitResetNow"));
   assert.ok(!usageLimitsView.includes('NativeLocalization.usesChinese ? "奖励" : "Bonus"'));
+
+  assert.ok(strings.includes("static var grokWeekLabel"));
+  assert.ok(strings.includes("static func grokPrimaryLabel"));
+  assert.ok(strings.includes('case "weekly": return grokWeekLabel'));
+
+  const grokLimitsModel = read("TokenTrackerBar/TokenTrackerBar/Models/UsageLimits.swift");
+  assert.ok(grokLimitsModel.includes("periodType"));
+  assert.ok(grokLimitsModel.includes('case periodType = "period_type"'));
 
   const limitsSettingsStore = read("TokenTrackerBar/TokenTrackerBar/Models/LimitsSettingsStore.swift");
   assert.ok(limitsSettingsStore.includes('"grok"'));
