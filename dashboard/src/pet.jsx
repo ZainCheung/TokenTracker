@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   buildQuipPool,
@@ -47,7 +47,7 @@ const DRAG_THRESHOLD = 10;
 // Top band reserved for the bubble so it never overlaps Clawd (the host sizes the
 // window height to include this — keep in sync with PetWindow.SizeDimensions). The
 // hover card can show several active, non-full limits as compact progress rows.
-const BUBBLE_BAND = 138;
+const MIN_BUBBLE_BAND = 138;
 
 // Hover lean (macOS parity): while the cursor is over the pet, Clawd leans toward it
 // (ClawdCompanionView shifts the body ±1.2px and the eyes a touch more, ≈7% of width).
@@ -139,10 +139,15 @@ function post(type) {
   try { window.chrome?.webview?.postMessage(type); } catch { /* not in WebView2 */ }
 }
 
-function sizeFor() {
+function readPetBubbleBand() {
+  const value = Number(window.__ttPetBubbleBand);
+  return Number.isFinite(value) && value >= MIN_BUBBLE_BAND ? value : MIN_BUBBLE_BAND;
+}
+
+function sizeFor(bubbleBand = readPetBubbleBand()) {
   // The sprite tracks the smaller of (width, height MINUS the reserved bubble band),
   // so it fills the lower area without growing into the bubble's space.
-  return Math.max(40, Math.min(window.innerWidth, window.innerHeight - BUBBLE_BAND) - 8);
+  return Math.max(40, Math.min(window.innerWidth, window.innerHeight - bubbleBand) - 8);
 }
 
 // ── Fixed-frame Clawd renderer (macOS parity) ────────────────────────────────
@@ -309,13 +314,26 @@ const PET_STATUS_COLORS = {
 
 /** Transparent glass speech bubble shown in the top band. Hover usage gets a
     compact token row plus one progress row for every active, non-full limit. */
-function Bubble({ text, usage = null }) {
+function Bubble({ text, usage = null, onHeightChange }) {
+  const bubbleRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const element = bubbleRef.current;
+    if (!element || !onHeightChange) return undefined;
+    const report = () => onHeightChange(Math.ceil(element.getBoundingClientRect().height) + 12);
+    report();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
+
   return (
     <div
+      ref={bubbleRef}
       style={{
         position: "relative",
-        width: "fit-content",
-        maxWidth: "min(92%, 340px)",
+        width: "min(340px, calc(100% - 40px))",
       }}
     >
       <div
@@ -323,15 +341,14 @@ function Bubble({ text, usage = null }) {
         aria-live="polite"
         aria-label={usage?.ariaLabel || text}
         style={{
-          width: "fit-content",
-          maxWidth: "100%",
+          width: "100%",
           boxSizing: "border-box",
           padding: usage ? "9px 13px 10px" : "5px 11px 6px",
           borderRadius: 22,
           color: "rgba(255,255,255,0.94)",
-          background: "linear-gradient(145deg, rgba(255,255,255,0.15), rgba(255,255,255,0.045))",
+          background: "linear-gradient(145deg, rgba(18,20,24,0.82), rgba(30,32,38,0.72))",
           border: "1px solid rgba(255,255,255,0.24)",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.16)",
+          boxShadow: "0 4px 8px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.16)",
           backdropFilter: "blur(18px) saturate(145%)",
           WebkitBackdropFilter: "blur(18px) saturate(145%)",
           pointerEvents: "none",
@@ -345,8 +362,8 @@ function Bubble({ text, usage = null }) {
                 style={{
                   display: "flex",
                   alignItems: "baseline",
+                  flexWrap: "wrap",
                   gap: 8,
-                  whiteSpace: "nowrap",
                   fontVariantNumeric: "tabular-nums",
                   paddingBottom: 6,
                   marginBottom: 4,
@@ -377,11 +394,10 @@ function Bubble({ text, usage = null }) {
                     gap: 7,
                     minWidth: 0,
                     paddingTop: rowTop,
-                    whiteSpace: "nowrap",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", fontSize: 9.5, fontWeight: 650, lineHeight: 1.15 }}>
+                  <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 9.5, fontWeight: 650, lineHeight: 1.15 }}>
                     <span
                       aria-hidden="true"
                       style={{
@@ -442,11 +458,7 @@ function Bubble({ text, usage = null }) {
             <span
               style={{
                 minWidth: 0,
-                display: "-webkit-box",
-                WebkitBoxOrient: "vertical",
-                WebkitLineClamp: 2,
-                overflow: "hidden",
-                wordBreak: "break-word",
+                overflowWrap: "anywhere",
                 textAlign: "left",
                 fontSize: 11,
                 fontWeight: 600,
@@ -499,6 +511,7 @@ function Pet() {
   const [leanX, setLeanX] = useState(0); // −1..+1, cursor offset from center while hovering
   const [lookDirectionIndex, setLookDirectionIndex] = useState(null);
   const [size, setSize] = useState(sizeFor);
+  const [bubbleBand, setBubbleBand] = useState(readPetBubbleBand);
   const [miniMode, setMiniMode] = useState(false);
   const [sleepState, setSleepState] = useState(null);
   const [modelStatus, setModelStatus] = useState(null);
@@ -517,6 +530,17 @@ function Pet() {
     update();
     window.addEventListener("pet:minimode", update);
     return () => window.removeEventListener("pet:minimode", update);
+  }, []);
+
+  useEffect(() => {
+    const update = () => {
+      const next = readPetBubbleBand();
+      setBubbleBand(next);
+      setSize(sizeFor(next));
+    };
+    update();
+    window.addEventListener("pet:bubble-band", update);
+    return () => window.removeEventListener("pet:bubble-band", update);
   }, []);
 
   useEffect(() => {
@@ -621,7 +645,7 @@ function Pet() {
 
   // Keep Clawd filling the window as the host resizes it.
   useEffect(() => {
-    const onResize = () => setSize(sizeFor());
+    const onResize = () => setSize(sizeFor(readPetBubbleBand()));
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -861,6 +885,15 @@ function Pet() {
     }
     : null;
 
+  const reportBubbleHeight = useCallback((height) => {
+    const next = Math.max(MIN_BUBBLE_BAND, Math.ceil(Number(height) || 0));
+    post(`pet:bubble-height:${next}`);
+  }, []);
+
+  useEffect(() => {
+    if (!bubbleText) reportBubbleHeight(MIN_BUBBLE_BAND);
+  }, [bubbleText, reportBubbleHeight]);
+
   return (
     <div
       onMouseDown={onMouseDown}
@@ -878,7 +911,7 @@ function Pet() {
       {/* Top band: the bubble lives here, above Clawd — never overlapping it. */}
       <div
         style={{
-          height: BUBBLE_BAND,
+          height: bubbleBand,
           flexShrink: 0,
           width: "100%",
           display: "flex",
@@ -886,7 +919,9 @@ function Pet() {
           justifyContent: "center",
         }}
       >
-        {bubbleText && <Bubble text={bubbleText} usage={hoverUsage} />}
+        {bubbleText && (
+          <Bubble text={bubbleText} usage={hoverUsage} onHeightChange={reportBubbleHeight} />
+        )}
       </div>
       <div
         style={{
