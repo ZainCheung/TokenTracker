@@ -183,6 +183,8 @@
   "limits.provenance.fresh": "실시간",
   "limits.provenance.stale": "오래됨",
   "limits.provenance.tooltip": "출처: {{source}}; 신뢰도: {{confidence}}",
+  "limits.reauth.badge": "재로그인 필요",
+  "limits.reauth.tooltip": "로그인이 만료되었습니다. 터미널에서 `{{command}}` 를 한 번 실행해 다시 로그인한 뒤 새로고침하세요.",
   "limits.tooltip.antigravity_live": "실행 중인 로컬 Antigravity 프로세스에서 직접 가져온 실시간 제한입니다。",
   "limits.tooltip.antigravity_cached": "캐시된 제한입니다. 업데이트하려면 Antigravity IDE/CLI를 실행하세요。",
   "limits.bar.sub_one_percent": "<1",

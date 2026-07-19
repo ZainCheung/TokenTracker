@@ -1400,6 +1400,31 @@ function createLocalApiHandler({ queuePath }) {
       return true;
     }
 
+    // Preview asset for a Codex pet that hasn't been imported yet (served from
+    // ~/.codex/pets or straight out of the Codex.app bundle).
+    const codexPetAssetMatch = p.match(/^\/api\/pets\/codex\/([a-z0-9-]+)\/spritesheet\.webp$/);
+    if (codexPetAssetMatch) {
+      const method = String(req.method || "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        json(res, { error: "Method Not Allowed" }, 405);
+        return true;
+      }
+      const asset = require("./pet-packages").readCodexImportableAsset(codexPetAssetMatch[1]);
+      if (!asset) {
+        json(res, { error: "Pet not found" }, 404);
+        return true;
+      }
+      res.writeHead(200, {
+        "Content-Type": "image/webp",
+        "Content-Length": asset.buffer.length,
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
+      if (method === "HEAD") res.end();
+      else res.end(asset.buffer);
+      return true;
+    }
+
     if (p === "/api/pets/import") {
       if (String(req.method || "GET").toUpperCase() !== "POST") {
         json(res, { ok: false, error: "Method Not Allowed" }, 405);
@@ -2498,6 +2523,11 @@ function createLocalApiHandler({ queuePath }) {
       const pets = require("./pet-packages");
       try {
         if (method === "GET") {
+          if (url.searchParams.get("scope") === "codex") {
+            const importable = pets.listCodexImportablePets();
+            json(res, { importable, codexDetected: importable.length > 0 });
+            return true;
+          }
           json(res, { pets: pets.listInstalledPets() });
           return true;
         }
@@ -2513,6 +2543,10 @@ function createLocalApiHandler({ queuePath }) {
           }
           if (body?.action === "remove") {
             json(res, { ok: true, ...pets.removeInstalledPet(body.id) });
+            return true;
+          }
+          if (body?.action === "import_codex") {
+            json(res, { ok: true, ...pets.importFromCodex(body.ids) });
             return true;
           }
           json(res, { ok: false, error: "Unknown pets action" }, 400);

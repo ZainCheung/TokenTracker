@@ -38,6 +38,10 @@ const macControllerSource = fs.readFileSync(
   path.join(repoRoot, "TokenTrackerBar/TokenTrackerBar/Services/DesktopPetWindowController.swift"),
   "utf8",
 );
+const windowsTraySource = fs.readFileSync(
+  path.join(repoRoot, "TokenTrackerWin/TrayApplicationContext.cs"),
+  "utf8",
+);
 
 // "workingThinking" → "working-thinking", so the two sides compare directly.
 function kebab(swiftCase) {
@@ -243,6 +247,15 @@ test("desktop dragging selects directional running rows for imported pets", () =
   assert.match(macControllerSource, /uiState\.dragDirection/);
   assert.match(atlasSwiftSource, /if isDragging/);
   assert.match(atlasSwiftSource, /row: dragDirection == \.left \? 2 : 1/);
+});
+
+test("native pet catalogs preserve legacy selections until the Node migration runs", () => {
+  assert.match(macControllerSource, /legacyRoot/);
+  assert.match(macControllerSource, /\.migrated-v1/);
+  assert.match(macControllerSource, /migrationComplete[\s\S]*\[root\][\s\S]*\[root, legacyRoot\]/);
+  assert.match(windowsTraySource, /legacyRoot/);
+  assert.match(windowsTraySource, /\.migrated-v1/);
+  assert.match(windowsTraySource, /migrationComplete[\s\S]*new\[\] \{ root \}[\s\S]*new\[\] \{ root, legacyRoot \}/);
 });
 
 test("desktop pet tooltips stay readable and use native macOS glass when available", () => {

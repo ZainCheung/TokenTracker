@@ -271,6 +271,13 @@ const STATUS_BADGE_TONES = {
   },
 };
 
+// CLI to run when a provider's stored OAuth token has expired
+// (`auth_action_required: "reauth"` on the provider payload).
+const REAUTH_CLI_COMMANDS = {
+  claude: "claude",
+  codex: "codex",
+};
+
 function StatusBadge({ label, age = null, tone = "live", tooltip = null }) {
   const colors = STATUS_BADGE_TONES[tone] || STATUS_BADGE_TONES.live;
   const shouldPulse = tone === "live";
@@ -484,6 +491,20 @@ function renderProviderGroup(id, data, mode, expanded, onToggle) {
     } else {
       badge = <StatusBadge label={copy("limits.label.antigravity_live")} tone="live" tooltip={copy("limits.tooltip.antigravity_live")} />;
     }
+  }
+  // An expired sign-in means every live fetch fails the same way and the bars
+  // silently freeze on the cached snapshot (issue 330) — more actionable than
+  // the generic stale badge below, so it takes precedence.
+  if (!badge && data.auth_action_required === "reauth") {
+    const command = REAUTH_CLI_COMMANDS[id];
+    badge = (
+      <StatusBadge
+        label={copy("limits.reauth.badge")}
+        age={ago(data.cached_at)}
+        tone="stale"
+        tooltip={command ? copy("limits.reauth.tooltip", { command }) : null}
+      />
+    );
   }
   const provenance = data.provenance;
   // Fresh data is the norm — flagging it on every provider would fill the

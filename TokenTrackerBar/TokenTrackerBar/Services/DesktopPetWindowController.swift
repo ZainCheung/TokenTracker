@@ -513,7 +513,7 @@ enum PetSizePreset: String, CaseIterable {
 }
 
 /// A Codex-compatible companion identity. Built-ins and packages installed under
-/// ~/.codex/pets share the same value type so selecting a community pet never requires
+/// ~/.tokentracker/pets share the same value type so selecting a community pet never requires
 /// adding a new enum case or rebuilding the app.
 struct PetCharacter: RawRepresentable, Hashable, Identifiable, CaseIterable {
     let rawValue: String
@@ -565,34 +565,49 @@ final class PetCatalog: ObservableObject {
     private init() { refresh() }
 
     func refresh() {
-        let root = FileManager.default.homeDirectoryForCurrentUser
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let root = home
+            .appendingPathComponent(".tokentracker/pets", isDirectory: true)
+        let legacyRoot = home
             .appendingPathComponent(".codex/pets", isDirectory: true)
+        let migrationComplete = FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(".migrated-v1").path
+        )
+        // The native catalog initializes before the embedded Node server. Until
+        // Node has copied legacy packages and written its marker, retain a read-only
+        // fallback so an existing selection is not reset during the upgrade.
+        let roots = migrationComplete ? [root] : [root, legacyRoot]
         var discovered: [(PetCharacter, Metadata)] = []
-        let directories = (try? FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        for directory in directories {
-            let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            guard values?.isDirectory == true, values?.isSymbolicLink != true,
-                  let character = PetCharacter(rawValue: directory.lastPathComponent),
-                  !Self.builtins.contains(character) else { continue }
-            let manifestURL = directory.appendingPathComponent("pet.json")
-            let atlasURL = directory.appendingPathComponent("spritesheet.webp")
-            guard FileManager.default.fileExists(atPath: atlasURL.path),
-                  let data = try? Data(contentsOf: manifestURL),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  (object["id"] as? String)?.lowercased() == character.rawValue,
-                  object["spritesheetPath"] as? String == "spritesheet.webp",
-                  let displayName = object["displayName"] as? String,
-                  !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            let version = (object["spriteVersionNumber"] as? NSNumber)?.intValue == 2 ? 2 : 1
-            discovered.append((character, Metadata(
-                displayName: displayName,
-                spriteVersionNumber: version,
-                atlasURL: atlasURL
-            )))
+        var seen = Set<String>()
+        for sourceRoot in roots {
+            let directories = (try? FileManager.default.contentsOfDirectory(
+                at: sourceRoot,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            for directory in directories {
+                let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard values?.isDirectory == true, values?.isSymbolicLink != true,
+                      let character = PetCharacter(rawValue: directory.lastPathComponent),
+                      !Self.builtins.contains(character),
+                      !seen.contains(character.rawValue) else { continue }
+                let manifestURL = directory.appendingPathComponent("pet.json")
+                let atlasURL = directory.appendingPathComponent("spritesheet.webp")
+                guard FileManager.default.fileExists(atPath: atlasURL.path),
+                      let data = try? Data(contentsOf: manifestURL),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      (object["id"] as? String)?.lowercased() == character.rawValue,
+                      object["spritesheetPath"] as? String == "spritesheet.webp",
+                      let displayName = object["displayName"] as? String,
+                      !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                let version = (object["spriteVersionNumber"] as? NSNumber)?.intValue == 2 ? 2 : 1
+                seen.insert(character.rawValue)
+                discovered.append((character, Metadata(
+                    displayName: displayName,
+                    spriteVersionNumber: version,
+                    atlasURL: atlasURL
+                )))
+            }
         }
         discovered.sort { $0.1.displayName.localizedCaseInsensitiveCompare($1.1.displayName) == .orderedAscending }
         metadata = Dictionary(uniqueKeysWithValues: discovered.map { ($0.0.rawValue, $0.1) })

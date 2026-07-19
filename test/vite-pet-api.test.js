@@ -41,6 +41,8 @@ async function request(middleware, pathname, { method = "GET" } = {}) {
 test("Vite dev server handles the current repo pet API instead of an installed CLI", async () => {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "tokentracker-vite-pet-api-"));
   process.env.TOKENTRACKER_PETS_DIR = path.join(sandbox, "pets");
+  process.env.TOKENTRACKER_CODEX_PETS_DIR = path.join(sandbox, "codex-pets");
+  process.env.TOKENTRACKER_CODEX_ASAR = path.join(sandbox, "no-such-app.asar");
   try {
     const configUrl = `${pathToFileURL(path.join(repoRoot, "dashboard/vite.config.js")).href}?pet-api-test=${Date.now()}`;
     const { default: createConfig } = await import(configUrl);
@@ -65,6 +67,8 @@ test("Vite dev server handles the current repo pet API instead of an installed C
     assert.equal(JSON.parse(upload.body).error, "Unauthorized");
   } finally {
     delete process.env.TOKENTRACKER_PETS_DIR;
+    delete process.env.TOKENTRACKER_CODEX_PETS_DIR;
+    delete process.env.TOKENTRACKER_CODEX_ASAR;
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
 });

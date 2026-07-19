@@ -191,7 +191,9 @@ async function fetchClaudeUsageLimits(accessToken, { fetchImpl = fetch, maxAttem
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const res = await fetchImpl(url, { method: "GET", headers });
     if (res.status === 401) {
-      throw new Error("Claude token expired — run `claude` once to refresh.");
+      const err = new Error("Claude token expired — run `claude` once to refresh.");
+      err.code = "AUTH_EXPIRED";
+      throw err;
     }
     if ((res.status === 429 || res.status === 503) && attempt < maxAttempts - 1) {
       const ra = res.headers.get("retry-after");
@@ -2961,6 +2963,12 @@ async function fetchUsageLimitsUncached({
           ? formatClaudeRateLimitMessage(Math.round((retryAtMs - nowMs) / 1000))
           : reason?.message || "Unknown error",
       };
+    }
+    // An expired OAuth token means every future fetch fails the same way until the
+    // user runs `claude` again — serving the cache silently would make refresh look
+    // broken (issue #330). Flag it so the client can say why the bars stopped moving.
+    if (reason?.code === "AUTH_EXPIRED") {
+      claude = { ...claude, auth_action_required: "reauth" };
     }
   }
 

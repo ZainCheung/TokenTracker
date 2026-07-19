@@ -987,7 +987,8 @@ function localDataApiPlugin() {
         const isRepoPetApi = url.pathname === "/api/local-auth"
           || url.pathname === "/functions/tokentracker-pets"
           || url.pathname === "/api/pets/import"
-          || url.pathname.startsWith("/api/pets/local/");
+          || url.pathname.startsWith("/api/pets/local/")
+          || url.pathname.startsWith("/api/pets/codex/");
         // Project usage also runs against the current checkout (not :7680):
         // the endpoints evolve with the dashboard UI, and a stale packaged
         // app on :7680 would 404 the drill-down modal.

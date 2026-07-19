@@ -237,6 +237,33 @@ describe("UsageLimitsPanel", () => {
     expect(within(group).queryByText(/^Stale/i)).not.toBeInTheDocument();
   });
 
+  it("flags an expired Claude sign-in on cached bars instead of the generic stale badge", () => {
+    render(
+      <UsageLimitsPanel
+        claude={{
+          configured: true,
+          error: null,
+          five_hour: { utilization: 41, resets_at: "2026-07-24T12:00:00.000Z" },
+          stale: true,
+          cached_at: "2026-07-17T12:00:00.000Z",
+          auth_action_required: "reauth",
+          provenance: {
+            source: "disk-cache",
+            confidence: "observed",
+            stale: true,
+            captured_at: "2026-07-17T12:00:00.000Z",
+          },
+        }}
+        order={["claude"]}
+      />,
+    );
+
+    const group = screen.getByText("Claude").closest("[role='button']");
+    expect(group).not.toBeNull();
+    expect(within(group).getByText(new RegExp(copy("limits.reauth.badge")))).toBeInTheDocument();
+    expect(within(group).queryByText(/^Stale/i)).not.toBeInTheDocument();
+  });
+
   it.each([
     [ZH_CN_LOCALE, "实时", "过期"],
     [ZH_TW_LOCALE, "即時", "過期"],

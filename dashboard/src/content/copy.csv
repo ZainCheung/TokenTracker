@@ -1207,6 +1207,14 @@ pet.import.busy,dashboard,PetPage,PetPage,import_busy,"Importing…",,active
 pet.format.v2,dashboard,PetPage,PetPage,format_v2,"V2",,active
 pet.import.removed,dashboard,PetPage,PetPage,import_removed,"Imported pet removed.",,active
 pet.import.url_label,dashboard,PetPage,PetPage,import_url_label,"Codex Pets URL or pet id",,active
+pet.codex.title,dashboard,PetPage,PetPage,codex_title,"From Codex",,active
+pet.codex.subtitle,dashboard,PetPage,PetPage,codex_subtitle,"Import pets you already have in the Codex app — including its built-in companions.",,active
+pet.codex.import,dashboard,PetPage,PetPage,codex_import,"Import selected",,active
+pet.codex.browse,dashboard,PetPage,PetPage,codex_browse,"Import from Codex",,active
+pet.codex.close,dashboard,PetPage,PetPage,codex_close,"Close",,active
+pet.codex.select_all,dashboard,PetPage,PetPage,codex_select_all,"Select all",,active
+pet.codex.empty,dashboard,PetPage,PetPage,codex_empty,"No new Codex pets to import.",,active
+pet.codex.imported,dashboard,PetPage,PetPage,codex_imported,"Imported from Codex.",,active
 nav.achievements,shared,*,Sidebar,nav_achievements,"Achievements",,active
 achievements.section.title,dashboard,*,AchievementsSection,section_title,"Achievements",,active
 achievements.page.title,dashboard,AchievementsPage,AchievementsPage,page_title,"Achievements",,active
@@ -1287,3 +1295,5 @@ limits.alert.blocked,limits,LimitsPage,LimitsPage,alert_blocked,"Notifications a
 limits.provenance.fresh,limits,LimitsPage,UsageLimitsPanel,provenance_fresh,"Live",,active
 limits.provenance.stale,limits,LimitsPage,UsageLimitsPanel,provenance_stale,"Stale",,active
 limits.provenance.tooltip,limits,LimitsPage,UsageLimitsPanel,provenance_tooltip,"Source: {{source}}; confidence: {{confidence}}",,active
+limits.reauth.badge,limits,LimitsPage,UsageLimitsPanel,reauth_badge,"Re-auth",,active
+limits.reauth.tooltip,limits,LimitsPage,UsageLimitsPanel,reauth_tooltip,"Sign-in expired — run `{{command}}` in a terminal once to sign in again, then refresh.",,active

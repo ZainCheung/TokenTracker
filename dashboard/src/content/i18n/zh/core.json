@@ -200,6 +200,8 @@
   "limits.provenance.fresh": "实时",
   "limits.provenance.stale": "过期",
   "limits.provenance.tooltip": "来源：{{source}}；可信度：{{confidence}}",
+  "limits.reauth.badge": "需重新登录",
+  "limits.reauth.tooltip": "登录已过期——在终端运行一次 `{{command}}` 重新登录，然后刷新。",
   "limits.bar.sub_one_percent": "<1",
   "limits.status.not_connected": "未连接",
   "limits.status.no_data": "未返回实时限额数据",

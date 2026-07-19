@@ -496,26 +496,37 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static IEnumerable<(string Id, string Name)> InstalledCustomPets()
     {
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "pets");
-        if (!Directory.Exists(root)) yield break;
-        foreach (var directory in Directory.EnumerateDirectories(root))
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var root = Path.Combine(home, ".tokentracker", "pets");
+        var legacyRoot = Path.Combine(home, ".codex", "pets");
+        var migrationComplete = File.Exists(Path.Combine(root, ".migrated-v1"));
+        // The tray can build its menu before the embedded Node server migrates
+        // legacy packages. Keep a read-only fallback until Node writes the marker.
+        var roots = migrationComplete ? new[] { root } : new[] { root, legacyRoot };
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var sourceRoot in roots)
         {
-            var id = Path.GetFileName(directory).ToLowerInvariant();
-            if (PetWindow.NormalizeCharacter(id) != id || id is PetWindow.CharacterClawd or PetWindow.CharacterSprout or PetWindow.CharacterByte or PetWindow.CharacterEmber) continue;
-            var manifestPath = Path.Combine(directory, "pet.json");
-            var spritesheetPath = Path.Combine(directory, "spritesheet.webp");
-            if (!File.Exists(manifestPath) || !File.Exists(spritesheetPath)) continue;
-            string name = id;
-            try
+            if (!Directory.Exists(sourceRoot)) continue;
+            foreach (var directory in Directory.EnumerateDirectories(sourceRoot))
             {
-                var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))?.AsObject();
-                if (manifest?["id"]?.GetValue<string>()?.ToLowerInvariant() != id) continue;
-                name = manifest?["displayName"]?.GetValue<string>()?.Trim() is { Length: > 0 } displayName
-                    ? displayName
-                    : id;
+                var id = Path.GetFileName(directory).ToLowerInvariant();
+                if (seen.Contains(id) || PetWindow.NormalizeCharacter(id) != id || id is PetWindow.CharacterClawd or PetWindow.CharacterSprout or PetWindow.CharacterByte or PetWindow.CharacterEmber) continue;
+                var manifestPath = Path.Combine(directory, "pet.json");
+                var spritesheetPath = Path.Combine(directory, "spritesheet.webp");
+                if (!File.Exists(manifestPath) || !File.Exists(spritesheetPath)) continue;
+                string name = id;
+                try
+                {
+                    var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))?.AsObject();
+                    if (manifest?["id"]?.GetValue<string>()?.ToLowerInvariant() != id) continue;
+                    name = manifest?["displayName"]?.GetValue<string>()?.Trim() is { Length: > 0 } displayName
+                        ? displayName
+                        : id;
+                }
+                catch { continue; }
+                seen.Add(id);
+                yield return (id, name);
             }
-            catch { continue; }
-            yield return (id, name);
         }
     }
 
