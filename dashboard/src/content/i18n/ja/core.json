@@ -416,5 +416,6 @@
   "limits.alert.disable": "予測リミット通知を無効にする",
   "limits.alert.title": "{{provider}} の上限が早く尽きる可能性があります",
   "limits.alert.body": "現在のペースでは、残り {{eta}} で使い切る可能性があります（{{percent}}% 使用済み）。",
-  "settings.section.labs": "Labs"
+  "settings.section.labs": "Labs",
+  "limits.alert.blocked": "通知がオフです — システム設定で許可してください"
 }

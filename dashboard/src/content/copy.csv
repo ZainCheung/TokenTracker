@@ -1281,6 +1281,7 @@ limits.alert.enable,limits,LimitsPage,LimitsPage,enable_alerts,"Enable predictiv
 limits.alert.disable,limits,LimitsPage,LimitsPage,disable_alerts,"Disable predictive limit alerts",,active
 limits.alert.title,limits,LimitsPage,LimitsPage,alert_title,"{{provider}} limit may run out early",,active
 limits.alert.body,limits,LimitsPage,LimitsPage,alert_body,"At the current pace, usage may run out in {{eta}} ({{percent}}% used).",,active
+limits.alert.blocked,limits,LimitsPage,LimitsPage,alert_blocked,"Notifications are off — allow in System Settings",,active
 limits.provenance.fresh,limits,LimitsPage,UsageLimitsPanel,provenance_fresh,"Live",,active
 limits.provenance.stale,limits,LimitsPage,UsageLimitsPanel,provenance_stale,"Stale",,active
 limits.provenance.tooltip,limits,LimitsPage,UsageLimitsPanel,provenance_tooltip,"Source: {{source}}; confidence: {{confidence}}",,active

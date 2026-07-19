@@ -114,6 +114,13 @@ final class NativeBridge {
                     identifier: (dict["id"] as? String).map { String($0.prefix(160)) }
                 )
             }
+        case "getNotificationStatus":
+            syncNotificationPermission(requestIfNeeded: false)
+        case "requestNotificationPermission":
+            // Sent when the user switches limit alerts on, so the system
+            // permission dialog appears in direct response to that gesture
+            // instead of surprising them when the first alert fires.
+            syncNotificationPermission(requestIfNeeded: true)
         case "action":
             if let name = dict["name"] as? String {
                 if name == "saveImageToDownloads" {
@@ -129,6 +136,28 @@ final class NativeBridge {
             }
         default:
             break
+        }
+    }
+
+    private func syncNotificationPermission(requestIfNeeded: Bool) {
+        let center = UNUserNotificationCenter.current()
+        Task {
+            var settings = await center.notificationSettings()
+            if requestIfNeeded && settings.authorizationStatus == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound])
+                settings = await center.notificationSettings()
+            }
+            let status: String
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                status = "granted"
+            case .denied:
+                status = "denied"
+            default:
+                status = "notDetermined"
+            }
+            let js = "window.dispatchEvent(new CustomEvent('native:notificationPermission', { detail: { status: \"\(status)\" } }));"
+            webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 
