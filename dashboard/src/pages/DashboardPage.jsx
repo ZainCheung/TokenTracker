@@ -43,6 +43,7 @@ import {
 import {
   getUserStatus,
   invalidateAccountResponseCache,
+  invalidateSessionInsightsCache,
   triggerLocalSync,
   renameAccountDevice,
 } from "../lib/api";
@@ -68,6 +69,7 @@ const LEFT_CARD_ORDER_DEFAULTS = [
   "deviceUsage",
   "trendMonitor",
   "qualityPerDollar",
+  "sessionInsights",
 ];
 const RIGHT_CARD_ORDER_DEFAULTS = ["usageOverview", "dataDetails"];
 
@@ -856,6 +858,7 @@ export function DashboardPage({
 
   const refreshUsageStats = useCallback(async () => {
     if (accountView) invalidateAccountResponseCache();
+    if (!accountView) invalidateSessionInsightsCache();
     await Promise.all([
       refreshUsage(),
       refreshHeatmap(),

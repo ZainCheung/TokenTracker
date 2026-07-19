@@ -25,6 +25,9 @@ const inFlightJsonGets = new Map<string, Promise<any>>();
 const accountResponseCache = new Map<string, { fetchedAt: number; value: any }>();
 const ACCOUNT_RESPONSE_TTL_MS = 30_000;
 const ACCOUNT_RESPONSE_STALE_IF_ERROR_MS = 5 * 60_000;
+const sessionInsightsResponseCache = new Map<string, { fetchedAt: number; value: any }>();
+const SESSION_INSIGHTS_RESPONSE_TTL_MS = 5 * 60_000;
+const SESSION_INSIGHTS_RESPONSE_STALE_IF_ERROR_MS = 15 * 60_000;
 
 function coalesceJsonGet(key: string, request: () => Promise<any>) {
   const existing = inFlightJsonGets.get(key);
@@ -76,6 +79,10 @@ export function invalidateAccountResponseCache() {
   accountResponseCache.clear();
 }
 
+export function invalidateSessionInsightsCache() {
+  sessionInsightsResponseCache.clear();
+}
+
 const PATHS = {
   usageSummary: "tokentracker-usage-summary",
   usageDaily: "tokentracker-usage-daily",
@@ -91,6 +98,8 @@ const PATHS = {
   localSync: "tokentracker-local-sync",
   usageLimits: "tokentracker-usage-limits",
   outcomes: "tokentracker-outcomes",
+  sessionInsights: "tokentracker-session-insights",
+  contextHealth: "tokentracker-context-health",
 };
 
 /**
@@ -595,6 +604,42 @@ export async function getOutcomes({
   }
   const filterParams = buildFilterParams({ source, device });
   return fetchLocalJson(PATHS.outcomes, { from, to, ...filterParams }, { accessToken });
+}
+
+export async function getSessionInsights({ from, to, refresh = false }: AnyRecord = {}) {
+  if (isMockEnabled()) return { available: false, sessions: [], by_model: [], subagents: [] };
+  const cacheKey = `${from || ""}\0${to || ""}`;
+  const cached = sessionInsightsResponseCache.get(cacheKey);
+  if (!refresh && cached && Date.now() - cached.fetchedAt < SESSION_INSIGHTS_RESPONSE_TTL_MS) {
+    return cached.value;
+  }
+
+  return coalesceJsonGet(`session-insights:${cacheKey}:${refresh ? "refresh" : "normal"}`, async () => {
+    try {
+      const value = await fetchLocalJson(PATHS.sessionInsights, { from, to, refresh: refresh ? "1" : "" });
+      sessionInsightsResponseCache.set(cacheKey, { fetchedAt: Date.now(), value });
+      if (sessionInsightsResponseCache.size > 32) {
+        const oldest = sessionInsightsResponseCache.keys().next().value;
+        if (oldest) sessionInsightsResponseCache.delete(oldest);
+      }
+      return value;
+    } catch (error) {
+      const stale = sessionInsightsResponseCache.get(cacheKey);
+      if (
+        stale &&
+        Date.now() - stale.fetchedAt < SESSION_INSIGHTS_RESPONSE_STALE_IF_ERROR_MS &&
+        !refresh
+      ) {
+        return stale.value;
+      }
+      throw error;
+    }
+  });
+}
+
+export async function getContextHealth() {
+  if (isMockEnabled()) return { estimated_fixed_tokens: 0, severity: "low", breakdown: {}, largest_items: [] };
+  return fetchLocalJson(PATHS.contextHealth);
 }
 
 export async function getUsageCategoryBreakdown({

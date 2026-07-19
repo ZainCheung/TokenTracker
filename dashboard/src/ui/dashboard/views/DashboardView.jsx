@@ -23,6 +23,7 @@ import { FadeIn } from "../../foundation/FadeIn.jsx";
 import { MacAppBanner } from "../components/MacAppBanner.jsx";
 import { WidgetOnboardingCard } from "../components/WidgetOnboardingCard.jsx";
 import { QualityPerDollarCard } from "../components/QualityPerDollarCard.jsx";
+import { SessionInsightsCard } from "../components/SessionInsightsCard.jsx";
 import { LoginCard } from "../../../components/LoginCard.jsx";
 import { DashboardSkeleton } from "../../../components/DashboardSkeleton.jsx";
 import { cn } from "../../../lib/cn";
@@ -226,6 +227,7 @@ export function DashboardView(props) {
     deviceUsage: Boolean(deviceUsageBlock),
     trendMonitor: !screenshotMode,
     qualityPerDollar: !screenshotMode,
+    sessionInsights: isLocalMode && !screenshotMode,
   };
   const visibleLeftOrder = (leftCardOrder || []).filter(
     (id) => leftVisible[id] && !emptyCardIds.has(id),
@@ -324,6 +326,9 @@ export function DashboardView(props) {
             deviceId={selectedDevice}
           />
         );
+      }
+      case "sessionInsights": {
+        return <SessionInsightsCard from={usageFrom} to={usageTo} />;
       }
       default: {
         return null;

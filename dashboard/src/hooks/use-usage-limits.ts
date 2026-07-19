@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { getUsageLimits } from "../lib/api";
 import { publishUsageLimitsPreloadState } from "../lib/dashboard-preload.js";
+import { LIMIT_ALERTS_PREF_KEY } from "./use-limit-alert-prefs";
+import { sendPredictiveLimitAlerts } from "../lib/limit-alerts.js";
 
 type CodexLimitWindow = {
   readonly used_percent: number;
@@ -80,6 +82,15 @@ export function useUsageLimits(options?: UseUsageLimitsOptions) {
   const [isLoading, setIsLoading] = useState(!hasInitialState);
   const initialRefresh = Boolean(options?.initialRefresh);
   const publishToPreloadCache = Boolean(options?.publishToPreloadCache);
+
+  useEffect(() => {
+    if (!data || typeof window === "undefined") return;
+    try {
+      if (window.localStorage.getItem(LIMIT_ALERTS_PREF_KEY) === "1") {
+        sendPredictiveLimitAlerts(data);
+      }
+    } catch { /* restricted webview */ }
+  }, [data]);
 
   const publishSuccessfulState = useCallback(
     (value: UsageLimitsData | null, source: "page-load" | "manual-refresh") => {

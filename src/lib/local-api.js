@@ -1949,11 +1949,20 @@ function createLocalApiHandler({ queuePath }) {
       const from = url.searchParams.get("from") || "";
       const to = url.searchParams.get("to") || "";
       const {
-        readOutcomesData,
-        resolveOutcomesPath,
+        readAllOutcomesData,
         computeQualityPerDollar,
       } = require("./outcomes-engine");
-      const outcomes = readOutcomesData(resolveOutcomesPath());
+      // Refresh the independent metadata-only sidecars before joining. Any
+      // scanner failure degrades to the existing manual outcomes file.
+      try {
+        const { buildSessionAnalytics } = require("./session-analytics");
+        const { buildGitOutcomes } = require("./git-outcomes");
+        const sessions = await buildSessionAnalytics();
+        await buildGitOutcomes(sessions);
+      } catch (error) {
+        console.error("[outcomes] automatic Git attribution failed:", error?.message || error);
+      }
+      const outcomes = readAllOutcomesData();
       if (!outcomes.length) {
         json(res, { available: false, from, to, by_model: [], by_tool: [], totals: null });
         return true;
@@ -1961,6 +1970,39 @@ function createLocalApiHandler({ queuePath }) {
       const { rows, scope, excludedSources } = scopedQueueRows(qp, url);
       const result = computeQualityPerDollar(rows, outcomes, { from, to });
       json(res, { from, to, scope, excluded_sources: excludedSources, ...result });
+      return true;
+    }
+
+    // --- metadata-only Claude/Codex session efficiency ---
+    if (p === "/functions/tokentracker-session-insights") {
+      const from = url.searchParams.get("from") || "";
+      const to = url.searchParams.get("to") || "";
+      const refresh = ["1", "true"].includes(url.searchParams.get("refresh"));
+      try {
+        const { buildSessionAnalytics, summarizeSessions, sessionsToCsv } = require("./session-analytics");
+        const sessions = await buildSessionAnalytics({ force: refresh });
+        const wantsCsv = url.searchParams.get("format") === "csv";
+        const includeSessions = wantsCsv || ["1", "true"].includes(url.searchParams.get("include_sessions"));
+        const result = summarizeSessions(sessions, { from, to, includeSessions });
+        if (wantsCsv) {
+          const content = sessionsToCsv(result.sessions);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/csv; charset=utf-8");
+          res.setHeader("Content-Disposition", "attachment; filename=tokentracker-sessions.csv");
+          res.end(content);
+          return true;
+        }
+        json(res, { from, to, ...result });
+      } catch (error) {
+        json(res, { available: false, error: error?.message || "Session analytics failed" }, 500);
+      }
+      return true;
+    }
+
+    // --- fixed context overhead audit (counts and estimates only) ---
+    if (p === "/functions/tokentracker-context-health") {
+      const { computeContextHealth } = require("./context-health");
+      json(res, computeContextHealth({ home: os.homedir(), cwd: process.cwd(), env: process.env }));
       return true;
     }
 

@@ -3037,6 +3037,27 @@ async function fetchUsageLimitsUncached({
     opencodeGo: withPlanLabel(opencodeGo, opencodeGo?.plan_label, "OpenCode Go"),
   };
 
+  for (const [providerName, provider] of Object.entries(data)) {
+    if (providerName === "fetched_at" || !provider || typeof provider !== "object") continue;
+    const capturedAt = provider.cached_at || data.fetched_at;
+    const ageMs = Math.max(0, nowMs - Date.parse(capturedAt || ""));
+    const stale = provider.stale === true || (Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000);
+    const explicitSource = typeof provider.source === "string" ? provider.source : "";
+    const source = explicitSource || (stale ? "disk-cache" : "provider-api");
+    const confidence = /estimate|inferred/i.test(source)
+      ? "inferred"
+      : /local|database|sqlite|cache/i.test(source)
+        ? "observed"
+        : "official";
+    provider.provenance = {
+      source,
+      confidence,
+      captured_at: capturedAt,
+      stale,
+      age_seconds: Number.isFinite(ageMs) ? Math.round(ageMs / 1000) : null,
+    };
+  }
+
   cache = { data, expiresAtMs: cacheExpiresAtMs(data, nowMs) };
   return data;
 }

@@ -460,11 +460,15 @@ settings.section.appearance,ui,SettingsPage,SettingsPage,sec_appearance,"Appeara
 settings.section.account,ui,SettingsPage,SettingsPage,sec_account,"Account",,active
 settings.section.limits,ui,SettingsPage,SettingsPage,sec_limits,"Limits Display",,active
 settings.labs.qpd.label,ui,SettingsPage,LabsSection,qpd_label,"Analyze PR cost-efficiency",,active
-settings.labs.qpd.hint,ui,SettingsPage,LabsSection,qpd_hint,"Link GitHub PR history to analyze average delivery costs and effective Tokens per model.",,active
+settings.labs.qpd.hint,ui,SettingsPage,LabsSection,qpd_hint,"Analyze average delivery costs and effective Tokens per model from merged PRs and AI-attributed commits.",,active
 settings.labs.qpd.aria,ui,SettingsPage,LabsSection,qpd_aria,"Toggle PR cost-efficiency analysis",,active
+settings.labs.sessions.label,ui,SettingsPage,LabsSection,sessions_label,"Session efficiency",,active
+settings.labs.sessions.hint,ui,SettingsPage,LabsSection,sessions_hint,"Analyze metadata-only edit coverage, first-pass delivery, and cost per edit across Claude and Codex.",,active
+settings.labs.sessions.aria,ui,SettingsPage,LabsSection,sessions_aria,"Toggle session efficiency analysis",,active
+settings.section.labs,ui,SettingsPage,LabsSection,sec_labs,"Labs",,active
 qpd.card.title,ui,DashboardView,QualityPerDollarCard,title,"Quality & Avg Cost/PR",,active
 qpd.card.badge,ui,DashboardView,QualityPerDollarCard,badge,"BETA",,active
-qpd.card.subtitle,ui,DashboardView,QualityPerDollarCard,subtitle,"Avg token cost per merged PR based on your history.",,active
+qpd.card.subtitle,ui,DashboardView,QualityPerDollarCard,subtitle,"Avg token cost per delivery, from merged PRs and AI-attributed commits.",,active
 qpd.card.updating,ui,DashboardView,QualityPerDollarCard,updating,"Updating…",,active
 qpd.card.best_value,ui,DashboardView,QualityPerDollarCard,best_value,"Best Value",,active
 qpd.card.col_model,ui,DashboardView,QualityPerDollarCard,col_model,"Model",,active
@@ -1255,3 +1259,28 @@ achievements.signin.action,dashboard,AchievementsPage,AchievementsPage,signin_ac
 achievements.scope.local,dashboard,*,AchievementsSection,scope_local,"Local",,active
 achievements.page.suggest,dashboard,AchievementsPage,AchievementsPage,suggest,"Have an idea for a new badge?",,active
 achievements.page.suggest_link,dashboard,AchievementsPage,AchievementsPage,suggest_link,"Suggest it on GitHub",,active
+sessions.card.title,dashboard,DashboardPage,SessionInsightsCard,title,"Session efficiency",,active
+sessions.card.subtitle,dashboard,DashboardPage,SessionInsightsCard,subtitle,"Comparable edit-turn signals across Claude and Codex",,active
+sessions.card.loading,dashboard,DashboardPage,SessionInsightsCard,loading,"Analyzing local session metadata…",,active
+sessions.card.edit_sessions,dashboard,DashboardPage,SessionInsightsCard,edit_sessions,"Edit sessions",,active
+sessions.card.first_pass,dashboard,DashboardPage,SessionInsightsCard,first_pass,"First-pass",,active
+sessions.card.cost_edit,dashboard,DashboardPage,SessionInsightsCard,cost_edit,"Cost / edit",,active
+sessions.card.model,dashboard,DashboardPage,SessionInsightsCard,model,"Model",,active
+sessions.card.edit_session_value,dashboard,DashboardPage,SessionInsightsCard,edit_session_value,"{{edits}} / {{sessions}}",,active
+sessions.card.edit_turn_count,dashboard,DashboardPage,SessionInsightsCard,edit_turn_count,"{{count}} edit turns",,active
+sessions.card.tokens_edit,dashboard,DashboardPage,SessionInsightsCard,tokens_edit,"Tokens / edit",,active
+sessions.card.sample,dashboard,DashboardPage,SessionInsightsCard,sample,"{{sessions}} sessions · {{edits}} edit turns",,active
+sessions.card.methodology_label,dashboard,DashboardPage,SessionInsightsCard,methodology_label,"How measured",,active
+sessions.card.methodology,dashboard,DashboardPage,SessionInsightsCard,methodology,"Edit = a user turn containing an observed edit tool. First-pass = exactly one edit turn with no repeated request.",,active
+sessions.card.context,dashboard,DashboardPage,SessionInsightsCard,context,"Estimated fixed context",,active
+sessions.card.context_tooltip,dashboard,DashboardPage,SessionInsightsCard,context_tooltip,"Instructions, installed skills, and inferred MCP tool schemas",,active
+sessions.card.privacy,dashboard,DashboardPage,SessionInsightsCard,privacy,"Local metadata only. Prompt, response, command output, and diff contents are never retained.",,active
+sessions.card.subagents,dashboard,DashboardPage,SessionInsightsCard,subagents,"Subagent dispatches",,active
+sessions.card.subagent_item,dashboard,DashboardPage,SessionInsightsCard,subagent_item,"{{name}} · {{calls}}",,active
+limits.alert.enable,limits,LimitsPage,LimitsPage,enable_alerts,"Enable predictive limit alerts",,active
+limits.alert.disable,limits,LimitsPage,LimitsPage,disable_alerts,"Disable predictive limit alerts",,active
+limits.alert.title,limits,LimitsPage,LimitsPage,alert_title,"{{provider}} limit may run out early",,active
+limits.alert.body,limits,LimitsPage,LimitsPage,alert_body,"At the current pace, usage may run out in {{eta}} ({{percent}}% used).",,active
+limits.provenance.fresh,limits,LimitsPage,UsageLimitsPanel,provenance_fresh,"Live",,active
+limits.provenance.stale,limits,LimitsPage,UsageLimitsPanel,provenance_stale,"Stale",,active
+limits.provenance.tooltip,limits,LimitsPage,UsageLimitsPanel,provenance_tooltip,"Source: {{source}}; confidence: {{confidence}}",,active

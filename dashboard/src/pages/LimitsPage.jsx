@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Settings as SettingsIcon } from "lucide-react";
+import { Bell, BellOff, Settings as SettingsIcon } from "lucide-react";
 import { useUsageLimits } from "../hooks/use-usage-limits";
 import { useLimitsDisplayPrefs } from "../hooks/use-limits-display-prefs.js";
 import { copy } from "../lib/copy";
@@ -9,6 +9,8 @@ import { UsageLimitsPanel } from "../ui/dashboard/components/UsageLimitsPanel.js
 import { LocalOnlyNotice } from "../components/LocalOnlyNotice.jsx";
 import { isMockEnabled } from "../lib/mock-data";
 import { readUsageLimitsPreloadState } from "../lib/dashboard-preload.js";
+import { useLimitAlertPrefs } from "../hooks/use-limit-alert-prefs";
+import { sendPredictiveLimitAlerts } from "../lib/limit-alerts.js";
 
 const IS_LOCAL_HOST =
   typeof window !== "undefined" &&
@@ -22,6 +24,11 @@ export function LimitsPage() {
       : { initialRefresh: true, publishToPreloadCache: true },
   );
   const prefs = useLimitsDisplayPrefs();
+  const alerts = useLimitAlertPrefs();
+
+  React.useEffect(() => {
+    if (alerts.enabled && usageLimits) sendPredictiveLimitAlerts(usageLimits);
+  }, [alerts.enabled, usageLimits]);
 
   // Limits read the local plan/rate-limit tier from the machine running the
   // CLI; there's no cloud source. On the deployed web app, surface the
@@ -47,14 +54,25 @@ export function LimitsPage() {
                 {copy("limits.page.subtitle")}
               </p>
             </div>
-            <Link
-              to="/settings"
-              aria-label={copy("limits.page.openSettings")}
-              title={copy("limits.page.openSettings")}
-              className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-oai-gray-200 dark:border-oai-gray-800 text-oai-gray-600 dark:text-oai-gray-400 hover:bg-oai-gray-100 dark:hover:bg-oai-gray-800 hover:text-oai-black dark:hover:text-white transition-colors no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500"
-            >
-              <SettingsIcon className="h-4 w-4" aria-hidden />
-            </Link>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => void alerts.setEnabled(!alerts.enabled)}
+                aria-label={alerts.enabled ? copy("limits.alert.disable") : copy("limits.alert.enable")}
+                title={alerts.enabled ? copy("limits.alert.disable") : copy("limits.alert.enable")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-oai-gray-200 dark:border-oai-gray-800 text-oai-gray-600 dark:text-oai-gray-400 hover:bg-oai-gray-100 dark:hover:bg-oai-gray-800 hover:text-oai-black dark:hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500"
+              >
+                {alerts.enabled ? <Bell className="h-4 w-4" aria-hidden /> : <BellOff className="h-4 w-4" aria-hidden />}
+              </button>
+              <Link
+                to="/settings"
+                aria-label={copy("limits.page.openSettings")}
+                title={copy("limits.page.openSettings")}
+                className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-oai-gray-200 dark:border-oai-gray-800 text-oai-gray-600 dark:text-oai-gray-400 hover:bg-oai-gray-100 dark:hover:bg-oai-gray-800 hover:text-oai-black dark:hover:text-white transition-colors no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oai-brand-500"
+              >
+                <SettingsIcon className="h-4 w-4" aria-hidden />
+              </Link>
+            </div>
           </div>
 
           {isLoading ? (
