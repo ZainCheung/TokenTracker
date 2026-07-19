@@ -272,7 +272,10 @@ struct UsageLimitsView: View {
 
     private func grokSpecs(_ g: GrokLimits) -> [LimitWindowSpec] {
         var s: [LimitWindowSpec] = []
-        if let w = g.primaryWindow { s.append(makeSpec(Strings.grokMonthLabel, w.usedPercent, iso: w.resetAt)) }
+        if let w = g.primaryWindow {
+            let windowSeconds: Double? = g.periodType == "weekly" ? 7 * 86400 : (g.periodType == "daily" ? 86400 : nil)
+            s.append(makeSpec(Strings.grokPrimaryLabel(periodType: g.periodType), w.usedPercent, windowSeconds: windowSeconds, iso: w.resetAt))
+        }
         if let w = g.secondaryWindow { s.append(makeSpec(Strings.grokOndemandLabel, w.usedPercent, iso: w.resetAt)) }
         return s
     }

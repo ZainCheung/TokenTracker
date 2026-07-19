@@ -334,7 +334,13 @@ enum WidgetSnapshotWriter {
         // Grok Build
         if let grok = limits.grok, grok.configured {
             if let w = grok.primaryWindow {
-                out.append(LimitProvider(source: "grok", label: "Grok Build · Month",
+                let periodLabel: String
+                switch grok.periodType {
+                case "weekly": periodLabel = "Weekly"
+                case "daily": periodLabel = "Daily"
+                default: periodLabel = "Month"
+                }
+                out.append(LimitProvider(source: "grok", label: "Grok Build · \(periodLabel)",
                                          fraction: w.usedPercent / 100.0,
                                          resetsAt: parseISO(w.resetAt)))
             }

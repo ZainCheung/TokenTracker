@@ -696,6 +696,8 @@ limits.reset_bank.hover_detail_today,ui,LimitsPage,UsageLimitsPanel,reset_bank_h
 limits.label.copilot_premium,ui,LimitsPage,UsageLimitsPanel,copilot_premium,"Premium",,active
 limits.label.copilot_chat,ui,LimitsPage,UsageLimitsPanel,copilot_chat,"Chat",,active
 limits.label.grok_month,ui,LimitsPage,UsageLimitsPanel,grok_month,"Month",,active
+limits.label.grok_week,ui,LimitsPage,UsageLimitsPanel,grok_week,"Weekly",,active
+limits.label.grok_day,ui,LimitsPage,UsageLimitsPanel,grok_day,"Daily",,active
 limits.label.grok_ondemand,ui,LimitsPage,UsageLimitsPanel,grok_ondemand,"On-demand",,active
 limits.provider.claude,ui,LimitsPage,UsageLimitsPanel,provider_claude,"Claude",,active
 limits.provider.codex,ui,LimitsPage,UsageLimitsPanel,provider_codex,"Codex",,active
