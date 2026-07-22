@@ -1225,6 +1225,7 @@ function spawnDetached(argv) {
   try {
     const child = cp.spawn(argv[0], argv.slice(1), {
       detached: true,
+      windowsHide: true,
       stdio: 'ignore',
       env: process.env
     });

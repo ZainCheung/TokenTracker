@@ -80,6 +80,7 @@ final class StatusBarController: NSObject {
         observeNativeBridgeSettings()
         observeApplicationActivity()
         observeWeeklyLimitReset()
+        scheduleDebugLimitResetCelebrationIfRequested()
     }
 
     // MARK: - Limit-reset celebration
@@ -100,7 +101,28 @@ final class StatusBarController: NSObject {
     private func celebrateLimitReset(event: LimitResetEvent?) {
         guard WeeklyLimitResetDetector.confettiEnabled() else { return }
         let name = event.map { LimitsSettingsStore.displayNames[$0.provider] ?? $0.provider.capitalized }
-        confettiController.play(message: Strings.limitResetCelebration(provider: name, window: event?.windowLabel))
+        confettiController.play(
+            message: Strings.limitResetCelebration(provider: name, window: event?.windowLabel),
+            provider: event?.provider
+        )
+    }
+
+    /// Debug-only launch hook for exercising the real multi-display overlay without
+    /// waiting hours or days for a provider quota to roll over.
+    private func scheduleDebugLimitResetCelebrationIfRequested() {
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOKENTRACKER_DEBUG_LIMIT_RESET_CELEBRATION"] == "1" else { return }
+        let provider = environment["TOKENTRACKER_DEBUG_LIMIT_RESET_PROVIDER"] ?? "antigravity"
+        let providerName = LimitsSettingsStore.displayNames[provider] ?? provider.capitalized
+        let delay = environment["TOKENTRACKER_DEBUG_LIMIT_RESET_DELAY"].flatMap(Double.init) ?? 2
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.confettiController.play(
+                message: Strings.limitResetCelebration(provider: providerName, window: "Weekly"),
+                provider: provider
+            )
+        }
+        #endif
     }
 
     private func closePopoverForModalAlert() {
