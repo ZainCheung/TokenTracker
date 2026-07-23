@@ -234,6 +234,54 @@ test("buildAllModels creates a complete cross-tool personal model ranking", asyn
   ]);
 });
 
+test("model rankings merge provider-qualified ids only when a bare peer exists (#359)", async () => {
+  const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
+  const fleetData = [
+    {
+      label: "CLAUDE",
+      models: [
+        { id: "glm-5.2", name: "GLM-5.2", usage: 30, cost: 0.3 },
+        { id: "openrouter/shared", name: "openrouter/shared", usage: 20, cost: 0.2 },
+      ],
+    },
+    {
+      label: "OPENCODE",
+      models: [
+        { id: "volcengine/glm-5.2", name: "volcengine/glm-5.2", usage: 70, cost: 0.7 },
+        { id: "bedrock/shared", name: "bedrock/shared", usage: 10, cost: 0.1 },
+      ],
+    },
+  ];
+
+  assert.deepEqual(mod.buildAllModels(fleetData), [
+    { id: "glm-5.2", name: "GLM-5.2", usage: 100, cost: 1, share: 76.9 },
+    { id: "openrouter/shared", name: "openrouter/shared", usage: 20, cost: 0.2, share: 15.4 },
+    { id: "bedrock/shared", name: "bedrock/shared", usage: 10, cost: 0.1, share: 7.7 },
+  ]);
+
+  const top = mod.buildTopModels({
+    sources: [
+      {
+        source: "claude",
+        models: [{ model: "GLM-5.2", totals: { total_tokens: 30 } }],
+      },
+      {
+        source: "opencode",
+        models: [
+          { model: "volcengine/glm-5.2", totals: { total_tokens: 70 } },
+          { model: "openrouter/shared", totals: { total_tokens: 20 } },
+          { model: "bedrock/shared", totals: { total_tokens: 10 } },
+        ],
+      },
+    ],
+  }, { limit: 5 });
+  assert.deepEqual(top, [
+    { id: "glm-5.2", name: "GLM-5.2", tokens: 100, percent: "76.9" },
+    { id: "openrouter/shared", name: "openrouter/shared", tokens: 20, percent: "15.4" },
+    { id: "bedrock/shared", name: "bedrock/shared", tokens: 10, percent: "7.7" },
+  ]);
+});
+
 test("buildTopModels computes percent using billable tokens across all models", async () => {
   const mod = await loadDashboardModule("dashboard/src/lib/model-breakdown.ts");
   const buildTopModels = mod.buildTopModels;

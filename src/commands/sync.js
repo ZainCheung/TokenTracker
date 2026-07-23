@@ -1498,6 +1498,7 @@ async function cmdSync(argv, context = {}) {
           subagentFiles: ompSubagentFiles,
           cursors,
           queuePath,
+          projectQueuePath,
           env: process.env,
           onProgress: (p) => {
             if (!progress?.enabled) return;
